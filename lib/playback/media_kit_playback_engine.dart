@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' as media_kit;
 
 import '../domain/library_models.dart';
+import 'native_media_commands.dart';
 import 'native_position_gate.dart';
 import 'playback_engine.dart';
 
@@ -21,6 +22,10 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
           media_kit.Player(
             configuration: const media_kit.PlayerConfiguration(
               muted: _validationMuted,
+              // Audio does not need media-kit's 32 MiB demuxer default. Two
+              // MiB retains several seconds of high-bitrate audio while
+              // keeping memory use predictable on mobile devices.
+              bufferSize: 2 * 1024 * 1024,
             ),
           ) {
     _subscriptions.addAll([
@@ -131,7 +136,13 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
     try {
       // Do not publish the requested target optimistically. The position
       // stream reports the playhead after the native engine has settled.
-      await _player.seek(clamped);
+      _completed = false;
+      final usedNativeSeek =
+          _track?.source == SourceKind.webDav &&
+          await seekRemoteWithKeyframes(_player, clamped);
+      if (!usedNativeSeek) {
+        await _player.seek(clamped);
+      }
     } catch (error) {
       _positionGate.cancelSeek();
       _publish(PlaybackPhase.error, errorMessage: _readableError(error));
@@ -228,7 +239,8 @@ class MediaKitPlaybackEngine implements PlaybackEngine {
         snapshot.errorMessage != null;
     if (_traceEnabled && shouldTrace) {
       debugPrint(
-        'SOUND_PLAYBACK session=${snapshot.sessionId} '
+        'SOUND_PLAYBACK at=${DateTime.now().toIso8601String()} '
+        'session=${snapshot.sessionId} '
         'phase=${snapshot.phase.name} '
         'positionMs=${snapshot.position.inMilliseconds} '
         'durationMs=${snapshot.duration.inMilliseconds}'

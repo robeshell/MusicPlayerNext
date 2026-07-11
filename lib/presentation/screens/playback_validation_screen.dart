@@ -67,7 +67,7 @@ class _PlaybackValidationScreenState extends State<PlaybackValidationScreen> {
       builder: (context) => const _WebDavPlaybackDialog(),
     );
     if (request == null || !mounted) return;
-    final headers = <String, String>{'Accept': '*/*', 'Range': 'bytes=0-'};
+    final headers = <String, String>{'Accept': '*/*'};
     if (request.username.isNotEmpty) {
       final token = base64Encode(
         utf8.encode('${request.username}:${request.password}'),

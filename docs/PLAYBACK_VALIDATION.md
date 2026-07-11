@@ -20,8 +20,16 @@ are recorded.
       regression.
 - [x] The late 119.861-second native callback observed after a 120.000-second
       macOS seek is filtered by `NativePositionGate` and covered by a unit test.
-- [ ] Authenticated WebDAV, Windows, background playback, and
-      system media controls still require validation.
+- [x] The repeatable WebDAV fixture rejects missing credentials, supports
+      `PROPFIND`, and returns correct single-range `206` responses.
+- [x] Authenticated WebDAV FLAC loads and seeks through non-zero byte ranges on
+      macOS and the Android 16 emulator.
+- [ ] Authenticated WebDAV MP3 loads and plays, but a 120-second seek at a
+      throttled 256 KiB/s takes about 17.6 seconds on macOS and Android. The
+      player consumes the initial response sequentially instead of opening a
+      non-zero range. A generated CBR MP3 reproduces the problem on macOS.
+- [ ] Windows, background playback, and system media controls still require
+      validation.
 
 ## Fixtures
 
@@ -35,12 +43,14 @@ are recorded.
 
 - [x] Local MP3 and FLAC load and begin playback on macOS and Android.
 - [ ] Local MP3 and FLAC load and begin playback on Windows.
-- [ ] WebDAV MP3 and FLAC stream without downloading the complete library
-      during indexing.
+- [x] Authenticated WebDAV FLAC streams and issues non-zero ranges for seek on
+      macOS and Android.
+- [ ] Authenticated WebDAV MP3 must settle remote seeks without sequentially
+      reading from the initial response.
 - [ ] Play, pause, next, previous, and completion transitions are correct.
 - [ ] Dragging previews time locally and sends one seek when released.
-- [x] Engine position settles after seek without jumping back to the old time
-      in the recorded macOS MP3/FLAC and Android MP3 runs.
+- [x] Engine position settles without regression in recorded local MP3/FLAC
+      and remote FLAC runs.
 - [ ] Rapid track changes never show progress from the previous track.
 - [ ] Buffering is visually different from paused playback.
 - [ ] Android continues playback with the screen off.
@@ -49,6 +59,18 @@ are recorded.
 - [ ] Relaunch restores the queue and saved position without autoplaying.
 
 ## Measurements
+
+Recorded with a local authenticated fixture throttled to 256 KiB/s:
+
+- Android WebDAV MP3: first playable position in about 2.2 seconds; a seek from
+  0 to 120 seconds resumes after about 17.6 seconds.
+- macOS WebDAV MP3: the same seek resumes after about 17.6 seconds; a generated
+  CBR MP3 still takes about 12.4 seconds.
+- Android WebDAV FLAC: first playable position in about 3.1 seconds; the server
+  opens ranges near byte 26.6 MB for the 120-second seek and playback resumes
+  after about 6.9 seconds.
+- No progress regression occurred in these runs, but the MP3 settlement time
+  fails acceptance.
 
 Record these for local and WebDAV playback on both platforms:
 
@@ -66,3 +88,6 @@ position regression occurs during the 20-seek test. If a package cannot meet
 the system-media-control or authenticated-seek requirements without invasive
 forking, replace it behind `PlaybackEngine` rather than leaking workarounds
 into UI code.
+
+Current verdict: **MediaKit is not yet accepted for the production WebDAV
+path** because throttled MP3 seeking does not open a target byte range.

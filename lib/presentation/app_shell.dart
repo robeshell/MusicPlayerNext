@@ -12,6 +12,8 @@ import 'widgets/mini_player.dart';
 
 enum AppSection { library, search, sources }
 
+const _compactMiniPlayerBottomGap = 10.0;
+
 class AppShell extends StatefulWidget {
   const AppShell({required this.playback, super.key});
 
@@ -101,7 +103,7 @@ class _AppShellState extends State<AppShell> {
               Positioned(
                 left: desktop ? 258 : 10,
                 right: desktop ? 22 : 10,
-                bottom: desktop ? 18 : 76,
+                bottom: desktop ? 18 : _compactMiniPlayerBottomGap,
                 child: MiniPlayer(
                   playback: widget.playback,
                   compact: !desktop,

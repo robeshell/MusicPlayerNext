@@ -19,8 +19,11 @@ from explicit platform-independent contracts.
   WebDAV media URL without adding either source to the demo library.
 - `PlaybackEngine` snapshots are the sole authority for playback position.
 - Playback session generations reject callbacks from previously loaded tracks.
-- Real MP3 and FLAC playback plus a 120-second seek pass on macOS and Android;
-  none of the recorded runs regressed position.
+- Local MP3 and FLAC playback plus a 120-second seek pass on macOS and Android;
+  none of the recorded local runs regressed position.
+- Authenticated WebDAV FLAC playback and byte-range seeking pass on macOS and
+  Android. WebDAV MP3 playback works, but a throttled 120-second seek currently
+  waits 12-18 seconds for sequential data and fails the acceptance target.
 - Source indexing, persistence, background playback, system media controls, and
   the production WebDAV flow remain intentionally unfinished.
 
@@ -51,6 +54,7 @@ flutter build web
 - [Design foundation](docs/DESIGN_FOUNDATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Playback validation plan](docs/PLAYBACK_VALIDATION.md)
+- [Repeatable WebDAV fixture](docs/WEBDAV_FIXTURE.md)
 - [Desktop library reference](docs/screenshots/library-desktop.png)
 - [Desktop now playing reference](docs/screenshots/now-playing-desktop.png)
 - [Mobile library reference](docs/screenshots/library-mobile.png)
@@ -60,6 +64,7 @@ flutter build web
 - [Android sources](docs/screenshots/android-sources.png)
 - [Android playback validation](docs/screenshots/android-playback-validation.png)
 - [Android real MP3 playback](docs/screenshots/android-real-playback.png)
+- [Android lowered mini player](docs/screenshots/android-mini-player-lowered.png)
 
 The previous Swift project is intentionally unchanged and remains a visual and
 behavioral reference only.

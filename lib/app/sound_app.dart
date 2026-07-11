@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../core/sound_theme.dart';
@@ -23,6 +26,12 @@ class _SoundAppState extends State<SoundApp> {
     'SOUND_VALIDATION_SEEK_MS',
     defaultValue: -1,
   );
+  static const _validationUsername = String.fromEnvironment(
+    'SOUND_VALIDATION_USERNAME',
+  );
+  static const _validationPassword = String.fromEnvironment(
+    'SOUND_VALIDATION_PASSWORD',
+  );
 
   late final PlaybackEngine _engine;
   late final SoundPlaybackController _playback;
@@ -47,16 +56,32 @@ class _SoundAppState extends State<SoundApp> {
           duration: Duration.zero,
           source: isRemote ? SourceKind.webDav : SourceKind.local,
           mediaUri: _validationMedia,
+          httpHeaders: isRemote ? _validationHeaders : const {},
         );
-        await _playback.playTrack(track, queue: [track]);
+        unawaited(_playback.playTrack(track, queue: [track]));
         if (_validationSeekMs >= 0) {
           await Future<void>.delayed(const Duration(seconds: 2));
-          if (mounted) {
+          for (var attempt = 0; attempt < 50; attempt++) {
+            if (!mounted || _playback.snapshot.duration > Duration.zero) break;
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+          if (mounted && _playback.snapshot.duration > Duration.zero) {
             await _playback.seek(Duration(milliseconds: _validationSeekMs));
           }
         }
       });
     }
+  }
+
+  Map<String, String> get _validationHeaders {
+    final headers = <String, String>{'Accept': '*/*'};
+    if (_validationUsername.isNotEmpty) {
+      final token = base64Encode(
+        utf8.encode('$_validationUsername:$_validationPassword'),
+      );
+      headers['Authorization'] = 'Basic $token';
+    }
+    return headers;
   }
 
   @override
