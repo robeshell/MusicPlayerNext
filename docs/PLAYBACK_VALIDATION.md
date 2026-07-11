@@ -75,8 +75,8 @@ Recorded with a local authenticated fixture throttled to 256 KiB/s:
 - Android WebDAV FLAC: first playable position in about 3.1 seconds; the server
   opens ranges near byte 26.6 MB for the 120-second seek and playback resumes
   after about 6.9 seconds.
-- No progress regression occurred in these runs, but the MP3 settlement time
-  fails acceptance.
+- No progress regression occurred in these runs. The previous MediaKit MP3
+  baseline failed acceptance; the just_audio result passes this recorded seek.
 
 Record these for local and WebDAV playback on both platforms:
 
@@ -95,8 +95,7 @@ the system-media-control or authenticated-seek requirements without invasive
 forking, replace it behind `PlaybackEngine` rather than leaking workarounds
 into UI code.
 
-Current verdict: **just_audio is the default production adapter** based on the
-macOS and Android WebDAV MP3 result. MediaKit remains an explicit fallback.
-Windows local playback, authenticated proxy behavior, background playback, and
-system media controls still block final acceptance of the complete vertical
-slice.
+Current verdict: **just_audio is the sole production adapter** based on the
+macOS and Android WebDAV MP3 result. Windows local playback, authenticated proxy
+behavior, background playback, and system media controls still block final
+acceptance of the complete vertical slice.

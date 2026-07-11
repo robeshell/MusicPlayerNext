@@ -29,9 +29,8 @@ at `http://10.0.2.2:8088/sample.mp3`.
 
 The optional throttle prevents a local fixture from transferring the whole file
 before the automated two-second seek. A seekable format should open one or more
-non-zero ranges for the target. The default just_audio adapter does this for the
-recorded MP3 on macOS and Android. The retained MediaKit adapter does so for
-FLAC, but MP3 remains on the initial open-ended response.
+non-zero ranges for the target. The just_audio adapter does this for the
+recorded MP3 on macOS and Android.
 
 ## Automated startup validation
 

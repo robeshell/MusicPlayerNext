@@ -13,10 +13,9 @@ from explicit platform-independent contracts.
   responsive mini player.
 - Responsive layouts verified in desktop, compact web preview, and an Android
   16 arm64 emulator at 1080 x 2400.
-- Production playback now defaults to `JustAudioPlaybackEngine`, backed by
-  ExoPlayer on Android and AVPlayer on Apple platforms. `MediaKitPlaybackEngine`
-  remains available as an A/B fallback; widget tests inject
-  `SimulatedPlaybackEngine`.
+- Production playback uses `JustAudioPlaybackEngine`, backed by ExoPlayer on
+  Android, AVPlayer on Apple platforms, and WinRT MediaPlayer on Windows;
+  widget tests inject `SimulatedPlaybackEngine`.
 - The playback validation screen opens a real local file or an authenticated
   WebDAV media URL without adding either source to the demo library.
 - `PlaybackEngine` snapshots are the sole authority for playback position.
@@ -26,8 +25,7 @@ from explicit platform-independent contracts.
 - Authenticated WebDAV MP3 playback and byte-range seeking now pass with the
   just_audio adapter on macOS and Android. In the throttled fixture, a
   120-second seek opens a range near byte 5 MB and resumes in about 0.04 seconds
-  on macOS and 0.7-1.0 seconds on Android. The retained MediaKit adapter takes
-  roughly 12-18 seconds on the same MP3.
+  on macOS and 0.7-1.0 seconds on Android.
 - Source indexing, persistence, background playback, system media controls, and
   the production WebDAV flow remain intentionally unfinished.
 
@@ -37,9 +35,6 @@ from explicit platform-independent contracts.
 flutter pub get
 flutter run -d macos
 ```
-
-To compare the retained fallback, add
-`--dart-define=SOUND_ENGINE=media_kit`.
 
 Open Settings -> Playback validation to choose a local audio file or enter a
 WebDAV file URL. Use `flutter devices` to find Android targets. Windows builds

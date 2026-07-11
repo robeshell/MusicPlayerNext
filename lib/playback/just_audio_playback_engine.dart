@@ -8,11 +8,11 @@ import 'native_position_gate.dart';
 import 'playback_engine.dart';
 import 'request_header_policy.dart';
 
-/// Alternative production adapter backed by each platform's just_audio
-/// implementation (ExoPlayer on Android and AVPlayer on Apple platforms).
+/// Production adapter backed by each platform's just_audio implementation
+/// (ExoPlayer on Android and AVPlayer on Apple platforms).
 ///
 /// It deliberately exposes the same immutable snapshot contract as the
-/// media-kit adapter so the UI and playback coordinator remain engine-agnostic.
+/// playback contract so the UI and coordinator remain engine-agnostic.
 class JustAudioPlaybackEngine implements PlaybackEngine {
   static const _traceEnabled = bool.fromEnvironment('SOUND_PLAYBACK_TRACE');
   static const _validationMuted = bool.fromEnvironment(
