@@ -18,7 +18,7 @@ class NowPlayingScreen extends StatelessWidget {
     return AnimatedBuilder(
       animation: playback,
       builder: (context, _) {
-        final track = playback.currentTrack;
+        final track = playback.displayTrack;
         if (track == null) return const _NoTrackPlaying();
         final album = albumForTrack(track);
         final snapshot = playback.snapshot;
@@ -181,7 +181,7 @@ class _WideNowPlaying extends StatelessWidget {
               Expanded(
                 child: _LyricsPanel(
                   track: track,
-                  position: playback.snapshot.position,
+                  position: playback.displayPosition,
                 ),
               ),
             ],
@@ -232,9 +232,10 @@ class _PlayerColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final snapshot = playback.snapshot;
-    final remaining = snapshot.duration - snapshot.position;
-    final remainingLabel = snapshot.duration > Duration.zero
+    final position = playback.displayPosition;
+    final duration = playback.displayDuration;
+    final remaining = duration - position;
+    final remainingLabel = duration > Duration.zero
         ? '-${formatDuration(remaining.isNegative ? Duration.zero : remaining)}'
         : '0:00';
     return Column(
@@ -265,13 +266,13 @@ class _PlayerColumn extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         ProgressScrubber(
-          position: snapshot.position,
-          duration: snapshot.duration,
+          position: position,
+          duration: duration,
           onSeek: playback.seek,
         ),
         Row(
           children: [
-            Text(formatDuration(snapshot.position), style: _timeStyle),
+            Text(formatDuration(position), style: _timeStyle),
             const Spacer(),
             Text(remainingLabel, style: _timeStyle),
           ],

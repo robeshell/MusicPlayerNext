@@ -7,6 +7,7 @@ import 'package:sound_player/library/library_records.dart';
 import 'package:sound_player/library/persistence/drift_library_repository.dart';
 import 'package:sound_player/library/persistence/library_database.dart';
 import 'package:sound_player/playback/playback_controller.dart';
+import 'package:sound_player/playback/playback_session.dart';
 import 'package:sound_player/playback/simulated_playback_engine.dart';
 import 'package:sound_player/presentation/app_shell.dart';
 import 'package:sound_player/presentation/widgets/mini_player.dart';
@@ -23,7 +24,11 @@ void main() {
     addTearDown(repository.close);
 
     await tester.pumpWidget(
-      SoundApp(engine: SimulatedPlaybackEngine(), repository: repository),
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: PlaybackSessionStore.memory(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -56,12 +61,96 @@ void main() {
     addTearDown(repository.close);
 
     await tester.pumpWidget(
-      SoundApp(engine: SimulatedPlaybackEngine(), repository: repository),
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: PlaybackSessionStore.memory(),
+      ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('资料库还是空的'), findsOneWidget);
     expect(find.text('管理音乐来源'), findsOneWidget);
+
+    await _unmountAndFlush(tester);
+  });
+
+  testWidgets('restored session remains visible without autoplay', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _repository();
+    final sessionStore = PlaybackSessionStore.memory();
+    addTearDown(repository.close);
+    await sessionStore.save(
+      const PlaybackSession(
+        queue: [_testTrack],
+        queueIndex: 0,
+        positionMs: 60000,
+      ),
+    );
+
+    await tester.pumpWidget(
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: sessionStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Test Track'), findsOneWidget);
+    expect(find.text('1:00'), findsOneWidget);
+    expect(find.text('-2:00'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+
+    await _unmountAndFlush(tester);
+  });
+
+  testWidgets('active playback is checkpointed and flushed on background', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithAlbum();
+    final sessionStore = PlaybackSessionStore.memory();
+    addTearDown(repository.close);
+
+    await tester.pumpWidget(
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: sessionStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final libraryTrack = find.ancestor(
+      of: find.text('Test Track'),
+      matching: find.byType(ListTile),
+    );
+    await tester.ensureVisible(libraryTrack);
+    await tester.tap(libraryTrack);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Test Track'));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+
+    final checkpoint = await sessionStore.load();
+    expect(checkpoint, isNotNull);
+    expect(checkpoint!.queue.single.id, _testTrack.id);
+    expect(checkpoint.positionMs, greaterThan(0));
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    expect((await sessionStore.load())!.positionMs, greaterThanOrEqualTo(3000));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
 
     await _unmountAndFlush(tester);
   });

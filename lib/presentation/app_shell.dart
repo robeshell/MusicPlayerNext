@@ -51,6 +51,9 @@ class _AppShellState extends State<AppShell> {
     _libraryRepository =
         widget.libraryRepository ?? DriftLibraryRepository.defaults();
     _libraryCatalog = LibraryCatalogController(repository: _libraryRepository);
+    // Resolve security-scoped bookmarks at startup so that local files are
+    // playable without the user first opening the source-settings screen.
+    unawaited(_sources.restoreLocalFolders());
   }
 
   LocalSourceService get _sources {
@@ -76,7 +79,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _openNowPlaying() {
-    if (widget.playback.currentTrack == null) return;
+    if (widget.playback.displayTrack == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => NowPlayingScreen(playback: widget.playback),

@@ -56,6 +56,13 @@ plugin does not expose custom headers.
   generation are ignored.
 - Persistence observes controller state at a throttled cadence and never feeds
   progress back into a live session.
+- Playback-session bootstrap finishes before the app exposes its single
+  controller, so a late disk read cannot replace active playback. Native
+  targets checkpoint at most once every two seconds and flush when the app is
+  backgrounded; the development Web target uses an in-memory fallback.
+- Session JSON contains the queue metadata, artwork and lyrics required to
+  render the restored item, but never persists HTTP authorization headers.
+  Restored positions are applied after load and before play.
 
 The initial state machine is:
 

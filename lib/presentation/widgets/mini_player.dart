@@ -25,12 +25,12 @@ class MiniPlayer extends StatelessWidget {
     return AnimatedBuilder(
       animation: playback,
       builder: (context, _) {
-        final track = playback.currentTrack;
+        final track = playback.displayTrack;
         if (track == null) return const SizedBox.shrink();
         final album = albumForTrack(track);
-        final snapshot = playback.snapshot;
-        final duration = snapshot.duration;
-        final remaining = duration - snapshot.position;
+        final position = playback.displayPosition;
+        final duration = playback.displayDuration;
+        final remaining = duration - position;
         final sliderMax = duration > Duration.zero
             ? duration.inMilliseconds.toDouble()
             : 1.0;
@@ -140,7 +140,7 @@ class MiniPlayer extends StatelessWidget {
                             child: Row(
                               children: [
                                 Text(
-                                  formatDuration(snapshot.position),
+                                  formatDuration(position),
                                   style: _timeStyle,
                                 ),
                                 Expanded(
@@ -154,7 +154,7 @@ class MiniPlayer extends StatelessWidget {
                                       inactiveTrackColor: Colors.black12,
                                     ),
                                     child: Slider(
-                                      value: snapshot.position.inMilliseconds
+                                      value: position.inMilliseconds
                                           .toDouble()
                                           .clamp(0, sliderMax),
                                       max: sliderMax,

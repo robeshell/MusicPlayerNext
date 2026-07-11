@@ -21,6 +21,10 @@ from explicit platform-independent contracts.
   WebDAV media URL without indexing it into the library.
 - `PlaybackEngine` snapshots are the sole authority for playback position.
 - Playback session generations reject callbacks from previously loaded tracks.
+- Queue and position sessions are checkpointed during playback and flushed on
+  backgrounding. Restart keeps the restored item visible without autoplay,
+  then seeks before playback when the user resumes; authorization headers are
+  never written to the session file.
 - A Drift/SQLite v1 repository now persists sources, artists, albums, tracks,
   lyrics, and atomic scan state across native platforms and the development
   Web build.

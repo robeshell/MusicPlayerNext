@@ -8,19 +8,28 @@ import '../domain/library_models.dart';
 import '../library/library_repository.dart';
 import '../playback/playback_controller.dart';
 import '../playback/playback_engine.dart';
+import '../playback/playback_session.dart';
 import '../presentation/app_shell.dart';
 
 class SoundApp extends StatefulWidget {
-  const SoundApp({required this.engine, this.repository, super.key});
+  const SoundApp({
+    required this.engine,
+    this.repository,
+    this.sessionStore,
+    super.key,
+  });
 
   final PlaybackEngine engine;
   final LibraryRepository? repository;
+  final PlaybackSessionStore? sessionStore;
 
   @override
   State<SoundApp> createState() => _SoundAppState();
 }
 
-class _SoundAppState extends State<SoundApp> {
+class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
+  static const _sessionSaveInterval = Duration(seconds: 2);
+
   static const _validationMedia = String.fromEnvironment(
     'SOUND_VALIDATION_MEDIA',
   );
@@ -36,42 +45,166 @@ class _SoundAppState extends State<SoundApp> {
   );
 
   late final PlaybackEngine _engine;
-  late final SoundPlaybackController _playback;
+  SoundPlaybackController? _playback;
+  PlaybackSessionStore? _sessionStore;
+  Timer? _sessionSaveTimer;
+  DateTime? _lastSessionSaveStartedAt;
+  Future<void> _writeTail = Future<void>.value();
+  bool _sessionDirty = false;
+  bool _saveInProgress = false;
+  bool _forceSaveAfterCurrent = false;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _engine = widget.engine;
-    _playback = SoundPlaybackController(engine: _engine);
+    unawaited(_bootstrapPlayback());
+  }
+
+  Future<void> _bootstrapPlayback() async {
+    PlaybackSessionStore store;
+    try {
+      store = widget.sessionStore ?? await PlaybackSessionStore.create();
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'sound playback session',
+          context: ErrorDescription('while creating the session store'),
+        ),
+      );
+      store = PlaybackSessionStore.memory();
+    }
+    final session = await store.load();
+    if (!mounted) return;
+
+    final playback = SoundPlaybackController(
+      engine: _engine,
+      initialSession: session,
+    );
+    playback.addListener(_scheduleSessionSave);
+    _sessionStore = store;
+    setState(() => _playback = playback);
+
     if (_validationMedia.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final uri = Uri.tryParse(_validationMedia);
-        final isRemote = uri?.hasScheme == true && uri?.scheme != 'file';
-        final filename = isRemote
-            ? uri!.pathSegments.lastOrNull ?? '验证音频'
-            : _validationMedia.split('/').last;
-        final track = Track(
-          id: 'startup-validation:${_validationMedia.hashCode}',
-          title: filename,
-          artist: isRemote ? '远程验证' : '本地验证',
-          albumTitle: '播放验证',
-          duration: Duration.zero,
-          source: isRemote ? SourceKind.webDav : SourceKind.local,
-          mediaUri: _validationMedia,
-          httpHeaders: isRemote ? _validationHeaders : const {},
-        );
-        unawaited(_playback.playTrack(track, queue: [track]));
-        if (_validationSeekMs >= 0) {
-          await Future<void>.delayed(const Duration(seconds: 2));
-          for (var attempt = 0; attempt < 50; attempt++) {
-            if (!mounted || _playback.snapshot.duration > Duration.zero) break;
-            await Future<void>.delayed(const Duration(milliseconds: 100));
-          }
-          if (mounted && _playback.snapshot.duration > Duration.zero) {
-            await _playback.seek(Duration(milliseconds: _validationSeekMs));
-          }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && identical(_playback, playback)) {
+          unawaited(_startValidationPlayback(playback));
         }
       });
+    }
+  }
+
+  void _scheduleSessionSave() {
+    if (_disposed || _sessionStore == null || _playback == null) return;
+    _sessionDirty = true;
+    if (_saveInProgress || _sessionSaveTimer != null) return;
+
+    final lastSave = _lastSessionSaveStartedAt;
+    if (lastSave == null) {
+      unawaited(_flushSession());
+      return;
+    }
+    final elapsed = DateTime.now().difference(lastSave);
+    if (elapsed >= _sessionSaveInterval) {
+      unawaited(_flushSession());
+      return;
+    }
+    _sessionSaveTimer = Timer(
+      _sessionSaveInterval - elapsed,
+      () => unawaited(_flushSession()),
+    );
+  }
+
+  Future<void> _flushSession({bool force = false}) async {
+    _sessionSaveTimer?.cancel();
+    _sessionSaveTimer = null;
+    final store = _sessionStore;
+    final playback = _playback;
+    if (store == null || playback == null || _disposed) return;
+    if (_saveInProgress) {
+      if (force) _forceSaveAfterCurrent = true;
+      return;
+    }
+    if (!_sessionDirty && !force) return;
+
+    _sessionDirty = false;
+    _saveInProgress = true;
+    _lastSessionSaveStartedAt = DateTime.now();
+    final snapshot = playback.sessionSnapshot;
+    try {
+      await _enqueueSnapshot(store, snapshot);
+    } finally {
+      _saveInProgress = false;
+      if (!_disposed) {
+        if (_forceSaveAfterCurrent) {
+          _forceSaveAfterCurrent = false;
+          _sessionDirty = true;
+          unawaited(_flushSession(force: true));
+        } else if (_sessionDirty) {
+          _scheduleSessionSave();
+        }
+      }
+    }
+  }
+
+  Future<void> _enqueueSnapshot(
+    PlaybackSessionStore store,
+    PlaybackSession snapshot,
+  ) {
+    _writeTail = _writeTail.then((_) {
+      return snapshot.queue.isEmpty ? store.clear() : store.save(snapshot);
+    });
+    return _writeTail;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      unawaited(_flushSession(force: true));
+    }
+  }
+
+  Future<void> _startValidationPlayback(
+    SoundPlaybackController playback,
+  ) async {
+    final uri = Uri.tryParse(_validationMedia);
+    final isRemote = uri?.hasScheme == true && uri?.scheme != 'file';
+    final filename = isRemote
+        ? uri!.pathSegments.lastOrNull ?? '验证音频'
+        : _validationMedia.split('/').last;
+    final track = Track(
+      id: 'startup-validation:${_validationMedia.hashCode}',
+      title: filename,
+      artist: isRemote ? '远程验证' : '本地验证',
+      albumTitle: '播放验证',
+      duration: Duration.zero,
+      source: isRemote ? SourceKind.webDav : SourceKind.local,
+      mediaUri: _validationMedia,
+      httpHeaders: isRemote ? _validationHeaders : const {},
+    );
+    await playback.playTrack(track, queue: [track]);
+    if (_validationSeekMs < 0) return;
+
+    await Future<void>.delayed(const Duration(seconds: 2));
+    for (var attempt = 0; attempt < 50; attempt++) {
+      if (!mounted ||
+          !identical(_playback, playback) ||
+          playback.snapshot.duration > Duration.zero) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    if (mounted &&
+        identical(_playback, playback) &&
+        playback.snapshot.duration > Duration.zero) {
+      await playback.seek(Duration(milliseconds: _validationSeekMs));
     }
   }
 
@@ -88,20 +221,41 @@ class _SoundAppState extends State<SoundApp> {
 
   @override
   void dispose() {
-    _playback.dispose();
+    _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    _sessionSaveTimer?.cancel();
+    final playback = _playback;
+    final store = _sessionStore;
+    if (playback != null && store != null) {
+      unawaited(_enqueueSnapshot(store, playback.sessionSnapshot));
+      playback.removeListener(_scheduleSessionSave);
+    }
+    playback?.dispose();
     _engine.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final playback = _playback;
     return MaterialApp(
       title: 'Sound',
       debugShowCheckedModeBanner: false,
       theme: SoundTheme.light,
       darkTheme: SoundTheme.dark,
       themeMode: ThemeMode.dark,
-      home: AppShell(playback: _playback, libraryRepository: widget.repository),
+      home: playback == null
+          ? const _PlaybackBootstrapScreen()
+          : AppShell(playback: playback, libraryRepository: widget.repository),
     );
+  }
+}
+
+class _PlaybackBootstrapScreen extends StatelessWidget {
+  const _PlaybackBootstrapScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

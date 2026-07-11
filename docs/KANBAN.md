@@ -7,30 +7,31 @@
 
 ## 当前焦点
 
-**SND-105 — 补齐本地资料库的队列和传输控制**
+**SND-202 — 在 UI 中区分缓冲、加载、暂停、完成和错误**
 
-资料库和专辑页已改为消费 Repository 中的真实扫描结果，产品代码中的
-演示专辑、假歌词、假 NAS 和假播放列表已删除。下一步在真实曲目上完成
-队列切换、完成态和快速换歌的回归。
+SND-201 代码和测试已完成。下一步将迷你播放器和正在播放页对每个
+引擎状态（缓冲、加载、暂停、完成、错误）提供一致的视觉区分。
 
 ## 进行中
 
 | 编号 | 优先级 | 卡片 | 验收标准 |
 | --- | --- | --- | --- |
-| SND-105 | P0 | 补齐本地资料库纵向链路的队列和传输控制。 | 播放、暂停、seek、上一首、下一首、完成、快速切歌和替换队列均通过控制器测试，且不会出现旧进度。 |
+| SND-202 | P0 | 在 UI 中区分缓冲、加载、暂停、完成和错误。 | 迷你播放器和正在播放页对每个引擎状态表现一致。 |
 
 ## 接下来
 
 | 编号 | 优先级 | 卡片 | 验收标准 | 依赖 |
 | --- | --- | --- | --- | --- |
-| SND-201 | P0 | 持久化队列和上次进度。 | 重启后恢复状态但不自动播放；持久化回调不能覆盖实时引擎状态。 | SND-105 |
+| SND-301 | P0 | 实现 WebDAV 连接存储和发现。 | 连接增删改查、安全凭据、OPTIONS/PROPFIND，以及明确的认证和网络错误。 | SND-202 |
 
 ## 待验证
 
 | 编号 | 已通过 | 待完成 |
 | --- | --- | --- |
+| SND-201 | 23 个 session 测试覆盖安全 JSON 往返、歌词、存取/清理/损坏容错、controller 恢复队列/索引且不加载 engine、恢复后 toggle、先 seek 后 play、resume 一次性消费、index 钳制和持久化隔离；组件测试证明恢复曲目和进度可见但不自动播放、连续播放每 2 秒 checkpoint、进入后台立即 flush。应用先完成 session bootstrap 再创建唯一 controller；原生写 app documents，开发 Web 使用无文件系统内存降级；认证 header 不进入会话文件。 | macOS 真机重启验证：播放中退出 → 重启恢复队列/位置但不自动播放 → 按播放从恢复位置开始；Android ARM64 同条件回归。 |
+| SND-105 | 40 个控制器测试覆盖播放、暂停、seek、上一首（>=4s 重播 + <4s 切歌）、下一首（含循环）、完成自动切歌、重复完成事件去重、队列位置竞态保护、旧 session 完成事件拒绝、真实重叠 load 的 generation 隔离、队列替换、toggle 空闲启动和空队列处理；playTrack 在 queue 不含 track 时退回单曲队列。 | macOS 用真实已扫描目录做队列操作回归（切歌/完成/seek/mini player 状态）；Android ARM64 模拟器同条件回归。 |
 | SND-104 | Repository 记录到界面模型的元数据、封面、媒体 URI 和歌词映射测试通过；资料库的加载、空状态和真实歌曲点击播放组件测试通过；产品 `lib/` 不再包含演示专辑、歌词、NAS 或播放列表。 | Android 和 macOS 用真实已扫描目录回归资料库、专辑详情、封面和点击播放；Windows 与 iPhone/iPad 随 SND-102/103 一起验证。 |
-| SND-102 | Android 16 ARM64：SAF 选择 `Music` 后强制停止并重启，仍恢复为“已授权”；macOS：NSOpenPanel 选择 `Music`、保存 bookmark、退出并重启后恢复为 `available`；iOS/iPadOS Universal target 已接入系统文件夹选择器与 bookmark，Swift 使用 iOS 13 SDK 类型检查通过。 | Windows 主机验证选择/重启/目录失效；安装可用的 iOS Platform 或连接 iPhone/iPad，验证 Files 文件夹选择、退出重启和 bookmark 恢复。 |
+| SND-102 | Android 16 ARM64：SAF 选择 `Music` 后强制停止并重启，仍恢复为”已授权”；macOS：NSOpenPanel 选择 `Music`、保存 bookmark、退出并重启后恢复为 `available`；iOS/iPadOS Universal target 已接入系统文件夹选择器与 bookmark，Swift 使用 iOS 13 SDK 类型检查通过。 | Windows 主机验证选择/重启/目录失效；安装可用的 iOS Platform 或连接 iPhone/iPad，验证 Files 文件夹选择、退出重启和 bookmark 恢复。 |
 | SND-103 | 真实 MP3/FLAC fixture 的标题、艺人、专辑、曲序、时长、封面和歌词解析测试通过；损坏文件会跳过；Android 16 SAF 实测首次索引 2 首，删除 MP3 后重扫原子收敛为 1 首，扫描版本 1 → 2。 | Windows 验证文件系统目录扫描；iPhone/iPad 验证 Files/iCloud 文件夹扫描；macOS 用真实用户目录做最终 UI 回归。 |
 
 ## 阻塞
@@ -45,7 +46,6 @@
 
 | 编号 | 优先级 | 卡片 | 验收摘要 |
 | --- | --- | --- | --- |
-| SND-202 | P0 | 在 UI 中区分缓冲、加载、暂停、完成和错误。 | 迷你播放器和正在播放页对每个引擎状态表现一致。 |
 | SND-301 | P0 | 实现 WebDAV 连接存储和发现。 | 连接增删改查、安全凭据、OPTIONS/PROPFIND，以及明确的认证和网络错误。 |
 | SND-302 | P0 | 将 WebDAV 目录索引到共享资料库。 | 远程歌曲与本地歌曲使用相同领域模型；重扫与来源不可用行为确定。 |
 | SND-303 | P0 | 增加 WebDAV 缓存和无索引 MP3 兜底。 | 缓存有可配置上限且不会无限增长；无法精确远程 seek 时行为明确。 |
