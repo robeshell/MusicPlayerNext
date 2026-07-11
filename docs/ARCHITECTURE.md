@@ -21,7 +21,8 @@ domain
 library
   scanning, metadata, search, SQLite repositories
 playback
-  playback controller, engine contract, MediaKit adapter, position gate
+  playback controller, engine contract, native-platform and MediaKit adapters,
+  position gate
 sources
   local folders and WebDAV
 platform
@@ -35,6 +36,13 @@ contracts, while domain code never imports Flutter widgets or platform APIs.
 
 The playback engine is the only authority for position, duration, buffering,
 and completion.
+
+`JustAudioPlaybackEngine` is the default adapter: it keeps one Dart contract
+while using ExoPlayer on Android, AVPlayer on Apple platforms, and WinRT
+MediaPlayer through `just_audio_windows`. Windows authentication headers are
+forwarded by just_audio's range-preserving loopback proxy because the WinRT
+plugin does not expose custom headers. `MediaKitPlaybackEngine` remains behind
+the same contract for comparison and fallback.
 
 - `PlaybackEngine` exposes a stream of immutable `PlaybackSnapshot` values.
 - `PlaybackController` owns the active queue and translates user intents into
