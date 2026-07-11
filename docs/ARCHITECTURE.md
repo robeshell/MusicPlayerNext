@@ -94,6 +94,26 @@ dart compile js -O4 -o web/drift_worker.dart.js tool/drift_worker.dart
 The `web/sqlite3.wasm` binary must match the `sqlite3` version resolved in
 `pubspec.lock`.
 
+## Local directory access
+
+- `LocalDirectoryAccess` is the platform-independent grant contract. A grant
+  contains a canonical root URI, display name, availability state, and an
+  optional opaque permission token.
+- Android stores the `content://` tree URI returned by the Storage Access
+  Framework and calls `takePersistableUriPermission`. Startup verifies that
+  the read grant is still present and that the tree root is queryable.
+- macOS stores a read-only security-scoped bookmark. Startup resolves the
+  bookmark, refreshes stale bookmark data, and keeps security-scoped access
+  active for the process lifetime.
+- Windows and Linux persist a normalized `file://` directory URI and check the
+  directory on every restore. They do not require an opaque permission token.
+- Application shutdown never revokes a durable grant. Explicitly removing a
+  source releases the Android permission or active macOS access and deletes
+  the repository record.
+- Permission revocation and missing directories are stored as
+  `permissionRequired` and `unavailable` states instead of being treated as
+  empty libraries.
+
 ## Vertical validation before feature development
 
 The architecture is accepted only after the same small scenario works on

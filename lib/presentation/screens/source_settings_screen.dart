@@ -1,14 +1,59 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/sound_theme.dart';
+import '../../library/library_records.dart';
+import '../../sources/local/local_source_service.dart';
 
-class SourceSettingsScreen extends StatelessWidget {
+class SourceSettingsScreen extends StatefulWidget {
   const SourceSettingsScreen({
+    required this.localSources,
     required this.onOpenPlaybackValidation,
     super.key,
   });
 
+  final LocalSourceService localSources;
   final VoidCallback onOpenPlaybackValidation;
+
+  @override
+  State<SourceSettingsScreen> createState() => _SourceSettingsScreenState();
+}
+
+class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
+  bool _addingSource = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.localSources.restoreLocalFolders());
+  }
+
+  Future<void> _addLocalSource() async {
+    if (_addingSource) return;
+    setState(() => _addingSource = true);
+    try {
+      await widget.localSources.addLocalFolder();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('无法添加文件夹：$error')));
+    } finally {
+      if (mounted) setState(() => _addingSource = false);
+    }
+  }
+
+  Future<void> _removeLocalSource(LibrarySourceRecord source) async {
+    try {
+      await widget.localSources.removeLocalFolder(source);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('无法移除文件夹：$error')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,9 +83,14 @@ class SourceSettingsScreen extends StatelessWidget {
               ),
             ),
             FilledButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('添加来源'),
+              onPressed: _addingSource ? null : _addLocalSource,
+              icon: _addingSource
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_rounded),
+              label: const Text('添加本地文件夹'),
               style: FilledButton.styleFrom(
                 backgroundColor: SoundColors.accent,
                 foregroundColor: Colors.white,
@@ -49,13 +99,40 @@ class SourceSettingsScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        const _SourceCard(
-          icon: Icons.folder_rounded,
-          iconColor: SoundColors.local,
-          title: '本机音乐',
-          subtitle: '/Users/you/Music',
-          status: '已索引 248 首歌曲',
-          folders: ['Music', 'Downloads/Hi-Res'],
+        StreamBuilder<List<LibrarySourceRecord>>(
+          stream: widget.localSources.watchLocalSources(),
+          builder: (context, snapshot) {
+            final sources = snapshot.data ?? const [];
+            if (snapshot.hasError) {
+              return _SourceMessage(
+                icon: Icons.error_outline_rounded,
+                message: '无法读取本地来源：${snapshot.error}',
+              );
+            }
+            if (sources.isEmpty) {
+              return const _SourceMessage(
+                icon: Icons.create_new_folder_outlined,
+                message: '尚未添加本地音乐文件夹。',
+              );
+            }
+            return Column(
+              children: [
+                for (var index = 0; index < sources.length; index++) ...[
+                  _SourceCard(
+                    icon: Icons.folder_rounded,
+                    iconColor: SoundColors.local,
+                    title: sources[index].displayName,
+                    subtitle: sources[index].rootUri,
+                    status: _sourceStatus(sources[index]),
+                    statusColor: _sourceStatusColor(sources[index]),
+                    folders: [sources[index].displayName],
+                    onRemove: () => _removeLocalSource(sources[index]),
+                  ),
+                  if (index != sources.length - 1) const SizedBox(height: 14),
+                ],
+              ],
+            );
+          },
         ),
         const SizedBox(height: 14),
         const _SourceCard(
@@ -70,11 +147,62 @@ class SourceSettingsScreen extends StatelessWidget {
         const _FirstReleaseNote(),
         const SizedBox(height: 14),
         OutlinedButton.icon(
-          onPressed: onOpenPlaybackValidation,
+          onPressed: widget.onOpenPlaybackValidation,
           icon: const Icon(Icons.science_outlined),
           label: const Text('打开播放验证工具'),
         ),
       ],
+    );
+  }
+
+  String _sourceStatus(LibrarySourceRecord source) {
+    return switch (source.status) {
+      LibrarySourceStatus.idle => '等待扫描',
+      LibrarySourceStatus.scanning => '正在扫描',
+      LibrarySourceStatus.available => '已授权 · 等待扫描',
+      LibrarySourceStatus.permissionRequired => '需要重新授权',
+      LibrarySourceStatus.unavailable => '文件夹不可用',
+      LibrarySourceStatus.error => source.lastError ?? '来源错误',
+    };
+  }
+
+  Color _sourceStatusColor(LibrarySourceRecord source) {
+    return switch (source.status) {
+      LibrarySourceStatus.idle ||
+      LibrarySourceStatus.scanning ||
+      LibrarySourceStatus.available => SoundColors.local,
+      LibrarySourceStatus.permissionRequired => Colors.orangeAccent,
+      LibrarySourceStatus.unavailable ||
+      LibrarySourceStatus.error => Colors.redAccent,
+    };
+  }
+}
+
+class _SourceMessage extends StatelessWidget {
+  const _SourceMessage({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white54),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(message, style: const TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -87,6 +215,8 @@ class _SourceCard extends StatelessWidget {
     required this.subtitle,
     required this.status,
     required this.folders,
+    this.statusColor = SoundColors.local,
+    this.onRemove,
   });
 
   final IconData icon;
@@ -95,6 +225,8 @@ class _SourceCard extends StatelessWidget {
   final String subtitle;
   final String status;
   final List<String> folders;
+  final Color statusColor;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +279,7 @@ class _SourceCard extends StatelessWidget {
                     ),
                   ),
                   if (!compact) ...[
-                    const _OnlineDot(),
+                    _StatusDot(color: statusColor),
                     const SizedBox(width: 7),
                     Text(
                       status,
@@ -159,8 +291,13 @@ class _SourceCard extends StatelessWidget {
                     const SizedBox(width: 8),
                   ],
                   IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.more_horiz_rounded),
+                    onPressed: onRemove,
+                    tooltip: onRemove == null ? null : '移除此来源',
+                    icon: Icon(
+                      onRemove == null
+                          ? Icons.more_horiz_rounded
+                          : Icons.delete_outline_rounded,
+                    ),
                   ),
                 ],
               ),
@@ -169,7 +306,7 @@ class _SourceCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 12),
                   child: Row(
                     children: [
-                      const _OnlineDot(),
+                      _StatusDot(color: statusColor),
                       const SizedBox(width: 7),
                       Expanded(
                         child: Text(
@@ -218,18 +355,17 @@ class _SourceCard extends StatelessWidget {
   }
 }
 
-class _OnlineDot extends StatelessWidget {
-  const _OnlineDot();
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.color});
+
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 8,
       height: 8,
-      decoration: const BoxDecoration(
-        color: SoundColors.local,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }

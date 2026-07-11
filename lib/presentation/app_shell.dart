@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/sound_theme.dart';
 import '../domain/library_models.dart';
+import '../library/library_repository.dart';
+import '../library/persistence/drift_library_repository.dart';
 import '../playback/playback_controller.dart';
+import '../sources/local/local_directory_access_factory.dart';
+import '../sources/local/local_source_service.dart';
 import 'screens/album_detail_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/now_playing_screen.dart';
@@ -27,6 +33,15 @@ class _AppShellState extends State<AppShell> {
   AppSection _section = AppSection.library;
   Album? _selectedAlbum;
   bool _showPlaybackValidation = false;
+  LibraryRepository? _libraryRepository;
+  LocalSourceService? _localSourceService;
+
+  LocalSourceService get _sources {
+    return _localSourceService ??= LocalSourceService(
+      repository: _libraryRepository ??= DriftLibraryRepository.defaults(),
+      directoryAccess: createLocalDirectoryAccess(),
+    );
+  }
 
   void _selectSection(AppSection section) {
     setState(() {
@@ -73,6 +88,7 @@ class _AppShellState extends State<AppShell> {
                 ),
                 AppSection.search => const _SearchPlaceholder(),
                 AppSection.sources => SourceSettingsScreen(
+                  localSources: _sources,
                   onOpenPlaybackValidation: () =>
                       setState(() => _showPlaybackValidation = true),
                 ),
@@ -144,6 +160,15 @@ class _AppShellState extends State<AppShell> {
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    final repository = _libraryRepository;
+    if (repository != null) {
+      unawaited(repository.close());
+    }
+    super.dispose();
   }
 }
 
