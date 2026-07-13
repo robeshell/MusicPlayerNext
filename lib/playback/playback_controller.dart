@@ -37,6 +37,8 @@ class SoundPlaybackController extends ChangeNotifier {
   String? _resumeTrackId;
   Track? _fallbackTrack;
   int? _completionHandledSession;
+  int? _lastStartedSession;
+  String? _lastStartedTrackId;
   bool _disposed = false;
 
   // ---------------------------------------------------------------------------
@@ -56,6 +58,10 @@ class SoundPlaybackController extends ChangeNotifier {
   int get queueIndex => _queueIndex;
   PlaybackMode get playbackMode => _playbackMode;
   Stream<Track> get trackStarted => _trackStartedController.stream;
+  bool get supportsGaplessTransitions => switch (_engine) {
+    PlaylistPlaybackEngine engine => engine.supportsGaplessTransitions,
+    _ => false,
+  };
 
   bool get isPlaying => _snapshot.isPlaying;
   bool get hasActiveTrack => _snapshot.hasTrack;
@@ -106,7 +112,16 @@ class SoundPlaybackController extends ChangeNotifier {
     final pendingSeek = _resumeTrackId == track.id ? _resumePosition : null;
     final sessionId = ++_sessionGeneration;
     _completionHandledSession = null;
-    await _engine.load(track, sessionId: sessionId);
+    if (_engine case PlaylistPlaybackEngine engine) {
+      await engine.loadQueue(
+        _queue,
+        initialIndex: _queueIndex,
+        sessionId: sessionId,
+        loopMode: _queueLoopMode,
+      );
+    } else {
+      await _engine.load(track, sessionId: sessionId);
+    }
     if (_disposed || sessionId != _sessionGeneration) return;
     if (pendingSeek != null && pendingSeek > Duration.zero) {
       await _engine.seek(pendingSeek);
@@ -115,7 +130,6 @@ class SoundPlaybackController extends ChangeNotifier {
     }
     await _engine.play();
     if (_disposed || sessionId != _sessionGeneration) return;
-    _trackStartedController.add(track);
     notifyListeners();
   }
 
@@ -169,7 +183,9 @@ class SoundPlaybackController extends ChangeNotifier {
     _playbackMode = mode;
     if (mode == PlaybackMode.shuffle && _queue.length > 1) {
       _shuffleQueueKeepingCurrent(displayTrack?.id);
+      _syncPlaylistQueue();
     }
+    _syncPlaylistLoopMode();
     notifyListeners();
   }
 
@@ -215,6 +231,7 @@ class SoundPlaybackController extends ChangeNotifier {
     } else if (_queue.length == 1) {
       _queueIndex = 0;
     }
+    _syncPlaylistQueue();
     notifyListeners();
   }
 
@@ -229,6 +246,7 @@ class SoundPlaybackController extends ChangeNotifier {
     if (currentId != null) {
       _queueIndex = _queue.indexWhere((candidate) => candidate.id == currentId);
     }
+    _syncPlaylistQueue();
     notifyListeners();
   }
 
@@ -258,6 +276,7 @@ class SoundPlaybackController extends ChangeNotifier {
       } else {
         _queueIndex = _queueIndex.clamp(0, _queue.length - 1);
       }
+      _syncPlaylistQueue();
       notifyListeners();
       return;
     }
@@ -306,7 +325,22 @@ class SoundPlaybackController extends ChangeNotifier {
 
   void _acceptEngineSnapshot(PlaybackSnapshot next) {
     if (next.sessionId != 0 && next.sessionId != _sessionGeneration) return;
+    final nextTrack = next.track;
+    if (nextTrack != null && _queue.isNotEmpty) {
+      final index = _queue.indexWhere((track) => track.id == nextTrack.id);
+      if (index < 0) return;
+      _queueIndex = index;
+      _fallbackTrack = nextTrack;
+    }
     _snapshot = next;
+    if (nextTrack != null &&
+        next.isPlaying &&
+        (_lastStartedSession != next.sessionId ||
+            _lastStartedTrackId != nextTrack.id)) {
+      _lastStartedSession = next.sessionId;
+      _lastStartedTrackId = nextTrack.id;
+      _trackStartedController.add(nextTrack);
+    }
     notifyListeners();
 
     if (next.phase == PlaybackPhase.completed &&
@@ -367,6 +401,44 @@ class SoundPlaybackController extends ChangeNotifier {
       }
     }
     await playTrack(_queue[_queueIndex]);
+  }
+
+  PlaybackQueueLoopMode get _queueLoopMode => switch (_playbackMode) {
+    PlaybackMode.repeatAll => PlaybackQueueLoopMode.all,
+    PlaybackMode.repeatOne => PlaybackQueueLoopMode.one,
+    PlaybackMode.sequential ||
+    PlaybackMode.shuffle => PlaybackQueueLoopMode.off,
+  };
+
+  void _syncPlaylistLoopMode() {
+    if (_engine case PlaylistPlaybackEngine engine) {
+      unawaited(
+        engine.setQueueLoopMode(_queueLoopMode).catchError((Object error) {
+          _reportPlaylistError(error, 'while changing the queue loop mode');
+        }),
+      );
+    }
+  }
+
+  void _syncPlaylistQueue() {
+    if (_engine case PlaylistPlaybackEngine engine
+        when _snapshot.track != null) {
+      unawaited(
+        engine.updateQueue(_queue).catchError((Object error) {
+          _reportPlaylistError(error, 'while synchronizing the playback queue');
+        }),
+      );
+    }
+  }
+
+  void _reportPlaylistError(Object error, String context) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        library: 'sound playback',
+        context: ErrorDescription(context),
+      ),
+    );
   }
 
   void _shuffleQueueKeepingCurrent(String? currentId) {

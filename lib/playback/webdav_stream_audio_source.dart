@@ -13,6 +13,7 @@ class WebDavStreamAudioSource extends StreamAudioSource {
     required this.uri,
     required this.headers,
     required this.allowBadCertificate,
+    super.tag,
   });
 
   final Uri uri;

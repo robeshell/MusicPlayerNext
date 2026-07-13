@@ -15,7 +15,7 @@ import 'webdav_stream_audio_source.dart';
 ///
 /// It deliberately exposes the same immutable snapshot contract as the
 /// playback contract so the UI and coordinator remain engine-agnostic.
-class JustAudioPlaybackEngine implements PlaybackEngine {
+class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
   static const _traceEnabled = bool.fromEnvironment('SOUND_PLAYBACK_TRACE');
   static const _validationMuted = bool.fromEnvironment(
     'SOUND_VALIDATION_MUTED',
@@ -39,8 +39,7 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
         : Future<void>.value();
     _subscriptions.addAll([
       _player.positionStream.listen(_onPosition),
-      _player.durationStream.listen(_onDuration),
-      _player.playerStateStream.listen(_onPlayerState),
+      _player.playerEventStream.listen(_onPlayerEvent),
       _player.errorStream.listen(_onError),
     ]);
   }
@@ -67,6 +66,8 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
   final NativePositionGate _positionGate = NativePositionGate();
 
   PlaybackSnapshot _current = const PlaybackSnapshot.idle();
+  List<Track> _queue = const [];
+  List<bool> _queueCacheMisses = const [];
   Track? _track;
   int _sessionId = 0;
   Duration _position = Duration.zero;
@@ -77,6 +78,10 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
   bool _disposed = false;
   PlaybackPhase? _lastTracedPhase;
   int? _lastTracedSecond;
+  Future<void> _queueMutation = Future<void>.value();
+
+  @override
+  bool get supportsGaplessTransitions => !kIsWeb;
 
   @override
   PlaybackSnapshot get current => _current;
@@ -85,8 +90,27 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
   Stream<PlaybackSnapshot> get snapshots => _snapshots.stream;
 
   @override
-  Future<void> load(Track track, {required int sessionId}) async {
+  Future<void> load(Track track, {required int sessionId}) => loadQueue(
+    [track],
+    initialIndex: 0,
+    sessionId: sessionId,
+    loopMode: PlaybackQueueLoopMode.off,
+  );
+
+  @override
+  Future<void> loadQueue(
+    List<Track> tracks, {
+    required int initialIndex,
+    required int sessionId,
+    required PlaybackQueueLoopMode loopMode,
+  }) async {
+    if (tracks.isEmpty || initialIndex < 0 || initialIndex >= tracks.length) {
+      throw ArgumentError('The playback queue and initial index are invalid.');
+    }
+    final track = tracks[initialIndex];
     _sessionId = sessionId;
+    _queue = List.of(tracks);
+    _queueCacheMisses = List<bool>.filled(tracks.length, false);
     _track = track;
     _position = Duration.zero;
     _duration = track.duration;
@@ -96,8 +120,7 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
     _loading = true;
     _publish(PlaybackPhase.loading);
 
-    final resource = track.mediaUri?.trim();
-    if (resource == null || resource.isEmpty) {
+    if (track.mediaUri?.trim().isEmpty ?? true) {
       _loading = false;
       _publish(PlaybackPhase.error, errorMessage: '这首歌曲没有可播放的媒体地址。');
       return;
@@ -106,71 +129,19 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
     final operationSession = sessionId;
     try {
       await _configuration;
-      final uri = Uri.tryParse(resource);
-      final isRemote =
-          uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
-      final Duration? loadedDuration;
-      if (isRemote) {
-        var headers = track.httpHeaders;
-        String? bestKey;
-        if (track.source == SourceKind.webDav && webDavAuthHeaders.isNotEmpty) {
-          for (final key in webDavAuthHeaders.keys) {
-            if (_isWithinWebDavBase(resource, key)) {
-              if (bestKey == null || key.length > bestKey.length) {
-                bestKey = key;
-              }
-            }
-          }
-          if (bestKey != null) {
-            headers = webDavAuthHeaders[bestKey]!;
-          }
-        }
-        final allowBadCertificate =
-            bestKey != null && webDavAllowBadCertificateUrls.contains(bestKey);
-
-        // Cache hit: play local. Cache miss: stream via URL, download
-        // in background so subsequent plays are instant.
-        final cache = webDavCache;
-        String? cachedPath;
-        if (cache != null && track.source == SourceKind.webDav) {
-          cachedPath = await cache.get(resource);
-        }
-        if (cachedPath != null) {
-          loadedDuration = await _player.setFilePath(cachedPath);
-        } else if (!kIsWeb &&
-            track.source == SourceKind.webDav &&
-            allowBadCertificate) {
-          loadedDuration = await _player.setAudioSource(
-            WebDavStreamAudioSource(
-              uri: uri,
-              headers: headers,
-              allowBadCertificate: true,
-            ),
-          );
-          _scheduleCacheDownload(
-            cache,
-            resource,
-            headers,
-            allowBadCertificate: true,
-          );
-        } else {
-          loadedDuration = await _player.setUrl(resource, headers: headers);
-          _scheduleCacheDownload(
-            cache,
-            track.source == SourceKind.webDav ? resource : null,
-            headers,
-            allowBadCertificate: allowBadCertificate,
-          );
-        }
-      } else if (uri != null && uri.scheme.isNotEmpty && uri.scheme != 'file') {
-        loadedDuration = await _player.setAudioSource(
-          just_audio.AudioSource.uri(uri),
-        );
-      } else {
-        loadedDuration = await _player.setFilePath(
-          uri?.scheme == 'file' ? uri!.toFilePath() : resource,
-        );
+      final prepared = <_PreparedAudioSource>[];
+      for (final item in tracks) {
+        prepared.add(await _prepareAudioSource(item));
+        if (_disposed || operationSession != _sessionId) return;
       }
+      _queueCacheMisses = [for (final item in prepared) item.shouldCache];
+      await _player.setLoopMode(_justAudioLoopMode(loopMode));
+      if (_disposed || operationSession != _sessionId) return;
+      final loadedDuration = await _player.setAudioSources(
+        [for (final item in prepared) item.source],
+        initialIndex: initialIndex,
+        initialPosition: Duration.zero,
+      );
       if (_disposed || operationSession != _sessionId) return;
       _position = _positionGate.normalize(
         _player.position,
@@ -185,6 +156,7 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
       _processingState = _player.processingState;
       _playing = _player.playing;
       _loading = false;
+      _scheduleCurrentTrackCacheDownload();
       _publish(PlaybackPhase.ready);
     } catch (error) {
       if (_disposed || operationSession != _sessionId) return;
@@ -192,6 +164,140 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
       _publish(PlaybackPhase.error, errorMessage: _readableError(error));
     }
   }
+
+  @override
+  Future<void> setQueueLoopMode(PlaybackQueueLoopMode loopMode) async {
+    try {
+      await _player.setLoopMode(_justAudioLoopMode(loopMode));
+    } catch (error) {
+      if (_track != null) {
+        _publish(PlaybackPhase.error, errorMessage: _readableError(error));
+      }
+    }
+  }
+
+  @override
+  Future<void> updateQueue(List<Track> tracks) {
+    final operationSession = _sessionId;
+    final operation = _queueMutation.then((_) async {
+      if (_disposed ||
+          operationSession != _sessionId ||
+          tracks.isEmpty ||
+          _track == null) {
+        return;
+      }
+      await _reconcileQueue(tracks, operationSession: operationSession);
+    });
+    _queueMutation = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
+  }
+
+  Future<_PreparedAudioSource> _prepareAudioSource(Track track) async {
+    final resource = track.mediaUri?.trim();
+    if (resource == null || resource.isEmpty) {
+      return _PreparedAudioSource(
+        just_audio.AudioSource.uri(
+          Uri(scheme: 'sound-unavailable', path: track.id),
+          tag: track.id,
+        ),
+        shouldCache: false,
+      );
+    }
+
+    final uri = Uri.tryParse(resource);
+    final isRemote =
+        uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+    if (isRemote) {
+      final remote = _remoteAccessFor(track, resource);
+      final cache = webDavCache;
+      final cachedPath = cache != null && track.source == SourceKind.webDav
+          ? await cache.get(resource)
+          : null;
+      if (cachedPath != null) {
+        return _PreparedAudioSource(
+          just_audio.AudioSource.file(cachedPath, tag: track.id),
+          shouldCache: false,
+        );
+      }
+      if (!kIsWeb &&
+          track.source == SourceKind.webDav &&
+          remote.allowBadCertificate) {
+        return _PreparedAudioSource(
+          WebDavStreamAudioSource(
+            uri: uri,
+            headers: remote.headers,
+            allowBadCertificate: true,
+            tag: track.id,
+          ),
+          shouldCache: cache != null,
+        );
+      }
+      return _PreparedAudioSource(
+        just_audio.AudioSource.uri(uri, headers: remote.headers, tag: track.id),
+        shouldCache: cache != null && track.source == SourceKind.webDav,
+      );
+    }
+
+    if (uri != null && uri.scheme.isNotEmpty && uri.scheme != 'file') {
+      return _PreparedAudioSource(
+        just_audio.AudioSource.uri(uri, tag: track.id),
+        shouldCache: false,
+      );
+    }
+    return _PreparedAudioSource(
+      just_audio.AudioSource.file(
+        uri?.scheme == 'file' ? uri!.toFilePath() : resource,
+        tag: track.id,
+      ),
+      shouldCache: false,
+    );
+  }
+
+  Future<void> _reconcileQueue(
+    List<Track> desired, {
+    required int operationSession,
+  }) async {
+    for (var index = 0; index < desired.length; index++) {
+      if (_disposed || operationSession != _sessionId) return;
+      if (index < _queue.length && _queue[index].id == desired[index].id) {
+        continue;
+      }
+      final existingIndex = _queue.indexWhere(
+        (track) => track.id == desired[index].id,
+        index + 1,
+      );
+      if (existingIndex >= 0) {
+        await _player.moveAudioSource(existingIndex, index);
+        final movedTrack = _queue.removeAt(existingIndex);
+        final movedCacheState = _queueCacheMisses.removeAt(existingIndex);
+        _queue.insert(index, movedTrack);
+        _queueCacheMisses.insert(index, movedCacheState);
+      } else {
+        final prepared = await _prepareAudioSource(desired[index]);
+        if (_disposed || operationSession != _sessionId) return;
+        await _player.insertAudioSource(index, prepared.source);
+        _queue.insert(index, desired[index]);
+        _queueCacheMisses.insert(index, prepared.shouldCache);
+      }
+    }
+    while (_queue.length > desired.length) {
+      if (_disposed || operationSession != _sessionId) return;
+      final index = _queue.length - 1;
+      await _player.removeAudioSourceAt(index);
+      _queue.removeAt(index);
+      _queueCacheMisses.removeAt(index);
+    }
+  }
+
+  just_audio.LoopMode _justAudioLoopMode(PlaybackQueueLoopMode mode) =>
+      switch (mode) {
+        PlaybackQueueLoopMode.off => just_audio.LoopMode.off,
+        PlaybackQueueLoopMode.one => just_audio.LoopMode.one,
+        PlaybackQueueLoopMode.all => just_audio.LoopMode.all,
+      };
 
   @override
   Future<void> play() {
@@ -205,10 +311,14 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
   }
 
   Future<void> _playSafely() async {
+    final operationSession = _sessionId;
+    final operationTrackId = _track?.id;
     try {
       await _player.play();
     } catch (error) {
-      if (_track != null) {
+      if (_track != null &&
+          operationSession == _sessionId &&
+          operationTrackId == _track?.id) {
         _publish(PlaybackPhase.error, errorMessage: _readableError(error));
       }
     }
@@ -217,22 +327,28 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
   @override
   Future<void> pause() async {
     if (_track == null) return;
+    final operationSession = _sessionId;
     try {
       await _player.pause();
     } catch (error) {
-      _publish(PlaybackPhase.error, errorMessage: _readableError(error));
+      if (operationSession == _sessionId) {
+        _publish(PlaybackPhase.error, errorMessage: _readableError(error));
+      }
     }
   }
 
   @override
   Future<void> seek(Duration position) async {
     if (_track == null || _duration == Duration.zero) return;
+    final operationSession = _sessionId;
     final clamped = _positionGate.beginSeek(position, duration: _duration);
     try {
       await _player.seek(clamped);
     } catch (error) {
-      _positionGate.cancelSeek();
-      _publish(PlaybackPhase.error, errorMessage: _readableError(error));
+      if (operationSession == _sessionId) {
+        _positionGate.cancelSeek();
+        _publish(PlaybackPhase.error, errorMessage: _readableError(error));
+      }
     }
   }
 
@@ -242,6 +358,8 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
       await _player.stop();
     } finally {
       _track = null;
+      _queue = const [];
+      _queueCacheMisses = const [];
       _sessionId = 0;
       _position = Duration.zero;
       _duration = Duration.zero;
@@ -261,20 +379,39 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
     _publish(_resolvedPhase);
   }
 
-  void _onDuration(Duration? value) {
-    if (_track == null || value == null || value <= Duration.zero) return;
-    _duration = value;
-    if (!_loading) _publish(_resolvedPhase);
-  }
-
-  void _onPlayerState(just_audio.PlayerState value) {
+  void _onPlayerEvent(just_audio.PlayerEvent value) {
+    final event = value.playbackEvent;
+    final index = event.currentIndex;
+    final sourceTrackId =
+        index != null &&
+            index >= 0 &&
+            index < _player.sequence.length &&
+            _player.sequence[index].tag is String
+        ? _player.sequence[index].tag as String
+        : null;
+    final queueIndex = sourceTrackId == null
+        ? -1
+        : _queue.indexWhere((track) => track.id == sourceTrackId);
+    final changedTrack = queueIndex >= 0 && _queue[queueIndex].id != _track?.id;
+    if (changedTrack) {
+      _track = _queue[queueIndex];
+      _duration = _track!.duration;
+      _position = _positionGate.beginSeek(
+        event.updatePosition,
+        duration: _duration,
+      );
+    }
+    if (event.duration case final duration? when duration > Duration.zero) {
+      _duration = duration;
+    }
     _playing = value.playing;
-    _processingState = value.processingState;
+    _processingState = event.processingState;
+    if (changedTrack) _scheduleCurrentTrackCacheDownload();
     if (_track != null && !_loading) _publish(_resolvedPhase);
   }
 
   void _onError(just_audio.PlayerException error) {
-    if (_track == null) return;
+    if (_track == null || _loading) return;
     final message = error.message?.trim();
     _publish(
       PlaybackPhase.error,
@@ -322,6 +459,8 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
         'SOUND_PLAYBACK at=${DateTime.now().toIso8601String()} '
         'engine=just_audio '
         'session=${snapshot.sessionId} '
+        'track=${snapshot.track?.id ?? '-'} '
+        'queueIndex=${_player.currentIndex ?? -1} '
         'phase=${snapshot.phase.name} '
         'positionMs=${snapshot.position.inMilliseconds} '
         'durationMs=${snapshot.duration.inMilliseconds}'
@@ -336,6 +475,46 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
   String _readableError(Object error) {
     final message = error.toString().trim();
     return message.isEmpty ? '播放引擎发生未知错误。' : message;
+  }
+
+  _RemoteAccess _remoteAccessFor(Track track, String resource) {
+    var headers = track.httpHeaders;
+    String? bestKey;
+    if (track.source == SourceKind.webDav && webDavAuthHeaders.isNotEmpty) {
+      for (final key in webDavAuthHeaders.keys) {
+        if (_isWithinWebDavBase(resource, key) &&
+            (bestKey == null || key.length > bestKey.length)) {
+          bestKey = key;
+        }
+      }
+      if (bestKey != null) headers = webDavAuthHeaders[bestKey]!;
+    }
+    return _RemoteAccess(
+      headers: headers,
+      allowBadCertificate:
+          bestKey != null && webDavAllowBadCertificateUrls.contains(bestKey),
+    );
+  }
+
+  void _scheduleCurrentTrackCacheDownload() {
+    final track = _track;
+    if (track == null || track.source != SourceKind.webDav) return;
+    final index = _queue.indexWhere((candidate) => candidate.id == track.id);
+    if (index < 0 ||
+        index >= _queueCacheMisses.length ||
+        !_queueCacheMisses[index]) {
+      return;
+    }
+    _queueCacheMisses[index] = false;
+    final resource = track.mediaUri?.trim();
+    if (resource == null || resource.isEmpty) return;
+    final remote = _remoteAccessFor(track, resource);
+    _scheduleCacheDownload(
+      webDavCache,
+      resource,
+      remote.headers,
+      allowBadCertificate: remote.allowBadCertificate,
+    );
   }
 
   bool _isWithinWebDavBase(String resource, String base) {
@@ -398,4 +577,21 @@ class JustAudioPlaybackEngine implements PlaybackEngine {
     unawaited(_player.dispose());
     unawaited(_snapshots.close());
   }
+}
+
+class _PreparedAudioSource {
+  const _PreparedAudioSource(this.source, {required this.shouldCache});
+
+  final just_audio.AudioSource source;
+  final bool shouldCache;
+}
+
+class _RemoteAccess {
+  const _RemoteAccess({
+    required this.headers,
+    required this.allowBadCertificate,
+  });
+
+  final Map<String, String> headers;
+  final bool allowBadCertificate;
 }

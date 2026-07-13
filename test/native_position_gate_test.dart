@@ -63,4 +63,19 @@ void main() {
       const Duration(seconds: 31),
     );
   });
+
+  test('rejects the previous track position at a playlist boundary', () {
+    final gate = NativePositionGate();
+    gate.beginSeek(Duration.zero, duration: duration);
+
+    expect(
+      gate.accept(const Duration(minutes: 3, seconds: 59), duration: duration),
+      isNull,
+    );
+    expect(gate.accept(Duration.zero, duration: duration), Duration.zero);
+    expect(
+      gate.accept(const Duration(milliseconds: 250), duration: duration),
+      const Duration(milliseconds: 250),
+    );
+  });
 }

@@ -75,3 +75,25 @@ abstract interface class PlaybackEngine {
   Future<void> stop();
   void dispose();
 }
+
+enum PlaybackQueueLoopMode { off, one, all }
+
+/// Optional capability for engines that can keep the complete queue loaded.
+///
+/// Engines without this interface continue to use controller-driven
+/// load/play transitions. Playlist-capable engines may transition natively and
+/// therefore avoid the audible unload/reload boundary between songs.
+abstract interface class PlaylistPlaybackEngine implements PlaybackEngine {
+  bool get supportsGaplessTransitions;
+
+  Future<void> loadQueue(
+    List<Track> tracks, {
+    required int initialIndex,
+    required int sessionId,
+    required PlaybackQueueLoopMode loopMode,
+  });
+
+  Future<void> updateQueue(List<Track> tracks);
+
+  Future<void> setQueueLoopMode(PlaybackQueueLoopMode loopMode);
+}

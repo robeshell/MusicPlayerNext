@@ -6,6 +6,22 @@ measurements below are recorded.
 
 ## Evidence recorded so far
 
+On 2026-07-14, SND-204 moved production playback from per-song reloads to a
+native just_audio playlist. A repeatable macOS run used two four-second FLAC
+segments derived from real local music. The first source advanced naturally
+from queue index 0 to index 1 in the same engine session; the second source was
+published at 0 ms, no intermediate `completed` snapshot was emitted for the
+first source, and playback reached 795 ms without reloading the queue. The
+validation entry point is `tool/validate_playlist_transition.dart` and accepts
+the two sandbox-readable paths through `SOUND_VALIDATION_TRACK_ONE` and
+`SOUND_VALIDATION_TRACK_TWO` dart defines.
+
+just_audio playlists provide native gapless transitions on Android, iOS,
+macOS, Windows, and Linux. Web uses the same automatic playlist transition but
+is deliberately reported by the engine as non-gapless. Queue reordering,
+insertion, removal, repeat-one, repeat-all, sequential play, and shuffle-cycle
+fallback remain synchronized with the native playlist.
+
 Final `just_audio` regression after removing MediaKit, recorded on 2026-07-11
 with playback muted but native decoding, buffering, duration, position, and
 range requests active:
@@ -72,11 +88,15 @@ previous SliverGrid assertion.
       macOS and Android.
 - [x] Authenticated WebDAV MP3 settles the recorded remote seek by requesting a
       non-zero byte range with the default just_audio adapter.
-- [ ] Play, pause, next, previous, and completion transitions are correct.
+- [x] Play, pause, next, previous, and completion transitions are protected by
+      session and track identity; native playlist advancement does not emit a
+      duplicate completion or reload the next song.
 - [ ] Dragging previews time locally and sends one seek when released.
 - [x] Engine position settles without regression in recorded local MP3/FLAC
       and remote FLAC runs.
-- [ ] Rapid track changes never show progress from the previous track.
+- [x] Rapid manual changes reject old sessions, and native playlist boundaries
+      hold the new track at its initial position until the native position
+      stream confirms it; both paths have automated regressions.
 - [ ] Buffering is visually different from paused playback.
 - [ ] Android continues playback with the screen off.
 - [ ] Android notification controls and metadata stay synchronized.

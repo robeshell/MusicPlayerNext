@@ -609,6 +609,84 @@ void main() {
     });
   });
 
+  group('native playlist transitions', () {
+    test('loads the complete queue and reports gapless capability', () async {
+      final engine = ManualPlaylistPlaybackEngine();
+      final controller = SoundPlaybackController(engine: engine);
+      addTearDown(controller.dispose);
+      addTearDown(engine.dispose);
+
+      await controller.playTrack(
+        _secondTrack,
+        queue: [_firstTrack, _secondTrack, _thirdTrack],
+      );
+
+      expect(controller.supportsGaplessTransitions, isTrue);
+      expect(engine.loadedQueue, [_firstTrack, _secondTrack, _thirdTrack]);
+      expect(engine.loadedInitialIndex, 1);
+      expect(engine.loadQueueCalls, 1);
+      expect(engine.loopMode, PlaybackQueueLoopMode.all);
+    });
+
+    test('native track changes advance without reloading the queue', () async {
+      final engine = ManualPlaylistPlaybackEngine();
+      final controller = SoundPlaybackController(engine: engine);
+      final started = <Track>[];
+      final subscription = controller.trackStarted.listen(started.add);
+      addTearDown(subscription.cancel);
+      addTearDown(controller.dispose);
+      addTearDown(engine.dispose);
+
+      await controller.playTrack(
+        _firstTrack,
+        queue: [_firstTrack, _secondTrack, _thirdTrack],
+      );
+      engine.emitNativeTransition(1);
+
+      expect(controller.currentTrack, same(_secondTrack));
+      expect(controller.queueIndex, 1);
+      expect(controller.snapshot.position, Duration.zero);
+      expect(controller.isPlaying, isTrue);
+      expect(engine.loadQueueCalls, 1);
+      expect(started, [_firstTrack, _secondTrack]);
+    });
+
+    test('queue edits stay synchronized with the native playlist', () async {
+      final engine = ManualPlaylistPlaybackEngine();
+      final controller = SoundPlaybackController(engine: engine);
+      addTearDown(controller.dispose);
+      addTearDown(engine.dispose);
+
+      await controller.playTrack(
+        _firstTrack,
+        queue: [_firstTrack, _secondTrack, _thirdTrack],
+      );
+      controller.playNext(_thirdTrack);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(engine.updatedQueue, [_firstTrack, _thirdTrack, _secondTrack]);
+    });
+
+    test('repeat controls are delegated to the native playlist', () async {
+      final engine = ManualPlaylistPlaybackEngine();
+      final controller = SoundPlaybackController(engine: engine);
+      addTearDown(controller.dispose);
+      addTearDown(engine.dispose);
+      await controller.playTrack(
+        _firstTrack,
+        queue: [_firstTrack, _secondTrack],
+      );
+
+      controller.setPlaybackMode(PlaybackMode.repeatOne);
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.loopMode, PlaybackQueueLoopMode.one);
+
+      controller.setPlaybackMode(PlaybackMode.sequential);
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.loopMode, PlaybackQueueLoopMode.off);
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // Queue replacement
   // ---------------------------------------------------------------------------
@@ -1264,6 +1342,57 @@ class DelayedLoadPlaybackEngine implements PlaybackEngine {
       if (!load.ready.isCompleted) load.ready.complete();
     }
     _controller.close();
+  }
+}
+
+class ManualPlaylistPlaybackEngine extends ManualPlaybackEngine
+    implements PlaylistPlaybackEngine {
+  List<Track> loadedQueue = const [];
+  List<Track> updatedQueue = const [];
+  int loadedInitialIndex = 0;
+  int loadQueueCalls = 0;
+  PlaybackQueueLoopMode loopMode = PlaybackQueueLoopMode.off;
+
+  @override
+  bool get supportsGaplessTransitions => true;
+
+  @override
+  Future<void> loadQueue(
+    List<Track> tracks, {
+    required int initialIndex,
+    required int sessionId,
+    required PlaybackQueueLoopMode loopMode,
+  }) async {
+    loadedQueue = List.of(tracks);
+    loadedInitialIndex = initialIndex;
+    loadQueueCalls++;
+    this.loopMode = loopMode;
+    await load(tracks[initialIndex], sessionId: sessionId);
+  }
+
+  @override
+  Future<void> updateQueue(List<Track> tracks) async {
+    updatedQueue = List.of(tracks);
+    loadedQueue = List.of(tracks);
+  }
+
+  @override
+  Future<void> setQueueLoopMode(PlaybackQueueLoopMode loopMode) async {
+    this.loopMode = loopMode;
+  }
+
+  void emitNativeTransition(int index) {
+    final track = loadedQueue[index];
+    emit(
+      PlaybackSnapshot(
+        sessionId: current.sessionId,
+        phase: PlaybackPhase.playing,
+        position: Duration.zero,
+        duration: track.duration,
+        track: track,
+        playWhenReady: true,
+      ),
+    );
   }
 }
 
