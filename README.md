@@ -20,6 +20,10 @@ from explicit platform-independent contracts.
 - Production navigation exposes real albums, artists, genres, songs,
   favorites, recent plays, full playback history, and editable playlists
   without demo screens.
+- Desktop navigation supports visible keyboard focus, Tab/arrow/Enter
+  traversal, Space and media-key playback, previous/next shortcuts, direct
+  library/search/settings shortcuts, Esc back/close behavior, and a built-in
+  shortcut reference. Playback shortcuts are isolated from text input.
 - `PlaybackEngine` snapshots are the sole authority for playback position.
 - Playback session generations reject callbacks from previously loaded tracks.
 - Queue and position sessions are checkpointed during playback and flushed on
@@ -68,8 +72,9 @@ flutter run -d macos
 ```
 
 Open Settings to add a local folder or WebDAV source, scan it, and play from
-the real library screens. Use `flutter devices` to find Android targets.
-Windows builds must be produced on Windows.
+the real library screens. On desktop, open the keyboard reference from the
+sidebar or with `Command/Ctrl + /`. Use `flutter devices` to find Android
+targets. Windows builds must be produced on Windows.
 
 ## Verify
 

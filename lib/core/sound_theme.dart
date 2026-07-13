@@ -12,6 +12,21 @@ abstract final class SoundColors {
 }
 
 abstract final class SoundTheme {
+  static final _focusSide = WidgetStateProperty.resolveWith<BorderSide?>(
+    (states) => states.contains(WidgetState.focused)
+        ? const BorderSide(color: SoundColors.accent, width: 2)
+        : null,
+  );
+
+  static final _focusOverlay = WidgetStateProperty.resolveWith<Color?>(
+    (states) => states.contains(WidgetState.focused)
+        ? SoundColors.accent.withValues(alpha: 0.22)
+        : null,
+  );
+
+  static ButtonStyle get _focusButtonStyle =>
+      ButtonStyle(side: _focusSide, overlayColor: _focusOverlay);
+
   static ThemeData get dark {
     final scheme = ColorScheme.fromSeed(
       seedColor: SoundColors.accent,
@@ -27,8 +42,18 @@ abstract final class SoundTheme {
       ),
       scaffoldBackgroundColor: SoundColors.darkCanvas,
       fontFamily: '.SF Pro Text',
+      focusColor: SoundColors.accent.withValues(alpha: 0.28),
       dividerColor: Colors.white.withValues(alpha: 0.08),
       splashFactory: InkSparkle.splashFactory,
+      iconButtonTheme: IconButtonThemeData(style: _focusButtonStyle),
+      filledButtonTheme: FilledButtonThemeData(style: _focusButtonStyle),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: _focusButtonStyle),
+      textButtonTheme: TextButtonThemeData(style: _focusButtonStyle),
+      inputDecorationTheme: const InputDecorationTheme(
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: SoundColors.accent, width: 2),
+        ),
+      ),
     );
   }
 
@@ -44,6 +69,16 @@ abstract final class SoundTheme {
       colorScheme: scheme.copyWith(primary: SoundColors.accent),
       scaffoldBackgroundColor: SoundColors.lightCanvas,
       fontFamily: '.SF Pro Text',
+      focusColor: SoundColors.accent.withValues(alpha: 0.2),
+      iconButtonTheme: IconButtonThemeData(style: _focusButtonStyle),
+      filledButtonTheme: FilledButtonThemeData(style: _focusButtonStyle),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: _focusButtonStyle),
+      textButtonTheme: TextButtonThemeData(style: _focusButtonStyle),
+      inputDecorationTheme: const InputDecorationTheme(
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: SoundColors.accent, width: 2),
+        ),
+      ),
     );
   }
 }

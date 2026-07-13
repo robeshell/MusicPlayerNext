@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
@@ -23,97 +24,112 @@ class NowPlayingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([playback, ?userState]),
-      builder: (context, _) {
-        final track = playback.displayTrack;
-        if (track == null) return const _NoTrackPlaying();
-        final album = albumForTrack(track);
-        final snapshot = playback.snapshot;
-        final visual = PlaybackVisualState.fromSnapshot(
-          snapshot,
-          hasDisplayTrack: true,
-        );
-        return Scaffold(
-          backgroundColor: album.palette.last,
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(-0.7, -0.55),
-                    radius: 1.3,
-                    colors: [
-                      album.palette.first.withValues(alpha: 0.82),
-                      album.palette.last,
-                    ],
+    return Focus(
+      autofocus: true,
+      skipTraversal: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape &&
+            Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedBuilder(
+        animation: Listenable.merge([playback, ?userState]),
+        builder: (context, _) {
+          final track = playback.displayTrack;
+          if (track == null) return const _NoTrackPlaying();
+          final album = albumForTrack(track);
+          final snapshot = playback.snapshot;
+          final visual = PlaybackVisualState.fromSnapshot(
+            snapshot,
+            hasDisplayTrack: true,
+          );
+          return Scaffold(
+            backgroundColor: album.palette.last,
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(-0.7, -0.55),
+                      radius: 1.3,
+                      colors: [
+                        album.palette.first.withValues(alpha: 0.82),
+                        album.palette.last,
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 34, sigmaY: 34),
-                child: ColoredBox(color: Colors.black.withValues(alpha: 0.2)),
-              ),
-              SafeArea(
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
+                BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 34, sigmaY: 34),
+                  child: ColoredBox(color: Colors.black.withValues(alpha: 0.2)),
+                ),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton.filledTonal(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                              ),
+                            ),
+                            const Spacer(),
+                            PlaybackStatusBadge(state: visual),
+                            const Spacer(),
+                            IconButton.filledTonal(
+                              onPressed: () =>
+                                  showPlaybackQueueSheet(context, playback),
+                              tooltip: '播放队列',
+                              icon: const Icon(Icons.queue_music_rounded),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          IconButton.filledTonal(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                          ),
-                          const Spacer(),
-                          PlaybackStatusBadge(state: visual),
-                          const Spacer(),
-                          IconButton.filledTonal(
-                            onPressed: () =>
-                                showPlaybackQueueSheet(context, playback),
-                            tooltip: '播放队列',
-                            icon: const Icon(Icons.queue_music_rounded),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final compact = constraints.maxWidth < 780;
-                          if (compact) {
-                            return _CompactNowPlaying(
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final compact = constraints.maxWidth < 780;
+                            if (compact) {
+                              return _CompactNowPlaying(
+                                album: album,
+                                track: track,
+                                playback: playback,
+                                userState: userState,
+                              );
+                            }
+                            return _WideNowPlaying(
                               album: album,
                               track: track,
                               playback: playback,
                               userState: userState,
                             );
-                          }
-                          return _WideNowPlaying(
-                            album: album,
-                            track: track,
-                            playback: playback,
-                            userState: userState,
-                          );
-                        },
+                          },
+                        ),
                       ),
-                    ),
-                    if (snapshot.errorMessage case final message?)
-                      _PlaybackErrorBanner(
-                        message: message,
-                        onRetry: playback.toggle,
-                      ),
-                  ],
+                      if (snapshot.errorMessage case final message?)
+                        _PlaybackErrorBanner(
+                          message: message,
+                          onRetry: playback.toggle,
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

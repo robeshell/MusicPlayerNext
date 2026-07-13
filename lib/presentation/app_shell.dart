@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/sound_theme.dart';
 import '../domain/library_models.dart';
@@ -51,6 +52,8 @@ class _AppShellState extends State<AppShell> {
   late final LibraryCatalogController _libraryCatalog;
   late final LibrarySearchController _librarySearch;
   late final LibraryUserStateController _libraryUserState;
+  late final FocusNode _keyboardFocusNode;
+  late final FocusNode _searchFocusNode;
   late final WebDavConnectionService _webDavService;
   late final StreamSubscription<List<WebDavConnectionRecord>>
   _webDavConnectionSubscription;
@@ -66,6 +69,13 @@ class _AppShellState extends State<AppShell> {
         widget.libraryRepository ?? DriftLibraryRepository.defaults();
     _libraryCatalog = LibraryCatalogController(repository: _libraryRepository);
     _librarySearch = LibrarySearchController(catalog: _libraryCatalog);
+    _keyboardFocusNode = FocusNode(
+      debugLabel: 'Sound application keyboard shortcuts',
+    );
+    _searchFocusNode = FocusNode(
+      debugLabel: 'Library search',
+      onKeyEvent: _handleSearchFocusKeyEvent,
+    );
     _libraryUserState = LibraryUserStateController(
       repository: _libraryRepository,
       catalog: _libraryCatalog,
@@ -220,145 +230,300 @@ class _AppShellState extends State<AppShell> {
     showPlaybackQueueSheet(context, widget.playback);
   }
 
+  KeyEventResult _handleKeyboardEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    final keyboard = HardwareKeyboard.instance;
+    final primaryModifier = keyboard.isMetaPressed || keyboard.isControlPressed;
+
+    if (primaryModifier && key == LogicalKeyboardKey.keyF) {
+      _openSearchFromKeyboard();
+      return KeyEventResult.handled;
+    }
+    if (primaryModifier && key == LogicalKeyboardKey.digit1) {
+      _selectLibraryMode(_libraryBrowseMode);
+      _restoreApplicationFocus();
+      return KeyEventResult.handled;
+    }
+    if (primaryModifier && key == LogicalKeyboardKey.digit2) {
+      _openSearchFromKeyboard();
+      return KeyEventResult.handled;
+    }
+    if (primaryModifier && key == LogicalKeyboardKey.digit3) {
+      _selectSection(AppSection.sources);
+      _restoreApplicationFocus();
+      return KeyEventResult.handled;
+    }
+    if (primaryModifier && key == LogicalKeyboardKey.slash) {
+      _showKeyboardShortcuts();
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.escape) {
+      if (_isTextInputFocused && _section == AppSection.search) {
+        if (_librarySearch.query.isNotEmpty) {
+          _librarySearch.clear();
+        } else {
+          FocusManager.instance.primaryFocus?.unfocus();
+          _navigateBackWithKeyboard();
+        }
+        return KeyEventResult.handled;
+      }
+      return _navigateBackWithKeyboard()
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
+
+    if (key == LogicalKeyboardKey.mediaPlayPause) {
+      unawaited(widget.playback.toggle());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.mediaTrackNext) {
+      unawaited(widget.playback.next());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.mediaTrackPrevious) {
+      unawaited(widget.playback.previous());
+      return KeyEventResult.handled;
+    }
+
+    if (_isTextInputFocused) return KeyEventResult.ignored;
+    if (key == LogicalKeyboardKey.space) {
+      unawaited(widget.playback.toggle());
+      return KeyEventResult.handled;
+    }
+    if (primaryModifier && key == LogicalKeyboardKey.arrowRight) {
+      unawaited(widget.playback.next());
+      return KeyEventResult.handled;
+    }
+    if (primaryModifier && key == LogicalKeyboardKey.arrowLeft) {
+      unawaited(widget.playback.previous());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  KeyEventResult _handleSearchFocusKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return KeyEventResult.ignored;
+    }
+    if (_librarySearch.query.isNotEmpty) {
+      _librarySearch.clear();
+    } else {
+      node.unfocus();
+      _navigateBackWithKeyboard();
+    }
+    return KeyEventResult.handled;
+  }
+
+  bool get _isTextInputFocused {
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext == null) return false;
+    return focusContext.widget is EditableText ||
+        focusContext.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
+  void _openSearchFromKeyboard() {
+    _selectSection(AppSection.search);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _restoreApplicationFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _keyboardFocusNode.requestFocus();
+    });
+  }
+
+  bool _navigateBackWithKeyboard() {
+    if (_selectedAlbum != null) {
+      setState(() => _selectedAlbum = null);
+      return true;
+    }
+    if (_selectedCollection != null) {
+      setState(() => _selectedCollection = null);
+      return true;
+    }
+    if (_selectedPlaylistId != null) {
+      setState(() => _selectedPlaylistId = null);
+      return true;
+    }
+    if (_libraryUserMode != null) {
+      _selectLibraryMode(_libraryBrowseMode);
+      _restoreApplicationFocus();
+      return true;
+    }
+    if (_section != AppSection.library) {
+      _selectLibraryMode(_libraryBrowseMode);
+      _restoreApplicationFocus();
+      return true;
+    }
+    return false;
+  }
+
+  void _showKeyboardShortcuts() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => const _KeyboardShortcutDialog(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Android can briefly report a zero-sized surface while attaching a
-        // cold-started Flutter view. Sliver grids require positive extents,
-        // so wait for the first usable viewport instead of laying out content.
-        if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-          return const SizedBox.shrink();
-        }
-        // A landscape phone can exceed the desktop width breakpoint while
-        // remaining far too short for the full sidebar. Require enough
-        // vertical room as well so iPhone landscape keeps mobile navigation.
-        final desktop =
-            constraints.maxWidth >= 820 && constraints.maxHeight >= 600;
-        final content = _selectedAlbum != null
-            ? AlbumDetailScreen(
-                album: _selectedAlbum!,
-                playback: widget.playback,
-                userState: _libraryUserState,
-                onBack: () => setState(() => _selectedAlbum = null),
-              )
-            : _selectedCollection != null
-            ? LibraryCollectionScreen(
-                collection: _selectedCollection!,
-                playback: widget.playback,
-                userState: _libraryUserState,
-                onBack: () => setState(() => _selectedCollection = null),
-                onOpenAlbum: _openAlbum,
-              )
-            : switch (_section) {
-                AppSection.library =>
-                  _libraryUserMode == null
-                      ? LibraryScreen(
-                          catalog: _libraryCatalog,
-                          userState: _libraryUserState,
-                          mode: _libraryBrowseMode,
-                          onModeChanged: _selectLibraryMode,
-                          onOpenAlbum: _openAlbum,
-                          onOpenCollection: _openCollection,
-                          onPlayTrack: (track, queue) => unawaited(
-                            widget.playback.playTrack(track, queue: queue),
-                          ),
-                          onOpenUserMode: _selectLibraryUserMode,
-                          onManageSources: () =>
-                              _selectSection(AppSection.sources),
-                        )
-                      : LibraryUserScreen(
-                          mode: _libraryUserMode!,
-                          catalog: _libraryCatalog,
-                          userState: _libraryUserState,
-                          playback: widget.playback,
-                          onModeChanged: _selectLibraryUserMode,
-                          onBack: () => _selectLibraryMode(_libraryBrowseMode),
-                          onOpenAlbum: _openAlbum,
-                          selectedPlaylistId: _selectedPlaylistId,
-                          onSelectedPlaylistChanged: (playlistId) =>
-                              setState(() => _selectedPlaylistId = playlistId),
-                        ),
-                AppSection.search => SearchScreen(
-                  catalog: _libraryCatalog,
-                  search: _librarySearch,
-                  playback: widget.playback,
-                  userState: _libraryUserState,
-                  onOpenAlbum: _openAlbum,
-                ),
-                AppSection.sources => SourceSettingsScreen(
-                  localSources: _sources,
-                  scanner: _scanner,
-                  webDavService: _webDavService,
-                ),
-              };
-
-        return Scaffold(
-          body: Stack(
-            children: [
-              Positioned.fill(
-                child: desktop
-                    ? Row(
-                        children: [
-                          SizedBox(
-                            width: 236,
-                            child: _Sidebar(
-                              selection: _section,
-                              libraryMode: _libraryBrowseMode,
-                              userMode: _libraryUserMode,
-                              onSelect: _selectSection,
-                              onSelectLibraryMode: _selectLibraryMode,
-                              onSelectUserMode: _selectLibraryUserMode,
+    return Focus(
+      focusNode: _keyboardFocusNode,
+      autofocus: true,
+      skipTraversal: true,
+      onKeyEvent: _handleKeyboardEvent,
+      child: FocusTraversalGroup(
+        policy: ReadingOrderTraversalPolicy(),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Android can briefly report a zero-sized surface while attaching a
+            // cold-started Flutter view. Sliver grids require positive extents,
+            // so wait for the first usable viewport instead of laying out content.
+            if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+              return const SizedBox.shrink();
+            }
+            // A landscape phone can exceed the desktop width breakpoint while
+            // remaining far too short for the full sidebar. Require enough
+            // vertical room as well so iPhone landscape keeps mobile navigation.
+            final desktop =
+                constraints.maxWidth >= 820 && constraints.maxHeight >= 600;
+            final content = _selectedAlbum != null
+                ? AlbumDetailScreen(
+                    album: _selectedAlbum!,
+                    playback: widget.playback,
+                    userState: _libraryUserState,
+                    onBack: () => setState(() => _selectedAlbum = null),
+                  )
+                : _selectedCollection != null
+                ? LibraryCollectionScreen(
+                    collection: _selectedCollection!,
+                    playback: widget.playback,
+                    userState: _libraryUserState,
+                    onBack: () => setState(() => _selectedCollection = null),
+                    onOpenAlbum: _openAlbum,
+                  )
+                : switch (_section) {
+                    AppSection.library =>
+                      _libraryUserMode == null
+                          ? LibraryScreen(
+                              catalog: _libraryCatalog,
+                              userState: _libraryUserState,
+                              mode: _libraryBrowseMode,
+                              onModeChanged: _selectLibraryMode,
+                              onOpenAlbum: _openAlbum,
+                              onOpenCollection: _openCollection,
+                              onPlayTrack: (track, queue) => unawaited(
+                                widget.playback.playTrack(track, queue: queue),
+                              ),
+                              onOpenUserMode: _selectLibraryUserMode,
+                              onManageSources: () =>
+                                  _selectSection(AppSection.sources),
+                            )
+                          : LibraryUserScreen(
+                              mode: _libraryUserMode!,
+                              catalog: _libraryCatalog,
+                              userState: _libraryUserState,
+                              playback: widget.playback,
+                              onModeChanged: _selectLibraryUserMode,
+                              onBack: () =>
+                                  _selectLibraryMode(_libraryBrowseMode),
+                              onOpenAlbum: _openAlbum,
+                              selectedPlaylistId: _selectedPlaylistId,
+                              onSelectedPlaylistChanged: (playlistId) =>
+                                  setState(
+                                    () => _selectedPlaylistId = playlistId,
+                                  ),
                             ),
-                          ),
-                          VerticalDivider(
-                            width: 1,
-                            color: Colors.white.withValues(alpha: 0.06),
-                          ),
-                          Expanded(child: content),
-                        ],
-                      )
-                    : content,
+                    AppSection.search => SearchScreen(
+                      catalog: _libraryCatalog,
+                      search: _librarySearch,
+                      playback: widget.playback,
+                      userState: _libraryUserState,
+                      onOpenAlbum: _openAlbum,
+                      focusNode: _searchFocusNode,
+                    ),
+                    AppSection.sources => SourceSettingsScreen(
+                      localSources: _sources,
+                      scanner: _scanner,
+                      webDavService: _webDavService,
+                    ),
+                  };
+
+            return Scaffold(
+              body: Stack(
+                children: [
+                  Positioned.fill(
+                    child: desktop
+                        ? Row(
+                            children: [
+                              SizedBox(
+                                width: 236,
+                                child: _Sidebar(
+                                  selection: _section,
+                                  libraryMode: _libraryBrowseMode,
+                                  userMode: _libraryUserMode,
+                                  onSelect: _selectSection,
+                                  onSelectLibraryMode: _selectLibraryMode,
+                                  onSelectUserMode: _selectLibraryUserMode,
+                                  onShowKeyboardShortcuts:
+                                      _showKeyboardShortcuts,
+                                ),
+                              ),
+                              VerticalDivider(
+                                width: 1,
+                                color: Colors.white.withValues(alpha: 0.06),
+                              ),
+                              Expanded(child: content),
+                            ],
+                          )
+                        : content,
+                  ),
+                  Positioned(
+                    left: desktop ? 258 : 10,
+                    right: desktop ? 22 : 10,
+                    bottom: desktop ? 18 : _compactMiniPlayerBottomGap,
+                    child: MiniPlayer(
+                      playback: widget.playback,
+                      userState: _libraryUserState,
+                      compact: !desktop,
+                      onOpen: _openNowPlaying,
+                      onOpenQueue: _openQueue,
+                    ),
+                  ),
+                ],
               ),
-              Positioned(
-                left: desktop ? 258 : 10,
-                right: desktop ? 22 : 10,
-                bottom: desktop ? 18 : _compactMiniPlayerBottomGap,
-                child: MiniPlayer(
-                  playback: widget.playback,
-                  userState: _libraryUserState,
-                  compact: !desktop,
-                  onOpen: _openNowPlaying,
-                  onOpenQueue: _openQueue,
-                ),
-              ),
-            ],
-          ),
-          bottomNavigationBar: desktop
-              ? null
-              : NavigationBar(
-                  selectedIndex: _section.index,
-                  onDestinationSelected: (index) =>
-                      _selectSection(AppSection.values[index]),
-                  destinations: const [
-                    NavigationDestination(
-                      icon: Icon(Icons.library_music_outlined),
-                      selectedIcon: Icon(Icons.library_music_rounded),
-                      label: '资料库',
+              bottomNavigationBar: desktop
+                  ? null
+                  : NavigationBar(
+                      selectedIndex: _section.index,
+                      onDestinationSelected: (index) =>
+                          _selectSection(AppSection.values[index]),
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.library_music_outlined),
+                          selectedIcon: Icon(Icons.library_music_rounded),
+                          label: '资料库',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.search_rounded),
+                          label: '搜索',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.settings_outlined),
+                          selectedIcon: Icon(Icons.settings_rounded),
+                          label: '设置',
+                        ),
+                      ],
                     ),
-                    NavigationDestination(
-                      icon: Icon(Icons.search_rounded),
-                      label: '搜索',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings_rounded),
-                      label: '设置',
-                    ),
-                  ],
-                ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -368,6 +533,8 @@ class _AppShellState extends State<AppShell> {
     unawaited(_trackStartedSubscription.cancel());
     _libraryCatalog.removeListener(_syncLibrarySelection);
     _librarySearch.dispose();
+    _keyboardFocusNode.dispose();
+    _searchFocusNode.dispose();
     _libraryUserState.dispose();
     _libraryCatalog.dispose();
     if (_ownsLibraryRepository) unawaited(_libraryRepository.close());
@@ -383,6 +550,7 @@ class _Sidebar extends StatelessWidget {
     required this.onSelect,
     required this.onSelectLibraryMode,
     required this.onSelectUserMode,
+    required this.onShowKeyboardShortcuts,
   });
 
   final AppSection selection;
@@ -391,6 +559,7 @@ class _Sidebar extends StatelessWidget {
   final ValueChanged<AppSection> onSelect;
   final ValueChanged<LibraryBrowseMode> onSelectLibraryMode;
   final ValueChanged<LibraryUserBrowseMode> onSelectUserMode;
+  final VoidCallback onShowKeyboardShortcuts;
 
   @override
   Widget build(BuildContext context) {
@@ -445,6 +614,11 @@ class _Sidebar extends StatelessWidget {
                       ),
                   ],
                 ),
+              ),
+              _SidebarRow(
+                label: '快捷键',
+                icon: Icons.keyboard_alt_outlined,
+                onTap: onShowKeyboardShortcuts,
               ),
               _SidebarRow(
                 label: '设置',
@@ -517,6 +691,78 @@ class _SidebarRow extends StatelessWidget {
         ),
         onTap: onTap,
       ),
+    );
+  }
+}
+
+class _KeyboardShortcutDialog extends StatelessWidget {
+  const _KeyboardShortcutDialog();
+
+  static const _shortcuts = <(String, String)>[
+    ('空格', '播放或暂停'),
+    ('⌘/Ctrl + ← / →', '上一首或下一首'),
+    ('媒体播放键', '播放、暂停和切歌'),
+    ('⌘/Ctrl + F', '打开搜索并聚焦输入框'),
+    ('⌘/Ctrl + 1', '打开资料库'),
+    ('⌘/Ctrl + 2', '打开搜索'),
+    ('⌘/Ctrl + 3', '打开设置'),
+    ('Tab / Shift + Tab', '向前或向后移动焦点'),
+    ('方向键', '在相邻控件和列表项间移动'),
+    ('Enter / 空格', '执行当前焦点操作'),
+    ('Esc', '返回、关闭或清除搜索'),
+    ('⌘/Ctrl + /', '显示此快捷键列表'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.keyboard_alt_outlined),
+          SizedBox(width: 10),
+          Text('键盘快捷键'),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Table(
+            columnWidths: const {
+              0: IntrinsicColumnWidth(),
+              1: FlexColumnWidth(),
+            },
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            children: [
+              for (final (shortcut, description) in _shortcuts)
+                TableRow(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 7, 22, 7),
+                      child: Text(
+                        shortcut,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      child: Text(
+                        description,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          autofocus: true,
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('完成'),
+        ),
+      ],
     );
   }
 }

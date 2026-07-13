@@ -19,6 +19,7 @@ class SearchScreen extends StatefulWidget {
     required this.playback,
     this.userState,
     required this.onOpenAlbum,
+    this.focusNode,
     super.key,
   });
 
@@ -27,6 +28,7 @@ class SearchScreen extends StatefulWidget {
   final SoundPlaybackController playback;
   final LibraryUserStateController? userState;
   final ValueChanged<Album> onOpenAlbum;
+  final FocusNode? focusNode;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -39,19 +41,30 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     _queryController = TextEditingController(text: widget.search.query);
+    widget.search.addListener(_syncQueryFromSearch);
   }
 
   @override
   void didUpdateWidget(covariant SearchScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.search != widget.search &&
-        _queryController.text != widget.search.query) {
-      _queryController.text = widget.search.query;
+    if (oldWidget.search != widget.search) {
+      oldWidget.search.removeListener(_syncQueryFromSearch);
+      widget.search.addListener(_syncQueryFromSearch);
+      _syncQueryFromSearch();
     }
+  }
+
+  void _syncQueryFromSearch() {
+    if (_queryController.text == widget.search.query) return;
+    _queryController.value = TextEditingValue(
+      text: widget.search.query,
+      selection: TextSelection.collapsed(offset: widget.search.query.length),
+    );
   }
 
   @override
   void dispose() {
+    widget.search.removeListener(_syncQueryFromSearch);
     _queryController.dispose();
     super.dispose();
   }
@@ -220,6 +233,7 @@ class _SearchScreenState extends State<SearchScreen> {
         TextField(
           key: const ValueKey('library-search-field'),
           controller: _queryController,
+          focusNode: widget.focusNode,
           autofocus: false,
           textInputAction: TextInputAction.search,
           onChanged: widget.search.setQuery,
@@ -238,6 +252,10 @@ class _SearchScreenState extends State<SearchScreen> {
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: SoundColors.accent, width: 2),
             ),
           ),
         ),
