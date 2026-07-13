@@ -34,7 +34,11 @@ void main() {
           home: Scaffold(
             body: LibraryScreen(
               catalog: catalog,
+              mode: LibraryBrowseMode.songs,
+              onModeChanged: (_) {},
               onOpenAlbum: (_) {},
+              onOpenCollection: (_) {},
+              onPlayTrack: (_, _) {},
               onManageSources: () {},
             ),
           ),

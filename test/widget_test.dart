@@ -36,15 +36,10 @@ void main() {
     expect(find.text('Sound'), findsOneWidget);
     expect(find.text('资料库'), findsWidgets);
     expect(find.text('Test Album'), findsWidgets);
-    expect(find.text('Test Track'), findsOneWidget);
+    expect(find.text('Test Track'), findsNothing);
     expect(find.text('范特西'), findsNothing);
 
-    final libraryTrack = find.ancestor(
-      of: find.text('Test Track'),
-      matching: find.byType(ListTile),
-    );
-    await tester.ensureVisible(libraryTrack);
-    await tester.tap(libraryTrack);
+    await tester.tap(find.text('Test Album').first);
     await tester.pumpAndSettle();
     expect(find.textContaining('1 首歌'), findsOneWidget);
 
@@ -59,6 +54,57 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    await _unmountAndFlush(tester);
+  });
+
+  testWidgets('browses real artists and genres without debug tools', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithAlbum();
+    addTearDown(repository.close);
+
+    await tester.pumpWidget(
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: PlaybackSessionStore.memory(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('播放验证（Debug）'), findsNothing);
+    await tester.tap(find.text('艺人').first);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('library-collection-artist:test artist')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Test Artist'), findsWidgets);
+    expect(find.text('1 张专辑 · 1 首歌曲'), findsOneWidget);
+    expect(find.text('播放全部'), findsOneWidget);
+    expect(find.text('Test Track'), findsOneWidget);
+    await tester.tap(find.text('播放全部'));
+    await tester.pump();
+    expect(find.text('Test Track'), findsNWidgets(2));
+
+    await tester.tap(find.text('流派').first);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('library-collection-genre:test')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Test'), findsWidgets);
+    expect(find.text('Test Track'), findsNWidgets(2));
+
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
     await _unmountAndFlush(tester);
   });
@@ -139,12 +185,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final libraryTrack = find.ancestor(
-      of: find.text('Test Track'),
-      matching: find.byType(ListTile),
-    );
-    await tester.ensureVisible(libraryTrack);
-    await tester.tap(libraryTrack);
+    await tester.tap(find.text('Test Album').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Test Track'));
     await tester.pump(const Duration(seconds: 3));

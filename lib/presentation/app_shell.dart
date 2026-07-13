@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/sound_theme.dart';
@@ -16,9 +15,9 @@ import '../sources/webdav/webdav_connection_service.dart';
 import 'controllers/library_catalog_controller.dart';
 import 'controllers/library_search_controller.dart';
 import 'screens/album_detail_screen.dart';
+import 'screens/library_collection_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/now_playing_screen.dart';
-import 'screens/playback_validation_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/source_settings_screen.dart';
 import 'widgets/mini_player.dart';
@@ -40,8 +39,9 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   AppSection _section = AppSection.library;
+  LibraryBrowseMode _libraryBrowseMode = LibraryBrowseMode.albums;
   Album? _selectedAlbum;
-  bool _showPlaybackValidation = false;
+  LibraryCollection? _selectedCollection;
   late final LibraryRepository _libraryRepository;
   late final bool _ownsLibraryRepository;
   late final LibraryCatalogController _libraryCatalog;
@@ -72,16 +72,37 @@ class _AppShellState extends State<AppShell> {
     });
     unawaited(_refreshWebDavAuthHeaders());
     // Keep the selected album in sync when the catalog refreshes its objects.
-    _libraryCatalog.addListener(_syncSelectedAlbum);
+    _libraryCatalog.addListener(_syncLibrarySelection);
   }
 
-  void _syncSelectedAlbum() {
-    if (_selectedAlbum == null) return;
-    final fresh = _libraryCatalog.albums
-        .where((a) => a.id == _selectedAlbum!.id)
-        .firstOrNull;
-    if (fresh != null && !identical(fresh, _selectedAlbum)) {
-      setState(() => _selectedAlbum = fresh);
+  void _syncLibrarySelection() {
+    final selectedAlbum = _selectedAlbum;
+    final selectedCollection = _selectedCollection;
+    final freshAlbum = selectedAlbum == null
+        ? null
+        : _libraryCatalog.albums
+              .where((album) => album.id == selectedAlbum.id)
+              .firstOrNull;
+    final freshCollection = selectedCollection == null
+        ? null
+        : switch (selectedCollection.kind) {
+            LibraryCollectionKind.artist => buildArtistCollections(
+              _libraryCatalog.albums,
+            ),
+            LibraryCollectionKind.genre => buildGenreCollections(
+              _libraryCatalog.albums,
+            ),
+          }.where((item) => item.id == selectedCollection.id).firstOrNull;
+    final albumChanged =
+        selectedAlbum != null && !identical(freshAlbum, selectedAlbum);
+    final collectionChanged =
+        selectedCollection != null &&
+        !identical(freshCollection, selectedCollection);
+    if (albumChanged || collectionChanged) {
+      setState(() {
+        if (albumChanged) _selectedAlbum = freshAlbum;
+        if (collectionChanged) _selectedCollection = freshCollection;
+      });
     }
   }
 
@@ -125,7 +146,16 @@ class _AppShellState extends State<AppShell> {
     setState(() {
       _section = section;
       _selectedAlbum = null;
-      _showPlaybackValidation = false;
+      _selectedCollection = null;
+    });
+  }
+
+  void _selectLibraryMode(LibraryBrowseMode mode) {
+    setState(() {
+      _section = AppSection.library;
+      _libraryBrowseMode = mode;
+      _selectedAlbum = null;
+      _selectedCollection = null;
     });
   }
 
@@ -145,6 +175,13 @@ class _AppShellState extends State<AppShell> {
               .where((candidate) => candidate.id == album.id)
               .firstOrNull ??
           album;
+    });
+  }
+
+  void _openCollection(LibraryCollection collection) {
+    setState(() {
+      _selectedAlbum = null;
+      _selectedCollection = collection;
     });
   }
 
@@ -168,21 +205,28 @@ class _AppShellState extends State<AppShell> {
         // vertical room as well so iPhone landscape keeps mobile navigation.
         final desktop =
             constraints.maxWidth >= 820 && constraints.maxHeight >= 600;
-        final content = _showPlaybackValidation
-            ? PlaybackValidationScreen(
-                playback: widget.playback,
-                onBack: () => setState(() => _showPlaybackValidation = false),
-              )
-            : _selectedAlbum != null
+        final content = _selectedAlbum != null
             ? AlbumDetailScreen(
                 album: _selectedAlbum!,
                 playback: widget.playback,
                 onBack: () => setState(() => _selectedAlbum = null),
               )
+            : _selectedCollection != null
+            ? LibraryCollectionScreen(
+                collection: _selectedCollection!,
+                playback: widget.playback,
+                onBack: () => setState(() => _selectedCollection = null),
+                onOpenAlbum: _openAlbum,
+              )
             : switch (_section) {
                 AppSection.library => LibraryScreen(
                   catalog: _libraryCatalog,
+                  mode: _libraryBrowseMode,
+                  onModeChanged: _selectLibraryMode,
                   onOpenAlbum: _openAlbum,
+                  onOpenCollection: _openCollection,
+                  onPlayTrack: (track, queue) =>
+                      unawaited(widget.playback.playTrack(track, queue: queue)),
                   onManageSources: () => _selectSection(AppSection.sources),
                 ),
                 AppSection.search => SearchScreen(
@@ -195,8 +239,6 @@ class _AppShellState extends State<AppShell> {
                   localSources: _sources,
                   scanner: _scanner,
                   webDavService: _webDavService,
-                  onOpenPlaybackValidation: () =>
-                      setState(() => _showPlaybackValidation = true),
                 ),
               };
 
@@ -211,12 +253,9 @@ class _AppShellState extends State<AppShell> {
                             width: 236,
                             child: _Sidebar(
                               selection: _section,
+                              libraryMode: _libraryBrowseMode,
                               onSelect: _selectSection,
-                              onOpenPlaybackValidation: () => setState(() {
-                                _section = AppSection.sources;
-                                _selectedAlbum = null;
-                                _showPlaybackValidation = true;
-                              }),
+                              onSelectLibraryMode: _selectLibraryMode,
                             ),
                           ),
                           VerticalDivider(
@@ -272,7 +311,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     unawaited(_webDavConnectionSubscription.cancel());
-    _libraryCatalog.removeListener(_syncSelectedAlbum);
+    _libraryCatalog.removeListener(_syncLibrarySelection);
     _librarySearch.dispose();
     _libraryCatalog.dispose();
     if (_ownsLibraryRepository) unawaited(_libraryRepository.close());
@@ -283,13 +322,15 @@ class _AppShellState extends State<AppShell> {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.selection,
+    required this.libraryMode,
     required this.onSelect,
-    required this.onOpenPlaybackValidation,
+    required this.onSelectLibraryMode,
   });
 
   final AppSection selection;
+  final LibraryBrowseMode libraryMode;
   final ValueChanged<AppSection> onSelect;
-  final VoidCallback onOpenPlaybackValidation;
+  final ValueChanged<LibraryBrowseMode> onSelectLibraryMode;
 
   @override
   Widget build(BuildContext context) {
@@ -318,47 +359,16 @@ class _Sidebar extends StatelessWidget {
                 active: selection == AppSection.search,
                 onTap: () => onSelect(AppSection.search),
               ),
-              _SidebarRow(
-                label: '正在收听',
-                icon: Icons.music_note_rounded,
-                accent: true,
-                onTap: () => onSelect(AppSection.library),
-              ),
               const _SidebarHeading('资料库'),
-              _SidebarRow(
-                label: '最近添加',
-                icon: Icons.access_time_rounded,
-                active: selection == AppSection.library,
-                onTap: () => onSelect(AppSection.library),
-              ),
-              _SidebarRow(
-                label: '专辑',
-                icon: Icons.album_outlined,
-                onTap: () => onSelect(AppSection.library),
-              ),
-              _SidebarRow(
-                label: '歌曲',
-                icon: Icons.music_note_outlined,
-                onTap: () => onSelect(AppSection.library),
-              ),
-              _SidebarRow(
-                label: '艺人',
-                icon: Icons.person_outline_rounded,
-                onTap: () => onSelect(AppSection.library),
-              ),
-              _SidebarRow(
-                label: '流派',
-                icon: Icons.grid_view_rounded,
-                onTap: () => onSelect(AppSection.library),
-              ),
-              const Spacer(),
-              if (kDebugMode)
+              for (final mode in LibraryBrowseMode.values)
                 _SidebarRow(
-                  label: '播放验证（Debug）',
-                  icon: Icons.science_outlined,
-                  accent: true,
-                  onTap: onOpenPlaybackValidation,
+                  label: mode.label,
+                  icon: mode.icon,
+                  active:
+                      selection == AppSection.library && libraryMode == mode,
+                  onTap: () => onSelectLibraryMode(mode),
                 ),
+              const Spacer(),
               _SidebarRow(
                 label: '设置',
                 icon: Icons.settings_outlined,
@@ -401,14 +411,12 @@ class _SidebarRow extends StatelessWidget {
     required this.icon,
     required this.onTap,
     this.active = false,
-    this.accent = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   final bool active;
-  final bool accent;
 
   @override
   Widget build(BuildContext context) {
@@ -424,7 +432,7 @@ class _SidebarRow extends StatelessWidget {
         leading: Icon(
           icon,
           size: 18,
-          color: accent || active ? SoundColors.accent : Colors.white70,
+          color: active ? SoundColors.accent : Colors.white70,
         ),
         title: Text(
           label,

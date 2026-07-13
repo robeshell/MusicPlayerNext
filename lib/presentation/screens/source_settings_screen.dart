@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/sound_theme.dart';
@@ -18,7 +17,6 @@ class SourceSettingsScreen extends StatefulWidget {
   const SourceSettingsScreen({
     required this.localSources,
     required this.scanner,
-    required this.onOpenPlaybackValidation,
     this.webDavService,
     super.key,
   });
@@ -26,7 +24,6 @@ class SourceSettingsScreen extends StatefulWidget {
   final LocalSourceService localSources;
   final LocalLibraryScanner scanner;
   final WebDavConnectionService? webDavService;
-  final VoidCallback onOpenPlaybackValidation;
 
   @override
   State<SourceSettingsScreen> createState() => _SourceSettingsScreenState();
@@ -364,7 +361,7 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
         ),
         const SizedBox(height: 6),
         const Text(
-          '管理纳入资料库的本地音乐文件夹。',
+          '管理纳入资料库的本地文件夹和 WebDAV 音乐来源。',
           style: TextStyle(color: Colors.white54, fontSize: 13),
         ),
         const SizedBox(height: 30),
@@ -520,14 +517,6 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
                 ],
               );
             },
-          ),
-        ],
-        if (kDebugMode) ...[
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: widget.onOpenPlaybackValidation,
-            icon: const Icon(Icons.science_outlined),
-            label: const Text('打开播放验证工具（Debug）'),
           ),
         ],
       ],

@@ -6,16 +6,42 @@ import '../controllers/library_catalog_controller.dart';
 import '../widgets/album_art.dart';
 import '../widgets/source_badge.dart';
 
+enum LibraryBrowseMode { albums, artists, genres, songs }
+
+extension LibraryBrowseModePresentation on LibraryBrowseMode {
+  String get label => switch (this) {
+    LibraryBrowseMode.albums => '专辑',
+    LibraryBrowseMode.artists => '艺人',
+    LibraryBrowseMode.genres => '流派',
+    LibraryBrowseMode.songs => '歌曲',
+  };
+
+  IconData get icon => switch (this) {
+    LibraryBrowseMode.albums => Icons.album_outlined,
+    LibraryBrowseMode.artists => Icons.person_outline_rounded,
+    LibraryBrowseMode.genres => Icons.grid_view_rounded,
+    LibraryBrowseMode.songs => Icons.music_note_outlined,
+  };
+}
+
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({
     required this.catalog,
+    required this.mode,
+    required this.onModeChanged,
     required this.onOpenAlbum,
+    required this.onOpenCollection,
+    required this.onPlayTrack,
     required this.onManageSources,
     super.key,
   });
 
   final LibraryCatalogController catalog;
+  final LibraryBrowseMode mode;
+  final ValueChanged<LibraryBrowseMode> onModeChanged;
   final ValueChanged<Album> onOpenAlbum;
+  final ValueChanged<LibraryCollection> onOpenCollection;
+  final void Function(Track track, List<Track> queue) onPlayTrack;
   final VoidCallback onManageSources;
 
   @override
@@ -29,11 +55,20 @@ class LibraryScreen extends StatelessWidget {
             for (final track in album.tracks) track.id: album,
         };
         final tracks = catalog.tracks;
+        final artists = buildArtistCollections(albums);
+        final genres = buildGenreCollections(albums);
         return CustomScrollView(
           slivers: [
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(32, 34, 32, 20),
-              sliver: SliverToBoxAdapter(child: _LibraryHeader()),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(32, 34, 32, 20),
+              sliver: SliverToBoxAdapter(
+                child: _LibraryHeader(
+                  mode: mode,
+                  onModeChanged: onModeChanged,
+                  albumCount: albums.length,
+                  trackCount: tracks.length,
+                ),
+              ),
             ),
             if (catalog.status == LibraryCatalogStatus.loading)
               const SliverFillRemaining(
@@ -53,59 +88,122 @@ class LibraryScreen extends StatelessWidget {
                 hasScrollBody: false,
                 child: _CatalogMessage.empty(onAction: onManageSources),
               )
-            else ...[
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(32, 20, 32, 0),
-                sliver: SliverToBoxAdapter(child: _SectionHeader(title: '专辑')),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(32, 16, 32, 8),
-                sliver: SliverGrid.builder(
-                  itemCount: albums.length,
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 210,
-                    mainAxisExtent: 280,
-                    crossAxisSpacing: 24,
-                    mainAxisSpacing: 24,
-                  ),
-                  itemBuilder: (context, index) {
-                    final album = albums[index];
-                    return _AlbumCard(
-                      album: album,
-                      onTap: () => onOpenAlbum(album),
-                    );
-                  },
+            else
+              ...switch (mode) {
+                LibraryBrowseMode.albums => _albumSlivers(albums),
+                LibraryBrowseMode.artists => _collectionSlivers(
+                  artists,
+                  emptyMessage: '资料库中没有可浏览的艺人。',
                 ),
-              ),
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(32, 26, 32, 12),
-                sliver: SliverToBoxAdapter(child: _SectionHeader(title: '歌曲')),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
-                sliver: SliverPrototypeExtentList.builder(
-                  itemCount: tracks.length,
-                  prototypeItem: _LibraryTrackRow(
-                    track: tracks.first,
-                    album: albumByTrackId[tracks.first.id]!,
-                    onTap: () {},
-                  ),
-                  itemBuilder: (context, index) {
-                    final track = tracks[index];
-                    final album = albumByTrackId[track.id]!;
-                    return _LibraryTrackRow(
-                      track: track,
-                      album: album,
-                      onTap: () => onOpenAlbum(album),
-                    );
-                  },
+                LibraryBrowseMode.genres => _collectionSlivers(
+                  genres,
+                  emptyMessage: '资料库中没有流派信息。',
                 ),
-              ),
-            ],
+                LibraryBrowseMode.songs => _songSlivers(tracks, albumByTrackId),
+              },
           ],
         );
       },
     );
+  }
+
+  List<Widget> _albumSlivers(List<Album> albums) {
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(32, 12, 32, 140),
+        sliver: SliverGrid.builder(
+          itemCount: albums.length,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 210,
+            mainAxisExtent: 280,
+            crossAxisSpacing: 24,
+            mainAxisSpacing: 24,
+          ),
+          itemBuilder: (context, index) {
+            final album = albums[index];
+            return _AlbumCard(album: album, onTap: () => onOpenAlbum(album));
+          },
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _collectionSlivers(
+    List<LibraryCollection> collections, {
+    required String emptyMessage,
+  }) {
+    if (collections.isEmpty) {
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: _CatalogMessage._(
+            icon: Icons.category_outlined,
+            title: '暂无内容',
+            message: emptyMessage,
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(32, 12, 32, 140),
+        sliver: SliverGrid.builder(
+          itemCount: collections.length,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 240,
+            mainAxisExtent: 300,
+            crossAxisSpacing: 24,
+            mainAxisSpacing: 24,
+          ),
+          itemBuilder: (context, index) {
+            final collection = collections[index];
+            return _CollectionCard(
+              collection: collection,
+              onTap: () => onOpenCollection(collection),
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _songSlivers(
+    List<Track> tracks,
+    Map<String, Album> albumByTrackId,
+  ) {
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(32, 12, 32, 12),
+        sliver: SliverToBoxAdapter(
+          child: _SongHeader(
+            trackCount: tracks.length,
+            onPlayAll: () => onPlayTrack(tracks.first, tracks),
+          ),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
+        sliver: SliverPrototypeExtentList.builder(
+          itemCount: tracks.length,
+          prototypeItem: _LibraryTrackRow(
+            track: tracks.first,
+            album: albumByTrackId[tracks.first.id]!,
+            onTap: () {},
+            onOpenAlbum: () {},
+          ),
+          itemBuilder: (context, index) {
+            final track = tracks[index];
+            final album = albumByTrackId[track.id]!;
+            return _LibraryTrackRow(
+              track: track,
+              album: album,
+              onTap: () => onPlayTrack(track, tracks),
+              onOpenAlbum: () => onOpenAlbum(album),
+            );
+          },
+        ),
+      ),
+    ];
   }
 }
 
@@ -114,11 +212,13 @@ class _LibraryTrackRow extends StatelessWidget {
     required this.track,
     required this.album,
     required this.onTap,
+    required this.onOpenAlbum,
   });
 
   final Track track;
   final Album album;
   final VoidCallback onTap;
+  final VoidCallback onOpenAlbum;
 
   @override
   Widget build(BuildContext context) {
@@ -147,21 +247,41 @@ class _LibraryTrackRow extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 12, color: Colors.white54),
         ),
-        trailing: SourceBadge(track.source),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SourceBadge(track.source),
+            IconButton(
+              onPressed: onOpenAlbum,
+              tooltip: '打开专辑 ${album.title}',
+              icon: const Icon(Icons.chevron_right_rounded),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _LibraryHeader extends StatelessWidget {
-  const _LibraryHeader();
+  const _LibraryHeader({
+    required this.mode,
+    required this.onModeChanged,
+    required this.albumCount,
+    required this.trackCount,
+  });
+
+  final LibraryBrowseMode mode;
+  final ValueChanged<LibraryBrowseMode> onModeChanged;
+  final int albumCount;
+  final int trackCount;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           '资料库',
           style: TextStyle(
             fontSize: 32,
@@ -169,8 +289,31 @@ class _LibraryHeader extends StatelessWidget {
             letterSpacing: -0.8,
           ),
         ),
-        SizedBox(height: 5),
-        Text('已索引的本地音乐', style: TextStyle(color: Colors.white54, fontSize: 13)),
+        const SizedBox(height: 5),
+        Text(
+          '$albumCount 张专辑 · $trackCount 首歌曲',
+          style: const TextStyle(color: Colors.white54, fontSize: 13),
+        ),
+        const SizedBox(height: 20),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final candidate in LibraryBrowseMode.values)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    key: ValueKey('library-mode-${candidate.name}'),
+                    avatar: Icon(candidate.icon, size: 17),
+                    label: Text(candidate.label),
+                    selected: mode == candidate,
+                    onSelected: (_) => onModeChanged(candidate),
+                    selectedColor: SoundColors.accent.withValues(alpha: 0.24),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -270,20 +413,31 @@ class _CatalogMessage extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
+class _SongHeader extends StatelessWidget {
+  const _SongHeader({required this.trackCount, required this.onPlayAll});
 
-  final String title;
+  final int trackCount;
+  final VoidCallback onPlayAll;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.w800,
-        letterSpacing: -0.3,
-      ),
+    return Row(
+      children: [
+        Text(
+          '$trackCount 首歌曲',
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        ),
+        const Spacer(),
+        FilledButton.icon(
+          onPressed: onPlayAll,
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('播放全部'),
+          style: FilledButton.styleFrom(
+            backgroundColor: SoundColors.accent,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -323,6 +477,66 @@ class _AlbumCard extends StatelessWidget {
               ),
               SourceBadge(album.source),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionCard extends StatelessWidget {
+  const _CollectionCard({required this.collection, required this.onTap});
+
+  final LibraryCollection collection;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final album = collection.albums.first;
+    return InkWell(
+      key: ValueKey('library-collection-${collection.id}'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              AlbumArt(album: album),
+              Positioned(
+                right: 10,
+                bottom: 10,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.62),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      collection.kind == LibraryCollectionKind.artist
+                          ? Icons.person_rounded
+                          : Icons.grid_view_rounded,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            collection.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '${collection.albums.length} 张专辑 · ${collection.tracks.length} 首歌',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: Colors.white54),
           ),
         ],
       ),

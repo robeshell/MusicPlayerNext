@@ -79,6 +79,131 @@ class Album {
   final String? artworkUri;
 }
 
+enum LibraryCollectionKind { artist, genre }
+
+class LibraryCollection {
+  const LibraryCollection({
+    required this.id,
+    required this.kind,
+    required this.title,
+    required this.albums,
+    required this.tracks,
+  });
+
+  final String id;
+  final LibraryCollectionKind kind;
+  final String title;
+  final List<Album> albums;
+  final List<Track> tracks;
+
+  List<Color> get palette => albums.isEmpty
+      ? const [Color(0xFF385057), Color(0xFF11191C)]
+      : albums.first.palette;
+}
+
+List<LibraryCollection> buildArtistCollections(List<Album> albums) {
+  final groups = <String, _LibraryCollectionAccumulator>{};
+  for (final album in albums) {
+    final albumArtist = _cleanCollectionName(album.artist, fallback: '未知艺人');
+    final albumArtistKey = _collectionKey(albumArtist);
+    final albumGroup = groups.putIfAbsent(
+      albumArtistKey,
+      () => _LibraryCollectionAccumulator(
+        kind: LibraryCollectionKind.artist,
+        title: albumArtist,
+      ),
+    );
+    albumGroup.add(album, album.tracks);
+
+    for (final track in album.tracks) {
+      final trackArtist = _cleanCollectionName(
+        track.artist,
+        fallback: albumArtist,
+      );
+      final trackArtistKey = _collectionKey(trackArtist);
+      if (trackArtistKey == albumArtistKey) continue;
+      groups
+          .putIfAbsent(
+            trackArtistKey,
+            () => _LibraryCollectionAccumulator(
+              kind: LibraryCollectionKind.artist,
+              title: trackArtist,
+            ),
+          )
+          .add(album, [track]);
+    }
+  }
+  return _sortedCollections(groups.values);
+}
+
+List<LibraryCollection> buildGenreCollections(List<Album> albums) {
+  final groups = <String, _LibraryCollectionAccumulator>{};
+  for (final album in albums) {
+    for (final track in album.tracks) {
+      final genre = _cleanCollectionName(
+        track.genre ?? album.genre ?? '',
+        fallback: '未分类',
+      );
+      final key = _collectionKey(genre);
+      groups
+          .putIfAbsent(
+            key,
+            () => _LibraryCollectionAccumulator(
+              kind: LibraryCollectionKind.genre,
+              title: genre,
+            ),
+          )
+          .add(album, [track]);
+    }
+  }
+  return _sortedCollections(groups.values);
+}
+
+class _LibraryCollectionAccumulator {
+  _LibraryCollectionAccumulator({required this.kind, required this.title});
+
+  final LibraryCollectionKind kind;
+  final String title;
+  final Map<String, Album> _albums = {};
+  final Map<String, Track> _tracks = {};
+
+  void add(Album album, Iterable<Track> tracks) {
+    _albums[album.id] = album;
+    for (final track in tracks) {
+      _tracks[track.id] = track;
+    }
+  }
+
+  LibraryCollection build() {
+    final prefix = kind == LibraryCollectionKind.artist ? 'artist' : 'genre';
+    return LibraryCollection(
+      id: '$prefix:${_collectionKey(title)}',
+      kind: kind,
+      title: title,
+      albums: List.unmodifiable(_albums.values),
+      tracks: List.unmodifiable(_tracks.values),
+    );
+  }
+}
+
+List<LibraryCollection> _sortedCollections(
+  Iterable<_LibraryCollectionAccumulator> groups,
+) {
+  final collections = groups.map((group) => group.build()).toList();
+  collections.sort(
+    (left, right) =>
+        left.title.toLowerCase().compareTo(right.title.toLowerCase()),
+  );
+  return List.unmodifiable(collections);
+}
+
+String _cleanCollectionName(String value, {required String fallback}) {
+  final cleaned = value.trim();
+  return cleaned.isEmpty ? fallback : cleaned;
+}
+
+String _collectionKey(String value) => value.trim().toLowerCase();
+
 Album albumForTrack(Track track) {
   return Album(
     id: 'playing:${track.id}',
