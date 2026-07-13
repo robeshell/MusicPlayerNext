@@ -12,6 +12,7 @@ import 'package:sound_player/playback/simulated_playback_engine.dart';
 import 'package:sound_player/presentation/app_shell.dart';
 import 'package:sound_player/presentation/screens/now_playing_screen.dart';
 import 'package:sound_player/presentation/widgets/mini_player.dart';
+import 'package:sound_player/presentation/widgets/sound_components.dart';
 
 void main() {
   testWidgets('shows repository albums instead of production demo data', (
@@ -455,7 +456,7 @@ void main() {
     await tester.pump();
 
     final miniPlayerBottom = tester.getBottomLeft(find.byType(MiniPlayer)).dy;
-    final navigationTop = tester.getTopLeft(find.byType(NavigationBar)).dy;
+    final navigationTop = tester.getTopLeft(find.byType(SoundNavigationBar)).dy;
     expect(navigationTop - miniPlayerBottom, 10);
 
     await _unmountAndFlush(tester);
@@ -483,14 +484,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sound'), findsOneWidget);
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(SoundNavigationBar), findsNothing);
     expect(tester.takeException(), isNull);
 
     tester.view.physicalSize = const Size(600, 1024);
     await tester.pumpAndSettle();
 
     expect(find.text('Sound'), findsNothing);
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(SoundNavigationBar), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
@@ -503,7 +504,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sound'), findsNothing);
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(SoundNavigationBar), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await _unmountAndFlush(tester);

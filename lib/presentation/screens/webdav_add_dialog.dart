@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/sound_theme.dart';
 import '../../sources/webdav/webdav_connection_service.dart';
 import '../../sources/webdav/webdav_credentials.dart';
+import '../widgets/sound_components.dart';
 
 class WebDavAddDialog extends StatefulWidget {
   const WebDavAddDialog({required this.service, this.connection, super.key});
@@ -62,7 +63,8 @@ class _WebDavAddDialogState extends State<WebDavAddDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return SoundDialog(
+      maxWidth: 500,
       title: Text(_editing ? '编辑 WebDAV 服务器' : '添加 WebDAV 服务器'),
       content: Form(
         key: _formKey,

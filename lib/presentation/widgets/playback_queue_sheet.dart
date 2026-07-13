@@ -3,16 +3,15 @@ import 'package:flutter/material.dart';
 import '../../core/sound_theme.dart';
 import '../../playback/playback_controller.dart';
 import '../../playback/playback_mode.dart';
+import 'sound_components.dart';
 
 Future<void> showPlaybackQueueSheet(
   BuildContext context,
   SoundPlaybackController playback,
 ) {
-  return showModalBottomSheet<void>(
-    context: context,
-    useSafeArea: true,
-    isScrollControlled: true,
-    backgroundColor: SoundColors.darkSurface,
+  return showSoundBottomSheet<void>(
+    context,
+    showHandle: false,
     builder: (_) => PlaybackQueueSheet(playback: playback),
   );
 }

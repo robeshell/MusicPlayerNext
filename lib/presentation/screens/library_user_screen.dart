@@ -10,6 +10,7 @@ import '../controllers/library_catalog_controller.dart';
 import '../controllers/library_user_state_controller.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
+import '../widgets/sound_components.dart';
 
 enum LibraryUserBrowseMode { favorites, recent, history, playlists }
 
@@ -333,7 +334,8 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
   Future<void> _deletePlaylist(LibraryPlaylistRecord playlist) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => SoundDialog(
+        maxWidth: 460,
         title: const Text('删除播放列表？'),
         content: Text('“${playlist.name}”会被删除，资料库中的歌曲不会受到影响。'),
         actions: [
@@ -506,7 +508,8 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
   Future<void> _confirmClearHistory() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => SoundDialog(
+        maxWidth: 460,
         title: const Text('清除播放历史？'),
         content: const Text('最近播放和完整播放历史都会被清除，收藏不会受到影响。'),
         actions: [

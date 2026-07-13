@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/sound_theme.dart';
 import '../../sources/webdav/webdav_credentials.dart';
 import '../../sources/webdav/webdav_discovery.dart';
+import '../widgets/sound_components.dart';
 
 class WebDavFolderPicker extends StatefulWidget {
   const WebDavFolderPicker({
@@ -141,7 +142,8 @@ class _WebDavFolderPickerState extends State<WebDavFolderPicker> {
     final entries = _cache[_currentPath] ?? [];
     final isLoading = _loading.contains(_currentPath);
 
-    return AlertDialog(
+    return SoundDialog(
+      maxWidth: 540,
       title: Row(
         children: [
           const Text('选择 WebDAV 文件夹'),

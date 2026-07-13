@@ -103,7 +103,7 @@ class MiniPlayer extends StatelessWidget {
                           const SizedBox(height: 3),
                           Row(
                             children: [
-                              Flexible(
+                              Expanded(
                                 child: Text(
                                   '${track.artist} — ${track.albumTitle}',
                                   maxLines: 1,

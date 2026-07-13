@@ -25,6 +25,7 @@ import 'screens/search_screen.dart';
 import 'screens/source_settings_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/playback_queue_sheet.dart';
+import 'widgets/sound_components.dart';
 
 enum AppSection { library, search, sources }
 
@@ -477,23 +478,24 @@ class _AppShellState extends State<AppShell> {
               ),
               bottomNavigationBar: desktop
                   ? null
-                  : NavigationBar(
+                  : SoundNavigationBar(
                       selectedIndex: _section.index,
                       onDestinationSelected: (index) =>
                           _selectSection(AppSection.values[index]),
                       destinations: const [
-                        NavigationDestination(
-                          icon: Icon(Icons.library_music_outlined),
-                          selectedIcon: Icon(Icons.library_music_rounded),
+                        SoundNavigationItem(
+                          icon: Icons.library_music_outlined,
+                          selectedIcon: Icons.library_music_rounded,
                           label: '资料库',
                         ),
-                        NavigationDestination(
-                          icon: Icon(Icons.search_rounded),
+                        SoundNavigationItem(
+                          icon: Icons.search_rounded,
+                          selectedIcon: Icons.search_rounded,
                           label: '搜索',
                         ),
-                        NavigationDestination(
-                          icon: Icon(Icons.settings_outlined),
-                          selectedIcon: Icon(Icons.settings_rounded),
+                        SoundNavigationItem(
+                          icon: Icons.settings_outlined,
+                          selectedIcon: Icons.settings_rounded,
                           label: '设置',
                         ),
                       ],
@@ -733,7 +735,8 @@ class _KeyboardShortcutDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return SoundDialog(
+      maxWidth: 540,
       title: const Row(
         children: [
           Icon(Icons.keyboard_alt_outlined),

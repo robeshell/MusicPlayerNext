@@ -151,7 +151,7 @@ void main() {
     expect(FocusManager.instance.primaryFocus, isNot(focusBeforeArrow));
 
     final theme = Theme.of(tester.element(find.byType(AppShell)));
-    expect(theme.focusColor, SoundColors.accent.withValues(alpha: 0.28));
+    expect(theme.focusColor, SoundTheme.dark.focusColor);
     final focusSide = theme.iconButtonTheme.style?.side?.resolve({
       WidgetState.focused,
     });

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sound_player/core/sound_theme.dart';
 import 'package:sound_player/domain/library_models.dart';
 import 'package:sound_player/playback/playback_controller.dart';
 import 'package:sound_player/playback/playback_engine.dart';
@@ -48,12 +49,14 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final engine = StaticPlaybackEngine(_snapshot(PlaybackPhase.paused));
+    final engine = StaticPlaybackEngine(
+      _snapshot(PlaybackPhase.paused, track: _longTrack),
+    );
     final playback = SoundPlaybackController(engine: engine);
 
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData.dark(useMaterial3: true),
+        theme: SoundTheme.dark,
         home: Scaffold(
           body: MiniPlayer(playback: playback, compact: true, onOpen: () {}),
         ),
@@ -125,15 +128,19 @@ void main() {
   }
 }
 
-PlaybackSnapshot _snapshot(PlaybackPhase phase, {bool playWhenReady = false}) {
+PlaybackSnapshot _snapshot(
+  PlaybackPhase phase, {
+  bool playWhenReady = false,
+  Track track = _track,
+}) {
   return PlaybackSnapshot(
     sessionId: 0,
     phase: phase,
     position: phase == PlaybackPhase.completed
-        ? _track.duration
+        ? track.duration
         : const Duration(seconds: 24),
-    duration: _track.duration,
-    track: _track,
+    duration: track.duration,
+    track: track,
     errorMessage: phase == PlaybackPhase.error ? 'network failed' : null,
     playWhenReady: playWhenReady,
   );
@@ -147,6 +154,16 @@ const _track = Track(
   duration: Duration(minutes: 3),
   source: SourceKind.local,
   mediaUri: 'file:///status.mp3',
+);
+
+const _longTrack = Track(
+  id: 'long-status-track',
+  title: 'A very long restored track title that must remain compact',
+  artist: 'Several collaborating artists with long names',
+  albumTitle: 'An unusually long album title for a narrow mini player',
+  duration: Duration(minutes: 4),
+  source: SourceKind.webDav,
+  mediaUri: 'https://example.test/music/long-status.mp3',
 );
 
 class StaticPlaybackEngine implements PlaybackEngine {

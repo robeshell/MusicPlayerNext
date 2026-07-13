@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 
 import '../../domain/library_models.dart';
 import '../controllers/library_user_state_controller.dart';
+import 'sound_components.dart';
 
 Future<void> showAddToPlaylistSheet(
   BuildContext context, {
   required LibraryUserStateController userState,
   required Track track,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
+  return showSoundBottomSheet<void>(
+    context,
+    showHandle: true,
     builder: (context) =>
         _AddToPlaylistSheet(userState: userState, track: track),
   );
@@ -62,7 +62,8 @@ class _PlaylistNameDialogState extends State<_PlaylistNameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return SoundDialog(
+      maxWidth: 460,
       title: Text(widget.title),
       content: Form(
         key: _formKey,

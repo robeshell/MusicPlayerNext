@@ -10,6 +10,7 @@ import '../../sources/webdav/webdav_connection_service.dart';
 import '../../sources/webdav/webdav_discovery.dart';
 import '../../library/scanning/artwork_store.dart';
 import '../../sources/webdav/webdav_folder_scanner.dart';
+import '../widgets/sound_components.dart';
 import 'webdav_add_dialog.dart';
 import 'webdav_folder_picker.dart';
 
@@ -112,7 +113,8 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
     if (webDav == null) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => SoundDialog(
+        maxWidth: 460,
         title: const Text('移除 WebDAV 服务器'),
         content: Text('确定要移除「${connection.displayName}」吗？'),
         actions: [
@@ -270,7 +272,8 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
   Future<void> _removeWebDavFolderSource(WebDavConnectionRecord source) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => SoundDialog(
+        maxWidth: 460,
         title: const Text('移除 WebDAV 文件夹'),
         content: Text(
           '确定要移除「${source.displayName}」吗？\n'
