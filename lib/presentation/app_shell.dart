@@ -14,10 +14,12 @@ import '../sources/local/local_directory_access_factory.dart';
 import '../sources/local/local_source_service.dart';
 import '../sources/webdav/webdav_connection_service.dart';
 import 'controllers/library_catalog_controller.dart';
+import 'controllers/library_search_controller.dart';
 import 'screens/album_detail_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/now_playing_screen.dart';
 import 'screens/playback_validation_screen.dart';
+import 'screens/search_screen.dart';
 import 'screens/source_settings_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/playback_queue_sheet.dart';
@@ -43,6 +45,7 @@ class _AppShellState extends State<AppShell> {
   late final LibraryRepository _libraryRepository;
   late final bool _ownsLibraryRepository;
   late final LibraryCatalogController _libraryCatalog;
+  late final LibrarySearchController _librarySearch;
   late final WebDavConnectionService _webDavService;
   late final StreamSubscription<List<WebDavConnectionRecord>>
   _webDavConnectionSubscription;
@@ -56,6 +59,7 @@ class _AppShellState extends State<AppShell> {
     _libraryRepository =
         widget.libraryRepository ?? DriftLibraryRepository.defaults();
     _libraryCatalog = LibraryCatalogController(repository: _libraryRepository);
+    _librarySearch = LibrarySearchController(catalog: _libraryCatalog);
     _webDavService = WebDavConnectionService(repository: _libraryRepository);
     // Resolve security-scoped bookmarks at startup so that local files are
     // playable without the user first opening the source-settings screen.
@@ -134,6 +138,16 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  void _openAlbum(Album album) {
+    setState(() {
+      _selectedAlbum =
+          _libraryCatalog.albums
+              .where((candidate) => candidate.id == album.id)
+              .firstOrNull ??
+          album;
+    });
+  }
+
   void _openQueue() {
     if (widget.playback.queue.isEmpty) return;
     showPlaybackQueueSheet(context, widget.playback);
@@ -168,16 +182,15 @@ class _AppShellState extends State<AppShell> {
             : switch (_section) {
                 AppSection.library => LibraryScreen(
                   catalog: _libraryCatalog,
-                  onOpenAlbum: (album) => setState(() {
-                    _selectedAlbum =
-                        _libraryCatalog.albums
-                            .where((a) => a.id == album.id)
-                            .firstOrNull ??
-                        album;
-                  }),
+                  onOpenAlbum: _openAlbum,
                   onManageSources: () => _selectSection(AppSection.sources),
                 ),
-                AppSection.search => const _SearchPlaceholder(),
+                AppSection.search => SearchScreen(
+                  catalog: _libraryCatalog,
+                  search: _librarySearch,
+                  playback: widget.playback,
+                  onOpenAlbum: _openAlbum,
+                ),
                 AppSection.sources => SourceSettingsScreen(
                   localSources: _sources,
                   scanner: _scanner,
@@ -260,6 +273,7 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     unawaited(_webDavConnectionSubscription.cancel());
     _libraryCatalog.removeListener(_syncSelectedAlbum);
+    _librarySearch.dispose();
     _libraryCatalog.dispose();
     if (_ownsLibraryRepository) unawaited(_libraryRepository.close());
     super.dispose();
@@ -417,52 +431,6 @@ class _SidebarRow extends StatelessWidget {
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         ),
         onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _SearchPlaceholder extends StatelessWidget {
-  const _SearchPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 36, 32, 140),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '搜索',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.8,
-            ),
-          ),
-          const SizedBox(height: 22),
-          TextField(
-            autofocus: false,
-            decoration: InputDecoration(
-              hintText: '歌曲、专辑、艺人或文件路径',
-              prefixIcon: const Icon(Icons.search_rounded),
-              filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.06),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          const Spacer(),
-          const Center(
-            child: Text(
-              '搜索索引将在播放验证完成后接入',
-              style: TextStyle(color: Colors.white38, fontSize: 13),
-            ),
-          ),
-          const Spacer(),
-        ],
       ),
     );
   }
