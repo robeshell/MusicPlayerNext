@@ -89,6 +89,16 @@ void main() {
     expect(find.text('1 张专辑 · 1 首歌曲'), findsOneWidget);
     expect(find.text('播放全部'), findsOneWidget);
     expect(find.text('Test Track'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('library-collection-track-sort-menu')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('library-collection-track-sort-menu')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('专辑与曲序'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('播放全部'));
     await tester.pump();
     expect(find.text('Test Track'), findsNWidgets(2));
@@ -105,6 +115,51 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+
+    await _unmountAndFlush(tester);
+  });
+
+  testWidgets('sorts and filters each real library view', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithAlbum();
+    addTearDown(repository.close);
+
+    await tester.pumpWidget(
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: PlaybackSessionStore.memory(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('library-sort-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('艺人 A–Z'));
+    await tester.pumpAndSettle();
+    expect(find.text('艺人 A–Z'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('library-source-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('WebDAV'));
+    await tester.pumpAndSettle();
+    expect(find.text('当前筛选没有内容'), findsOneWidget);
+    expect(find.text('Test Album'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('library-source-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全部来源').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Test Album'), findsWidgets);
+
+    await tester.tap(find.text('歌曲').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('library-sort-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('专辑 A–Z'), findsOneWidget);
 
     await _unmountAndFlush(tester);
   });

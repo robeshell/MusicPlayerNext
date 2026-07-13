@@ -7,7 +7,18 @@ import '../widgets/album_art.dart';
 import '../widgets/progress_scrubber.dart';
 import '../widgets/source_badge.dart';
 
-class LibraryCollectionScreen extends StatelessWidget {
+enum LibraryCollectionTrackSort { libraryOrder, title, artist, album }
+
+extension LibraryCollectionTrackSortPresentation on LibraryCollectionTrackSort {
+  String get label => switch (this) {
+    LibraryCollectionTrackSort.libraryOrder => '资料库顺序',
+    LibraryCollectionTrackSort.title => '标题 A–Z',
+    LibraryCollectionTrackSort.artist => '艺人 A–Z',
+    LibraryCollectionTrackSort.album => '专辑与曲序',
+  };
+}
+
+class LibraryCollectionScreen extends StatefulWidget {
   const LibraryCollectionScreen({
     required this.collection,
     required this.playback,
@@ -22,7 +33,18 @@ class LibraryCollectionScreen extends StatelessWidget {
   final ValueChanged<Album> onOpenAlbum;
 
   @override
+  State<LibraryCollectionScreen> createState() =>
+      _LibraryCollectionScreenState();
+}
+
+class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
+  LibraryCollectionTrackSort _trackSort =
+      LibraryCollectionTrackSort.libraryOrder;
+
+  @override
   Widget build(BuildContext context) {
+    final collection = widget.collection;
+    final sortedTracks = _sortTracks(collection.tracks);
     final albumByTrackId = {
       for (final album in collection.albums)
         for (final track in album.tracks) track.id: album,
@@ -34,12 +56,12 @@ class LibraryCollectionScreen extends StatelessWidget {
           SliverToBoxAdapter(
             child: _CollectionHero(
               collection: collection,
-              onBack: onBack,
-              onPlay: collection.tracks.isEmpty
+              onBack: widget.onBack,
+              onPlay: sortedTracks.isEmpty
                   ? null
-                  : () => playback.playTrack(
-                      collection.tracks.first,
-                      queue: collection.tracks,
+                  : () => widget.playback.playTrack(
+                      sortedTracks.first,
+                      queue: sortedTracks,
                     ),
             ),
           ),
@@ -67,7 +89,7 @@ class LibraryCollectionScreen extends StatelessWidget {
                   final album = collection.albums[index];
                   return _CollectionAlbumCard(
                     album: album,
-                    onTap: () => onOpenAlbum(album),
+                    onTap: () => widget.onOpenAlbum(album),
                   );
                 },
               ),
@@ -76,43 +98,150 @@ class LibraryCollectionScreen extends StatelessWidget {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(32, 0, 32, 12),
             sliver: SliverToBoxAdapter(
-              child: Text(
-                '${collection.tracks.length} 首歌曲',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
+              child: _CollectionTrackHeader(
+                trackCount: sortedTracks.length,
+                sort: _trackSort,
+                onSortChanged: (value) => setState(() => _trackSort = value),
               ),
             ),
           ),
-          if (collection.tracks.isNotEmpty)
+          if (sortedTracks.isNotEmpty)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
               sliver: SliverPrototypeExtentList.builder(
-                itemCount: collection.tracks.length,
+                itemCount: sortedTracks.length,
                 prototypeItem: _CollectionTrackRow(
-                  track: collection.tracks.first,
-                  album: albumByTrackId[collection.tracks.first.id]!,
+                  track: sortedTracks.first,
+                  album: albumByTrackId[sortedTracks.first.id]!,
                   onTap: () {},
                   onPlayNext: () {},
                   onOpenAlbum: () {},
                 ),
                 itemBuilder: (context, index) {
-                  final track = collection.tracks[index];
+                  final track = sortedTracks[index];
                   final album = albumByTrackId[track.id]!;
                   return _CollectionTrackRow(
                     track: track,
                     album: album,
                     onTap: () =>
-                        playback.playTrack(track, queue: collection.tracks),
-                    onPlayNext: () => playback.playNext(track),
-                    onOpenAlbum: () => onOpenAlbum(album),
+                        widget.playback.playTrack(track, queue: sortedTracks),
+                    onPlayNext: () => widget.playback.playNext(track),
+                    onOpenAlbum: () => widget.onOpenAlbum(album),
                   );
                 },
               ),
             ),
         ],
       ),
+    );
+  }
+
+  List<Track> _sortTracks(List<Track> tracks) {
+    if (_trackSort == LibraryCollectionTrackSort.libraryOrder) return tracks;
+    final sorted = [...tracks];
+    sorted.sort(switch (_trackSort) {
+      LibraryCollectionTrackSort.libraryOrder => (_, _) => 0,
+      LibraryCollectionTrackSort.title => (left, right) => _compareText(
+        left.title,
+        right.title,
+      ),
+      LibraryCollectionTrackSort.artist => (left, right) => _compareThen(
+        _compareText(left.artist, right.artist),
+        () => _compareText(left.title, right.title),
+      ),
+      LibraryCollectionTrackSort.album => (left, right) => _compareThen(
+        _compareText(left.albumTitle, right.albumTitle),
+        () => _compareThen(
+          left.trackNumber.compareTo(right.trackNumber),
+          () => _compareText(left.title, right.title),
+        ),
+      ),
+    });
+    return sorted;
+  }
+}
+
+int _compareText(String left, String right) =>
+    left.toLowerCase().compareTo(right.toLowerCase());
+
+int _compareThen(int comparison, int Function() next) =>
+    comparison == 0 ? next() : comparison;
+
+class _CollectionTrackHeader extends StatelessWidget {
+  const _CollectionTrackHeader({
+    required this.trackCount,
+    required this.sort,
+    required this.onSortChanged,
+  });
+
+  final int trackCount;
+  final LibraryCollectionTrackSort sort;
+  final ValueChanged<LibraryCollectionTrackSort> onSortChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: WrapAlignment.spaceBetween,
+      children: [
+        Text(
+          '$trackCount 首歌曲',
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        ),
+        PopupMenuButton<LibraryCollectionTrackSort>(
+          key: const ValueKey('library-collection-track-sort-menu'),
+          tooltip: '排序歌曲',
+          initialValue: sort,
+          onSelected: onSortChanged,
+          itemBuilder: (context) => [
+            for (final option in LibraryCollectionTrackSort.values)
+              PopupMenuItem(
+                value: option,
+                child: Row(
+                  children: [
+                    Expanded(child: Text(option.label)),
+                    if (option == sort) ...[
+                      const SizedBox(width: 12),
+                      const Icon(
+                        Icons.check_rounded,
+                        size: 18,
+                        color: SoundColors.accent,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.045),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.sort_rounded, size: 17),
+                  const SizedBox(width: 7),
+                  Text(
+                    sort.label,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  const Icon(Icons.arrow_drop_down_rounded, size: 18),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
