@@ -6,6 +6,11 @@ class ProgressScrubber extends StatefulWidget {
     required this.duration,
     required this.onSeek,
     this.activeColor,
+    this.inactiveColor,
+    this.trackHeight = 3,
+    this.thumbRadius = 5,
+    this.overlayRadius = 14,
+    this.padding,
     super.key,
   });
 
@@ -13,6 +18,11 @@ class ProgressScrubber extends StatefulWidget {
   final Duration duration;
   final ValueChanged<Duration> onSeek;
   final Color? activeColor;
+  final Color? inactiveColor;
+  final double trackHeight;
+  final double thumbRadius;
+  final double overlayRadius;
+  final EdgeInsetsGeometry? padding;
 
   @override
   State<ProgressScrubber> createState() => _ProgressScrubberState();
@@ -26,26 +36,37 @@ class _ProgressScrubberState extends State<ProgressScrubber> {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = widget.duration > Duration.zero;
     final engineValue = widget.position.inMilliseconds.toDouble();
     final displayValue = (_previewMilliseconds ?? engineValue)
         .clamp(0, _durationMs)
         .toDouble();
     return SliderTheme(
       data: SliderTheme.of(context).copyWith(
-        trackHeight: 3,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-        inactiveTrackColor: Colors.white.withValues(alpha: 0.16),
+        trackHeight: widget.trackHeight,
+        thumbShape: RoundSliderThumbShape(
+          enabledThumbRadius: widget.thumbRadius,
+        ),
+        overlayShape: RoundSliderOverlayShape(
+          overlayRadius: widget.overlayRadius,
+        ),
+        inactiveTrackColor:
+            widget.inactiveColor ?? Colors.white.withValues(alpha: 0.16),
       ),
       child: Slider(
         value: displayValue,
         max: _durationMs,
+        padding: widget.padding,
         activeColor: widget.activeColor ?? Colors.white,
-        onChanged: (value) => setState(() => _previewMilliseconds = value),
-        onChangeEnd: (value) {
-          setState(() => _previewMilliseconds = null);
-          widget.onSeek(Duration(milliseconds: value.round()));
-        },
+        onChanged: enabled
+            ? (value) => setState(() => _previewMilliseconds = value)
+            : null,
+        onChangeEnd: enabled
+            ? (value) {
+                setState(() => _previewMilliseconds = null);
+                widget.onSeek(Duration(milliseconds: value.round()));
+              }
+            : null,
       ),
     );
   }

@@ -70,6 +70,54 @@ void main() {
     engine.dispose();
   });
 
+  testWidgets('mini player progress is interactive and seeks playback', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 120);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = StaticPlaybackEngine(
+      _snapshot(PlaybackPhase.paused, track: _track),
+    );
+    final playback = SoundPlaybackController(engine: engine);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: SoundTheme.dark,
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topCenter,
+            child: MiniPlayer(
+              playback: playback,
+              compact: false,
+              onOpen: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final progress = find.byKey(const ValueKey('mini-player-progress'));
+    expect(progress, findsOneWidget);
+    final slider = tester.widget<Slider>(
+      find.descendant(of: progress, matching: find.byType(Slider)),
+    );
+    expect(slider.onChanged, isNotNull);
+    expect(slider.onChangeEnd, isNotNull);
+    slider.onChanged!(slider.max * 0.75);
+    slider.onChangeEnd!(slider.max * 0.75);
+    await tester.pump();
+
+    expect(engine.seekPositions, hasLength(1));
+    expect(engine.seekPositions.single.inSeconds, 135);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    playback.dispose();
+    engine.dispose();
+  });
+
   for (final testCase in const [
     (PlaybackPhase.loading, '正在载入'),
     (PlaybackPhase.buffering, '正在缓冲'),
@@ -172,6 +220,7 @@ class StaticPlaybackEngine implements PlaybackEngine {
   final PlaybackSnapshot _current;
   final StreamController<PlaybackSnapshot> _snapshots =
       StreamController<PlaybackSnapshot>.broadcast(sync: true);
+  final List<Duration> seekPositions = [];
 
   @override
   PlaybackSnapshot get current => _current;
@@ -189,7 +238,9 @@ class StaticPlaybackEngine implements PlaybackEngine {
   Future<void> play() async {}
 
   @override
-  Future<void> seek(Duration position) async {}
+  Future<void> seek(Duration position) async {
+    seekPositions.add(position);
+  }
 
   @override
   Future<void> stop() async {}
