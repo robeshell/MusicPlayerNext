@@ -442,6 +442,8 @@ void main() {
           expect(request.headers['Depth'], '1');
           expect(request.headers['Content-Type'], contains('application/xml'));
           expect(request.body, contains('propfind'));
+          expect(request.body, contains('getlastmodified'));
+          expect(request.body, contains('getetag'));
           return http.Response(
             '''<?xml version="1.0"?>
 <x:multistatus xmlns:x="DAV:">
@@ -452,6 +454,8 @@ void main() {
         <x:displayname>Track 01.flac</x:displayname>
         <x:resourcetype/>
         <x:getcontentlength>12345</x:getcontentlength>
+        <x:getlastmodified>Tue, 14 Jul 2026 10:00:00 GMT</x:getlastmodified>
+        <x:getetag>"fixture-v1"</x:getetag>
       </x:prop>
       <x:status>HTTP/1.1 200 OK</x:status>
     </x:propstat>
@@ -476,6 +480,8 @@ void main() {
       expect(result.files.single.displayName, 'Track 01.flac');
       expect(result.files.single.isCollection, isFalse);
       expect(result.files.single.contentLength, 12345);
+      expect(result.files.single.modifiedAt, DateTime.utc(2026, 7, 14, 10));
+      expect(result.files.single.etag, '"fixture-v1"');
     });
 
     test(

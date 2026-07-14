@@ -152,7 +152,7 @@ The `web/sqlite3.wasm` binary must match the `sqlite3` version resolved in
   `permissionRequired` and `unavailable` states instead of being treated as
   empty libraries.
 
-## Local library scanning
+## Library scanning
 
 - `LocalMediaCatalog` enumerates MP3 and FLAC without leaking platform storage
   details into the scanner. Desktop and Apple platforms use restored file
@@ -195,6 +195,18 @@ The `web/sqlite3.wasm` binary must match the `sqlite3` version resolved in
   metadata extraction, artwork, and the final transaction. Cancelling from the
   source screen restores the previous source state and never advances the scan
   revision or replaces the last completed snapshot.
+- WebDAV PROPFIND requests content length, last-modified time, and ETag. Remote
+  tracks persist the standard size/time fields already present in the shared
+  track model, so a later rescan can reuse unchanged metadata and lyrics without
+  another ranged audio GET. Legacy rows and servers that omit either reliable
+  size or modified time are conservatively re-read instead of being treated as
+  unchanged.
+- WebDAV uses the same unambiguous size/time move matching as local scanning.
+  A moved remote item refreshes metadata and changes its playback URL while
+  retaining its track ID. Recursive discovery, per-file metadata reads, and the
+  final transaction share a cooperative cancellation token. Cancelling a new
+  folder removes its provisional source; cancelling an existing folder restores
+  its previous source state and snapshot.
 - Damaged files and artwork-write failures become scan warnings instead of
   discarding other valid tracks. A completed snapshot is diffed and committed
   in one Drift transaction, so removed files disappear atomically without
@@ -213,10 +225,13 @@ The `web/sqlite3.wasm` binary must match the `sqlite3` version resolved in
   then requires PROPFIND to return HTTP 207. Authentication, unreachable, and
   non-WebDAV failures remain distinct source states.
 - PROPFIND XML is parsed by namespace-local element name instead of assuming a
-  particular prefix. Discovery responses are capped at 4 MiB.
+  particular prefix. Standard size, last-modified, and ETag properties are
+  exposed to the scanner, and discovery responses are capped at 4 MiB.
 - Connection probes update availability without resetting scan revision or
   scan timestamps. Recursive indexing into the shared library belongs to the
-  next WebDAV scanning milestone.
+  stable folder source derived from the parent connection and normalized path.
+  A failed recursive scan marks that folder source as errored but does not
+  replace or advance the last completed library snapshot.
 
 ## Vertical validation before feature development
 

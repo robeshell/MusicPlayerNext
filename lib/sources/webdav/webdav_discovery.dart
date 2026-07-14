@@ -54,12 +54,16 @@ class WebDavFileEntry {
     required this.displayName,
     required this.isCollection,
     required this.contentLength,
+    this.modifiedAt,
+    this.etag,
   });
 
   final String href;
   final String displayName;
   final bool isCollection;
   final int contentLength;
+  final DateTime? modifiedAt;
+  final String? etag;
 }
 
 class WebDavDiscoveryService {
@@ -288,6 +292,10 @@ class WebDavDiscoveryService {
       final contentLength = int.tryParse(
         _firstText(properties, 'getcontentlength') ?? '',
       );
+      final modifiedAt = _parseHttpDate(
+        _firstText(properties, 'getlastmodified'),
+      );
+      final etag = _normalizedOptionalText(_firstText(properties, 'getetag'));
 
       entries.add(
         WebDavFileEntry(
@@ -299,7 +307,9 @@ class WebDavDiscoveryService {
               )?.pathSegments.where((s) => s.isNotEmpty).lastOrNull ??
               href,
           isCollection: isCollection,
-          contentLength: contentLength ?? 0,
+          contentLength: contentLength ?? -1,
+          modifiedAt: modifiedAt,
+          etag: etag,
         ),
       );
     }
@@ -314,6 +324,20 @@ class WebDavDiscoveryService {
 
   String? _firstText(XmlNode node, String localName) {
     return _elementsNamed(node, localName).firstOrNull?.innerText.trim();
+  }
+
+  DateTime? _parseHttpDate(String? value) {
+    if (value == null || value.isEmpty) return null;
+    try {
+      return HttpDate.parse(value).toUtc();
+    } on FormatException {
+      return null;
+    }
+  }
+
+  String? _normalizedOptionalText(String? value) {
+    final normalized = value?.trim();
+    return normalized == null || normalized.isEmpty ? null : normalized;
   }
 
   static String _tlsFriendlyMessage(TlsException error) {
@@ -346,5 +370,7 @@ const _propfindBody = '''<?xml version="1.0" encoding="utf-8"?>
     <d:displayname/>
     <d:resourcetype/>
     <d:getcontentlength/>
+    <d:getlastmodified/>
+    <d:getetag/>
   </d:prop>
 </d:propfind>''';

@@ -196,12 +196,15 @@ class WebDavFixtureServer {
     final responses = <String>[];
     for (final child in entities) {
       final stat = child.statSync();
-      final relative = child.path
+      final relativeSegments = child.path
           .substring(_root.path.length)
-          .replaceAll(Platform.pathSeparator, '/');
-      final href = relative.isEmpty
+          .replaceAll(Platform.pathSeparator, '/')
+          .split('/')
+          .where((segment) => segment.isNotEmpty)
+          .toList(growable: false);
+      final href = relativeSegments.isEmpty
           ? '/'
-          : '/${relative.split('/').map(Uri.encodeComponent).join('/')}';
+          : '/${relativeSegments.map(Uri.encodeComponent).join('/')}';
       final isDirectory = stat.type == FileSystemEntityType.directory;
       responses.add('''
 <d:response>

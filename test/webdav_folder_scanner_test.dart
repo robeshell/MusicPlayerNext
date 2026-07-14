@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'package:sound_player/library/persistence/drift_library_repository.dart';
 import 'package:sound_player/library/persistence/library_database.dart';
 import 'package:sound_player/library/scanning/artwork_store.dart';
 import 'package:sound_player/library/scanning/audio_metadata_extractor.dart';
+import 'package:sound_player/library/scanning/scan_cancellation.dart';
 import 'package:sound_player/sources/webdav/webdav_connection_service.dart';
 import 'package:sound_player/sources/webdav/webdav_credentials.dart';
 import 'package:sound_player/sources/webdav/webdav_discovery.dart';
@@ -414,6 +416,273 @@ void main() {
       expect(tracks.single.mediaUri, endsWith('/fallback.mp3'));
     },
   );
+
+  test(
+    'incremental rescans skip unchanged metadata and preserve moved track IDs',
+    () async {
+      final music = Directory('${root.path}/dav/music');
+      final first = File('${music.path}/first.mp3');
+      final second = File('${music.path}/second.flac');
+      await first.writeAsBytes([1]);
+      await second.writeAsBytes([2, 2]);
+      final firstModified = DateTime.utc(2026, 7, 14, 10);
+      final secondModified = DateTime.utc(2026, 7, 14, 11);
+      await first.setLastModified(firstModified);
+      await second.setLastModified(secondModified);
+
+      final baseUrl = 'http://127.0.0.1:${server.port}/dav/';
+      final connectionId = WebDavConnectionService.stableWebDavConnectionId(
+        baseUrl,
+      );
+      final now = DateTime.utc(2026, 7, 14, 9);
+      await repository.upsertSource(
+        LibrarySourceRecord(
+          id: connectionId,
+          type: LibrarySourceType.webDav,
+          displayName: 'Fixture',
+          rootUri: baseUrl,
+          status: LibrarySourceStatus.available,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final extractor = _CountingByteMetadataExtractor({
+        1: const ExtractedAudioMetadata(
+          title: 'First',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+        ),
+        2: const ExtractedAudioMetadata(
+          title: 'Second',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 2,
+        ),
+        3: const ExtractedAudioMetadata(
+          title: 'First Updated',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+        ),
+      });
+      final scanner = WebDavFolderScanner(
+        repository: repository,
+        metadataExtractor: extractor,
+      );
+      const credentials = WebDavCredentials(
+        username: 'sound',
+        password: 'sound-test',
+      );
+      final folderId = WebDavConnectionService.stableWebDavFolderSourceId(
+        connectionId,
+        '/dav/music/',
+      );
+
+      final initial = await scanner.scan(
+        connectionId: connectionId,
+        folderUrls: const ['/dav/music/'],
+        baseUrl: baseUrl,
+        credentials: credentials,
+      );
+      expect(initial.addedTracks, 2);
+      expect(initial.unchangedTracks, 0);
+      expect(extractor.calls, 2);
+
+      final unchanged = await scanner.scan(
+        connectionId: connectionId,
+        folderUrls: const ['/dav/music/'],
+        baseUrl: baseUrl,
+        credentials: credentials,
+      );
+      expect(unchanged.unchangedTracks, 2);
+      expect(unchanged.addedTracks, 0);
+      expect(extractor.calls, 2);
+
+      await first.writeAsBytes([3, 3, 3]);
+      await first.setLastModified(
+        firstModified.add(const Duration(seconds: 1)),
+      );
+      final modified = await scanner.scan(
+        connectionId: connectionId,
+        folderUrls: const ['/dav/music/'],
+        baseUrl: baseUrl,
+        credentials: credentials,
+      );
+      expect(modified.modifiedTracks, 1);
+      expect(modified.unchangedTracks, 1);
+      expect(extractor.calls, 3);
+      expect(
+        (await repository.getTracks(sourceId: folderId))
+            .singleWhere((track) => track.relativePath.endsWith('first.mp3'))
+            .title,
+        'First Updated',
+      );
+
+      final beforeMove = (await repository.getTracks(
+        sourceId: folderId,
+      )).singleWhere((track) => track.title == 'Second');
+      await repository.setTrackFavorite(
+        beforeMove.id,
+        favorite: true,
+        changedAt: DateTime.utc(2026, 7, 14, 13),
+      );
+      final movedFile = await second.rename('${music.path}/moved.flac');
+      await movedFile.setLastModified(secondModified);
+
+      final moved = await scanner.scan(
+        connectionId: connectionId,
+        folderUrls: const ['/dav/music/'],
+        baseUrl: baseUrl,
+        credentials: credentials,
+      );
+      expect(moved.movedTracks, 1);
+      expect(moved.addedTracks, 0);
+      expect(moved.removedTracks, 0);
+      expect(extractor.calls, 4);
+      final afterMove = (await repository.getTracks(
+        sourceId: folderId,
+      )).singleWhere((track) => track.title == 'Second');
+      expect(afterMove.id, beforeMove.id);
+      expect(afterMove.relativePath, endsWith('/moved.flac'));
+      expect(
+        (await repository.getFavoriteTracks()).single.trackId,
+        beforeMove.id,
+      );
+
+      await first.delete();
+      final removed = await scanner.scan(
+        connectionId: connectionId,
+        folderUrls: const ['/dav/music/'],
+        baseUrl: baseUrl,
+        credentials: credentials,
+      );
+      expect(removed.removedTracks, 1);
+      expect(removed.unchangedTracks, 1);
+      expect(extractor.calls, 4);
+      expect(await repository.getTracks(sourceId: folderId), hasLength(1));
+    },
+  );
+
+  test(
+    'cancelled and failed WebDAV rescans keep the previous snapshot',
+    () async {
+      final music = Directory('${root.path}/dav/music');
+      final retained = File('${music.path}/retained.mp3');
+      await retained.writeAsBytes([1]);
+      final initialModified = DateTime.utc(2026, 7, 14, 10);
+      await retained.setLastModified(initialModified);
+      final baseUrl = 'http://127.0.0.1:${server.port}/dav/';
+      final connectionId = WebDavConnectionService.stableWebDavConnectionId(
+        baseUrl,
+      );
+      final now = DateTime.utc(2026, 7, 14, 9);
+      await repository.upsertSource(
+        LibrarySourceRecord(
+          id: connectionId,
+          type: LibrarySourceType.webDav,
+          displayName: 'Fixture',
+          rootUri: baseUrl,
+          status: LibrarySourceStatus.available,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      const credentials = WebDavCredentials(
+        username: 'sound',
+        password: 'sound-test',
+      );
+      final initialScanner = WebDavFolderScanner(
+        repository: repository,
+        metadataExtractor: _CountingByteMetadataExtractor({
+          1: const ExtractedAudioMetadata(
+            title: 'Retained',
+            artist: 'Artist',
+            album: 'Album',
+          ),
+        }),
+      );
+      await initialScanner.scan(
+        connectionId: connectionId,
+        folderUrls: const ['/dav/music/'],
+        baseUrl: baseUrl,
+        credentials: credentials,
+      );
+      final folderId = WebDavConnectionService.stableWebDavFolderSourceId(
+        connectionId,
+        '/dav/music/',
+      );
+      final beforeSource = await repository.getSource(folderId);
+      final beforeTrack = (await repository.getTracks(
+        sourceId: folderId,
+      )).single;
+
+      await retained.writeAsBytes([2, 2]);
+      await retained.setLastModified(
+        initialModified.add(const Duration(seconds: 1)),
+      );
+      final blockingExtractor = _BlockingByteMetadataExtractor(
+        const ExtractedAudioMetadata(
+          title: 'Should Not Commit',
+          artist: 'Artist',
+          album: 'Album',
+        ),
+      );
+      final scanner = WebDavFolderScanner(
+        repository: repository,
+        metadataExtractor: blockingExtractor,
+      );
+      final scanFuture = scanner.scan(
+        connectionId: connectionId,
+        folderUrls: const ['/dav/music/'],
+        baseUrl: baseUrl,
+        credentials: credentials,
+        existingSourceId: folderId,
+      );
+
+      await blockingExtractor.entered.future.timeout(
+        const Duration(seconds: 5),
+      );
+      expect(scanner.isScanning(folderId), isTrue);
+      expect(scanner.cancel(folderId), isTrue);
+      blockingExtractor.release.complete();
+      await expectLater(scanFuture, throwsA(isA<ScanCancelledException>()));
+
+      final afterSource = await repository.getSource(folderId);
+      final afterTrack = (await repository.getTracks(
+        sourceId: folderId,
+      )).single;
+      expect(afterSource?.status, LibrarySourceStatus.available);
+      expect(afterSource?.scanRevision, beforeSource?.scanRevision);
+      expect(afterTrack.id, beforeTrack.id);
+      expect(afterTrack.title, beforeTrack.title);
+      expect(afterTrack.fileSize, beforeTrack.fileSize);
+      expect(scanner.isScanning(folderId), isFalse);
+
+      final failingScanner = WebDavFolderScanner(
+        repository: repository,
+        discovery: _FailingDiscovery(),
+      );
+      await expectLater(
+        failingScanner.scan(
+          connectionId: connectionId,
+          folderUrls: const ['/dav/music/'],
+          baseUrl: baseUrl,
+          credentials: credentials,
+          existingSourceId: folderId,
+        ),
+        throwsA(isA<StateError>()),
+      );
+      final failedSource = await repository.getSource(folderId);
+      final trackAfterFailure = (await repository.getTracks(
+        sourceId: folderId,
+      )).single;
+      expect(failedSource?.status, LibrarySourceStatus.error);
+      expect(failedSource?.scanRevision, beforeSource?.scanRevision);
+      expect(trackAfterFailure.id, beforeTrack.id);
+      expect(trackAfterFailure.title, beforeTrack.title);
+    },
+  );
 }
 
 class _SingleMp3Discovery extends WebDavDiscoveryService {
@@ -467,6 +736,19 @@ class _FileListDiscovery extends WebDavDiscoveryService {
   }
 }
 
+class _FailingDiscovery extends WebDavDiscoveryService {
+  @override
+  Future<WebDavDiscoveryResult> probe(
+    String url, {
+    required WebDavCredentials credentials,
+  }) async {
+    return WebDavDiscoveryResult.error(
+      WebDavConnectionError.unreachable,
+      message: 'Fixture unavailable',
+    );
+  }
+}
+
 class _ByteMetadataExtractor implements AudioMetadataExtractor {
   const _ByteMetadataExtractor(this.metadata);
 
@@ -478,6 +760,37 @@ class _ByteMetadataExtractor implements AudioMetadataExtractor {
     final value = bytes.isEmpty ? null : metadata[bytes.first];
     if (value == null) throw const FormatException('Unknown audio fixture.');
     return value;
+  }
+}
+
+class _CountingByteMetadataExtractor implements AudioMetadataExtractor {
+  _CountingByteMetadataExtractor(this.metadata);
+
+  final Map<int, ExtractedAudioMetadata> metadata;
+  int calls = 0;
+
+  @override
+  Future<ExtractedAudioMetadata> extract(File file) async {
+    calls++;
+    final bytes = await file.readAsBytes();
+    final value = bytes.isEmpty ? null : metadata[bytes.first];
+    if (value == null) throw const FormatException('Unknown audio fixture.');
+    return value;
+  }
+}
+
+class _BlockingByteMetadataExtractor implements AudioMetadataExtractor {
+  _BlockingByteMetadataExtractor(this.metadata);
+
+  final ExtractedAudioMetadata metadata;
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  Future<ExtractedAudioMetadata> extract(File file) async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    return metadata;
   }
 }
 

@@ -52,6 +52,10 @@ from explicit platform-independent contracts.
   track/disc number, duration, cover, genre, year, compilation state, and
   embedded lyrics into one atomic repository batch. Android SAF scanning and
   deletion-aware rescanning pass on an Android 16 ARM64 emulator.
+- Local and WebDAV rescans reuse persisted metadata for unchanged size/time
+  fingerprints, retain stable track IDs for unambiguous moves, and expose
+  cancellation from source settings. A cancelled or failed remote rescan keeps
+  the last completed library snapshot intact.
 - Library and album-detail screens now consume the persisted repository. Real
   media URIs, artwork, metadata, and lyrics flow into playback; loading, empty,
   and repository-error states replace the former built-in demo catalog.

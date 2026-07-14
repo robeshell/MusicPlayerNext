@@ -34,6 +34,18 @@ class SourceSettingsScreen extends StatefulWidget {
 class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
   bool _addingSource = false;
   final Set<String> _scanningSourceIds = {};
+  WebDavFolderScanner? _webDavFolderScanner;
+
+  WebDavFolderScanner get _folderScanner {
+    final webDav = widget.webDavService;
+    if (webDav == null) {
+      throw StateError('WebDAV service is unavailable.');
+    }
+    return _webDavFolderScanner ??= WebDavFolderScanner(
+      repository: webDav.repository,
+      artworkStore: FileArtworkStore(),
+    );
+  }
 
   @override
   void initState() {
@@ -227,12 +239,8 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
     );
     if (!mounted || selected == null || selected.isEmpty) return;
 
-    final scanner = WebDavFolderScanner(
-      repository: webDav.repository,
-      artworkStore: FileArtworkStore(),
-    );
     try {
-      final result = await scanner.scan(
+      final result = await _folderScanner.scan(
         connectionId: connection.id,
         folderUrls: selected,
         baseUrl: connection.url,
@@ -240,13 +248,14 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
         allowBadCertificate: connection.allowBadCertificate,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '已索引 ${result.indexedTracks} 首歌曲${result.skippedFiles > 0 ? '，跳过 ${result.skippedFiles} 个文件' : ''}',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_webDavScanSummary(result))));
+    } on ScanCancelledException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('WebDAV 扫描已取消，原资料库保持不变')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -288,6 +297,20 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
     };
   }
 
+  String _webDavScanSummary(WebDavFolderScanResult result) {
+    final changes = [
+      if (result.addedTracks > 0) '新增 ${result.addedTracks}',
+      if (result.modifiedTracks > 0) '更新 ${result.modifiedTracks}',
+      if (result.movedTracks > 0) '移动 ${result.movedTracks}',
+      if (result.removedTracks > 0) '移除 ${result.removedTracks}',
+    ];
+    final changeSummary = changes.isEmpty ? '，没有文件变化' : '，${changes.join('、')}';
+    final skipped = result.skippedFiles == 0
+        ? ''
+        : '，跳过 ${result.skippedFiles} 个文件';
+    return '已索引 ${result.indexedTracks} 首歌曲$changeSummary$skipped';
+  }
+
   Future<void> _removeWebDavFolderSource(WebDavConnectionRecord source) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -325,26 +348,28 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
   Future<void> _rescanWebDavFolderSource(WebDavConnectionRecord source) async {
     final webDav = widget.webDavService;
     if (webDav == null || !mounted) return;
-    final parent = await webDav.resolveParentConnection(source);
-    if (!mounted) return;
-
-    if (parent == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('找不到父级 WebDAV 连接')));
-      return;
-    }
-
-    final credentials = await webDav.readCredentials(parent.id);
-    if (!mounted || credentials == null) return;
-
-    final scanner = WebDavFolderScanner(
-      repository: webDav.repository,
-      artworkStore: FileArtworkStore(),
-    );
+    if (!_scanningSourceIds.add(source.id)) return;
+    setState(() {});
     try {
-      final result = await scanner.scan(
+      final parent = await webDav.resolveParentConnection(source);
+      if (!mounted) return;
+      if (parent == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('找不到父级 WebDAV 连接')));
+        return;
+      }
+
+      final credentials = await webDav.readCredentials(parent.id);
+      if (!mounted) return;
+      if (credentials == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法读取连接凭据')));
+        return;
+      }
+
+      final result = await _folderScanner.scan(
         connectionId: parent.id,
         folderUrls: [source.url],
         baseUrl: parent.url,
@@ -353,18 +378,22 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
         existingSourceId: source.id,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '已索引 ${result.indexedTracks} 首歌曲${result.skippedFiles > 0 ? '，跳过 ${result.skippedFiles} 个文件' : ''}',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_webDavScanSummary(result))));
+    } on ScanCancelledException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('WebDAV 扫描已取消，原资料库保持不变')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('扫描失败：$error')));
+    } finally {
+      _scanningSourceIds.remove(source.id);
+      if (mounted) setState(() {});
     }
   }
 
@@ -528,19 +557,30 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
                       const SizedBox(height: 14),
                   ],
                   for (var i = 0; i < folderSources.length; i++) ...[
-                    _SourceCard(
-                      icon: Icons.folder_rounded,
-                      iconColor: SoundColors.webDav,
-                      title: folderSources[i].displayName,
-                      subtitle: folderSources[i].url,
-                      status: _folderSourceStatus(folderSources[i]),
-                      statusColor: _webDavStatusColor(folderSources[i]),
-                      folders: [folderSources[i].url],
-                      onRemove: () =>
-                          _removeWebDavFolderSource(folderSources[i]),
-                      onRescan: () =>
-                          _rescanWebDavFolderSource(folderSources[i]),
-                      rescanLabel: '重新扫描',
+                    Builder(
+                      builder: (context) {
+                        final source = folderSources[i];
+                        final scanning =
+                            _scanningSourceIds.contains(source.id) ||
+                            (_webDavFolderScanner?.isScanning(source.id) ??
+                                false);
+                        return _SourceCard(
+                          icon: Icons.folder_rounded,
+                          iconColor: SoundColors.webDav,
+                          title: source.displayName,
+                          subtitle: source.url,
+                          status: _folderSourceStatus(source),
+                          statusColor: _webDavStatusColor(source),
+                          folders: [source.url],
+                          onRemove: scanning
+                              ? null
+                              : () => _removeWebDavFolderSource(source),
+                          onRescan: scanning
+                              ? () => _folderScanner.cancel(source.id)
+                              : () => _rescanWebDavFolderSource(source),
+                          rescanLabel: scanning ? '取消扫描' : '重新扫描',
+                        );
+                      },
                     ),
                     if (i != folderSources.length - 1)
                       const SizedBox(height: 14),

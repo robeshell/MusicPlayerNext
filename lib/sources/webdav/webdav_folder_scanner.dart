@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import '../../library/library_records.dart';
 import '../../library/scanning/embedded_lyrics_parser.dart';
+import '../../library/scanning/scan_cancellation.dart';
 import '../../library/library_repository.dart';
 import '../../library/scanning/album_artist_resolver.dart';
 import '../../library/scanning/album_grouping.dart';
@@ -21,10 +22,20 @@ class WebDavFolderScanResult {
   const WebDavFolderScanResult({
     required this.indexedTracks,
     this.skippedFiles = 0,
+    this.addedTracks = 0,
+    this.modifiedTracks = 0,
+    this.movedTracks = 0,
+    this.removedTracks = 0,
+    this.unchangedTracks = 0,
   });
 
   final int indexedTracks;
   final int skippedFiles;
+  final int addedTracks;
+  final int modifiedTracks;
+  final int movedTracks;
+  final int removedTracks;
+  final int unchangedTracks;
 }
 
 class WebDavFolderScanner {
@@ -41,6 +52,16 @@ class WebDavFolderScanner {
   final ArtworkStore? artworkStore;
   final AudioMetadataExtractor metadataExtractor;
   final WebDavDiscoveryService discovery;
+  final Map<String, ScanCancellationToken> _activeScans = {};
+
+  bool isScanning(String sourceId) => _activeScans.containsKey(sourceId);
+
+  bool cancel(String sourceId) {
+    final token = _activeScans[sourceId];
+    if (token == null) return false;
+    token.cancel();
+    return true;
+  }
 
   /// Scans one or more [folderUrls] on the same WebDAV server. Each folder is
   /// persisted as a separate [LibrarySourceRecord] so the library screen can
@@ -65,6 +86,11 @@ class WebDavFolderScanner {
         : discovery;
     var totalIndexed = 0;
     var totalSkipped = 0;
+    var totalAdded = 0;
+    var totalModified = 0;
+    var totalMoved = 0;
+    var totalRemoved = 0;
+    var totalUnchanged = 0;
 
     for (final folderUrl in folderUrls) {
       final folderPath = _folderPath(folderUrl);
@@ -76,6 +102,11 @@ class WebDavFolderScanner {
           );
       final now = DateTime.now().toUtc();
       final existing = await repository.getSource(sourceId);
+      if (_activeScans.containsKey(sourceId)) {
+        throw StateError('A scan is already active for $folderPath.');
+      }
+      final cancellationToken = ScanCancellationToken();
+      _activeScans[sourceId] = cancellationToken;
 
       try {
         await repository.upsertSource(
@@ -92,6 +123,7 @@ class WebDavFolderScanner {
             updatedAt: now,
           ),
         );
+        cancellationToken.throwIfCancelled();
 
         final fullFolderUrl = _resolveFolderUrl(baseUrl, folderPath);
 
@@ -100,61 +132,87 @@ class WebDavFolderScanner {
           baseUrl,
           credentials: credentials,
           discovery: effectiveDiscovery,
+          cancellationToken: cancellationToken,
         );
 
-        final batch = await _buildBatch(
+        final build = await _buildBatch(
           sourceId,
-          fullFolderUrl,
           files,
           credentials: credentials,
           completedAt: DateTime.now().toUtc(),
           allowBadCertificate: allowBadCertificate,
+          cancellationToken: cancellationToken,
         );
 
-        await repository.replaceSourceScan(batch);
-        totalIndexed += batch.tracks.length;
-        totalSkipped += files.length - batch.tracks.length;
-      } catch (error) {
-        if (await repository.getSource(sourceId) != null) {
-          await repository.markSourceFailure(
-            sourceId,
-            status: LibrarySourceStatus.error,
-            message: error.toString(),
-            occurredAt: DateTime.now().toUtc(),
-          );
+        cancellationToken.throwIfCancelled();
+        await repository.replaceSourceScan(build.batch);
+        totalIndexed += build.batch.tracks.length;
+        totalSkipped += files.length - build.batch.tracks.length;
+        totalAdded += build.addedTracks;
+        totalModified += build.modifiedTracks;
+        totalMoved += build.movedTracks;
+        totalRemoved += build.removedTracks;
+        totalUnchanged += build.unchangedTracks;
+      } on ScanCancelledException {
+        if (existing == null) {
+          await repository.deleteSource(sourceId);
         } else {
-          rethrow;
+          await repository.upsertSource(
+            _sourceAfterCancelledScan(
+              existing,
+              occurredAt: DateTime.now().toUtc(),
+            ),
+          );
         }
-        totalSkipped++;
+        rethrow;
+      } catch (error) {
+        await repository.markSourceFailure(
+          sourceId,
+          status: LibrarySourceStatus.error,
+          message: error.toString(),
+          occurredAt: DateTime.now().toUtc(),
+        );
+        rethrow;
+      } finally {
+        _activeScans.remove(sourceId);
       }
     }
 
     return WebDavFolderScanResult(
       indexedTracks: totalIndexed,
       skippedFiles: totalSkipped,
+      addedTracks: totalAdded,
+      modifiedTracks: totalModified,
+      movedTracks: totalMoved,
+      removedTracks: totalRemoved,
+      unchangedTracks: totalUnchanged,
     );
   }
 
-  Future<List<String>> _collectAudioFiles(
+  Future<List<_RemoteAudioFile>> _collectAudioFiles(
     String fullUrl,
     String connectionBaseUrl, {
     required WebDavCredentials credentials,
     required WebDavDiscoveryService discovery,
+    required ScanCancellationToken cancellationToken,
   }) async {
-    final files = <String>{};
+    final files = <String, _RemoteAudioFile>{};
     final pending = <String>[fullUrl];
     final visited = <String>{};
 
     while (pending.isNotEmpty) {
+      cancellationToken.throwIfCancelled();
       final current = pending.removeLast();
       if (!visited.add(current)) continue;
 
       final result = await discovery.probe(current, credentials: credentials);
+      cancellationToken.throwIfCancelled();
       if (result.error != null) {
         throw StateError(result.errorMessage ?? '无法读取 WebDAV 目录：$current');
       }
 
       for (final entry in result.files) {
+        cancellationToken.throwIfCancelled();
         // Use the server-returned href as the canonical path.
         final childUrl = _resolveChildUrl(
           connectionBaseUrl,
@@ -168,12 +226,18 @@ class WebDavFolderScanner {
         if (entry.isCollection) {
           pending.add(childUrl);
         } else if (_isAudioFile(entry.displayName)) {
-          files.add(childUrl);
+          files[childUrl] = _RemoteAudioFile(
+            url: childUrl,
+            contentLength: entry.contentLength,
+            modifiedAt: entry.modifiedAt?.toUtc(),
+          );
         }
       }
     }
 
-    return files.toList(growable: false);
+    final result = files.values.toList(growable: false)
+      ..sort((left, right) => left.url.compareTo(right.url));
+    return result;
   }
 
   /// Resolves a child URL from a parent [baseUrl] and a PROPFIND [href].
@@ -225,33 +289,76 @@ class WebDavFolderScanner {
     return normalize(left) == normalize(right);
   }
 
-  Future<LibraryScanBatch> _buildBatch(
+  Future<_WebDavBatchBuild> _buildBatch(
     String sourceId,
-    String baseFolderUrl,
-    List<String> fileUrls, {
+    List<_RemoteAudioFile> files, {
     required WebDavCredentials credentials,
     required DateTime completedAt,
+    required ScanCancellationToken cancellationToken,
     bool allowBadCertificate = false,
   }) async {
+    final existingTracks = await repository.getTracks(sourceId: sourceId);
+    final existingAlbums = await repository.getAlbums(sourceId: sourceId);
+    final existingArtists = await repository.getArtists(sourceId: sourceId);
+    final allLyrics = await repository.getAllLyrics();
+    cancellationToken.throwIfCancelled();
+
+    final existingTracksByUrl = {
+      for (final track in existingTracks) track.relativePath: track,
+    };
+    final currentUrls = files.map((file) => file.url).toSet();
+    final missingTracks = existingTracks
+        .where((track) => !currentUrls.contains(track.relativePath))
+        .toList(growable: false);
+    final newFiles = files
+        .where((file) => !existingTracksByUrl.containsKey(file.url))
+        .toList(growable: false);
+    final movedTracksByNewUrl = _matchMovedTracks(missingTracks, newFiles);
+
     final tracks = <LibraryTrackRecord>[];
-    final albums = <String, LibraryAlbumRecord>{};
+    final albums = <String, LibraryAlbumRecord>{
+      for (final album in existingAlbums) album.id: album,
+    };
     final albumArtists = <String, AlbumArtistResolver>{};
-    final artists = <String, LibraryArtistRecord>{};
+    final artists = <String, LibraryArtistRecord>{
+      for (final artist in existingArtists) artist.id: artist,
+    };
     final lyrics = <LibraryLyricRecord>[];
+    var addedTracks = 0;
+    var modifiedTracks = 0;
+    var movedTracks = 0;
+    var unchangedTracks = 0;
 
     try {
-      for (final fileUrl in fileUrls) {
+      for (final file in files) {
+        cancellationToken.throwIfCancelled();
+        final existing = existingTracksByUrl[file.url];
+        if (existing != null && _sameRemoteFingerprint(existing, file)) {
+          final reused = _reuseRemoteTrack(existing, file);
+          tracks.add(reused);
+          lyrics.addAll(allLyrics[existing.id] ?? const []);
+          _addExistingTrackToAlbumResolver(
+            reused,
+            albums: albums,
+            albumArtists: albumArtists,
+          );
+          unchangedTracks++;
+          continue;
+        }
+
+        final movedFrom = movedTracksByNewUrl[file.url];
         try {
           final metadata = await _readRemoteMetadata(
-            fileUrl,
+            file.url,
             credentials: credentials,
             allowBadCertificate: allowBadCertificate,
           );
+          cancellationToken.throwIfCancelled();
           if (metadata == null) continue;
 
           final title = metadata.title.isNotEmpty
               ? metadata.title
-              : p.basenameWithoutExtension(fileUrl);
+              : p.basenameWithoutExtension(Uri.parse(file.url).path);
           final artistName = metadata.artist.isNotEmpty
               ? metadata.artist
               : '未知艺人';
@@ -263,7 +370,7 @@ class WebDavFolderScanner {
             albumTitle: albumTitle,
             albumArtist: metadata.albumArtist,
             isCompilation: metadata.isCompilation,
-            relativePath: fileUrl,
+            relativePath: file.url,
             discNumber: metadata.discNumber,
           );
           final artistId = _stableId('artist:$sourceId:$artistName');
@@ -311,15 +418,18 @@ class WebDavFolderScanner {
             artworkKey: artworkKey,
           );
 
-          final trackId = _stableId('track:$sourceId:$fileUrl');
+          final trackId =
+              movedFrom?.id ??
+              existing?.id ??
+              _stableId('track:$sourceId:${file.url}');
           tracks.add(
             LibraryTrackRecord(
               id: trackId,
               sourceId: sourceId,
               albumId: albumId,
               artistId: artistId,
-              relativePath: fileUrl,
-              mediaUri: fileUrl,
+              relativePath: file.url,
+              mediaUri: file.url,
               title: title,
               artistName: artistName,
               albumTitle: albumTitle,
@@ -328,15 +438,25 @@ class WebDavFolderScanner {
               discNumber: metadata.discNumber,
               year: metadata.year,
               genre: metadata.genre.isNotEmpty ? metadata.genre : null,
-              contentType: _contentTypeFor(fileUrl),
-              modifiedAt: completedAt,
+              contentType: _contentTypeFor(file.url),
+              fileSize: file.contentLength >= 0 ? file.contentLength : null,
+              modifiedAt: file.modifiedAt?.toUtc() ?? completedAt,
+              artworkKey: artworkKey,
             ),
           );
 
           if (metadata.lyrics.isNotEmpty) {
             lyrics.addAll(parseEmbeddedLyrics(trackId, metadata.lyrics));
           }
-        } catch (_) {
+          if (movedFrom != null) {
+            movedTracks++;
+          } else if (existing != null) {
+            modifiedTracks++;
+          } else {
+            addedTracks++;
+          }
+        } catch (error) {
+          if (error is ScanCancelledException) rethrow;
           // Skip damaged files.
         }
       }
@@ -344,8 +464,14 @@ class WebDavFolderScanner {
       // Client closed per-file.
     }
 
+    cancellationToken.throwIfCancelled();
+    final referencedAlbumIds = tracks
+        .map((track) => track.albumId)
+        .whereType<String>()
+        .toSet();
     final resolvedAlbums = <LibraryAlbumRecord>[];
     for (final entry in albums.entries) {
+      if (!referencedAlbumIds.contains(entry.key)) continue;
       final album = entry.value;
       final albumArtist =
           albumArtists[entry.key]?.resolve() ?? album.albumArtist;
@@ -378,13 +504,28 @@ class WebDavFolderScanner {
       );
     }
 
-    return LibraryScanBatch(
-      sourceId: sourceId,
-      completedAt: completedAt,
-      artists: artists.values.toList(growable: false),
-      albums: resolvedAlbums,
-      tracks: tracks,
-      lyrics: lyrics,
+    final referencedArtistIds = <String>{
+      ...tracks.map((track) => track.artistId).whereType<String>(),
+      ...resolvedAlbums.map((album) => album.artistId).whereType<String>(),
+    };
+    final resolvedArtists = artists.values
+        .where((artist) => referencedArtistIds.contains(artist.id))
+        .toList(growable: false);
+    cancellationToken.throwIfCancelled();
+    return _WebDavBatchBuild(
+      batch: LibraryScanBatch(
+        sourceId: sourceId,
+        completedAt: completedAt,
+        artists: resolvedArtists,
+        albums: resolvedAlbums,
+        tracks: tracks,
+        lyrics: lyrics,
+      ),
+      addedTracks: addedTracks,
+      modifiedTracks: modifiedTracks,
+      movedTracks: movedTracks,
+      removedTracks: missingTracks.length - movedTracks,
+      unchangedTracks: unchangedTracks,
     );
   }
 
@@ -591,6 +732,162 @@ class WebDavFolderScanner {
         .toList();
     return segments.isNotEmpty ? segments.join(' / ') : folderUrl;
   }
+}
+
+Map<String, LibraryTrackRecord> _matchMovedTracks(
+  List<LibraryTrackRecord> missingTracks,
+  List<_RemoteAudioFile> newFiles,
+) {
+  final oldByFingerprint = <_RemoteFileFingerprint, List<LibraryTrackRecord>>{};
+  for (final track in missingTracks) {
+    final fingerprint = _trackFingerprint(track);
+    if (fingerprint == null) continue;
+    oldByFingerprint.putIfAbsent(fingerprint, () => []).add(track);
+  }
+  final newByFingerprint = <_RemoteFileFingerprint, List<_RemoteAudioFile>>{};
+  for (final file in newFiles) {
+    final fingerprint = _remoteFingerprint(file);
+    if (fingerprint == null) continue;
+    newByFingerprint.putIfAbsent(fingerprint, () => []).add(file);
+  }
+
+  final matches = <String, LibraryTrackRecord>{};
+  for (final entry in newByFingerprint.entries) {
+    final oldCandidates = oldByFingerprint[entry.key];
+    if (entry.value.length != 1 || oldCandidates?.length != 1) continue;
+    matches[entry.value.single.url] = oldCandidates!.single;
+  }
+  return matches;
+}
+
+bool _sameRemoteFingerprint(LibraryTrackRecord track, _RemoteAudioFile file) {
+  final oldFingerprint = _trackFingerprint(track);
+  final currentFingerprint = _remoteFingerprint(file);
+  return oldFingerprint != null && oldFingerprint == currentFingerprint;
+}
+
+LibraryTrackRecord _reuseRemoteTrack(
+  LibraryTrackRecord track,
+  _RemoteAudioFile file,
+) {
+  return LibraryTrackRecord(
+    id: track.id,
+    sourceId: track.sourceId,
+    albumId: track.albumId,
+    artistId: track.artistId,
+    relativePath: file.url,
+    mediaUri: file.url,
+    title: track.title,
+    artistName: track.artistName,
+    albumTitle: track.albumTitle,
+    durationMs: track.durationMs,
+    trackNumber: track.trackNumber,
+    discNumber: track.discNumber,
+    year: track.year,
+    genre: track.genre,
+    contentType: track.contentType,
+    fileSize: file.contentLength,
+    modifiedAt: file.modifiedAt!.toUtc(),
+    artworkKey: track.artworkKey,
+  );
+}
+
+void _addExistingTrackToAlbumResolver(
+  LibraryTrackRecord track, {
+  required Map<String, LibraryAlbumRecord> albums,
+  required Map<String, AlbumArtistResolver> albumArtists,
+}) {
+  final albumId = track.albumId;
+  if (albumId == null) return;
+  final album = albums[albumId];
+  if (album == null) return;
+  albumArtists.putIfAbsent(albumId, AlbumArtistResolver.new)
+    ..add(track.artistName)
+    ..addAlbumArtist(album.albumArtist);
+}
+
+LibrarySourceRecord _sourceAfterCancelledScan(
+  LibrarySourceRecord existing, {
+  required DateTime occurredAt,
+}) {
+  final restoredStatus = existing.status == LibrarySourceStatus.scanning
+      ? (existing.scanRevision > 0
+            ? LibrarySourceStatus.available
+            : LibrarySourceStatus.idle)
+      : existing.status;
+  return LibrarySourceRecord(
+    id: existing.id,
+    type: LibrarySourceType.webDav,
+    displayName: existing.displayName,
+    rootUri: existing.rootUri,
+    status: restoredStatus,
+    scanRevision: existing.scanRevision,
+    permissionBookmark: existing.permissionBookmark,
+    lastScanStartedAt: existing.lastScanStartedAt,
+    lastScanCompletedAt: existing.lastScanCompletedAt,
+    lastError: existing.lastError,
+    createdAt: existing.createdAt,
+    updatedAt: occurredAt.toUtc(),
+  );
+}
+
+_RemoteFileFingerprint? _trackFingerprint(LibraryTrackRecord track) {
+  final size = track.fileSize;
+  if (size == null) return null;
+  return _RemoteFileFingerprint(size, track.modifiedAt.toUtc());
+}
+
+_RemoteFileFingerprint? _remoteFingerprint(_RemoteAudioFile file) {
+  final modifiedAt = file.modifiedAt;
+  if (file.contentLength < 0 || modifiedAt == null) return null;
+  return _RemoteFileFingerprint(file.contentLength, modifiedAt.toUtc());
+}
+
+class _RemoteAudioFile {
+  const _RemoteAudioFile({
+    required this.url,
+    required this.contentLength,
+    required this.modifiedAt,
+  });
+
+  final String url;
+  final int contentLength;
+  final DateTime? modifiedAt;
+}
+
+class _RemoteFileFingerprint {
+  const _RemoteFileFingerprint(this.size, this.modifiedAt);
+
+  final int size;
+  final DateTime modifiedAt;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _RemoteFileFingerprint &&
+        other.size == size &&
+        other.modifiedAt == modifiedAt;
+  }
+
+  @override
+  int get hashCode => Object.hash(size, modifiedAt);
+}
+
+class _WebDavBatchBuild {
+  const _WebDavBatchBuild({
+    required this.batch,
+    required this.addedTracks,
+    required this.modifiedTracks,
+    required this.movedTracks,
+    required this.removedTracks,
+    required this.unchangedTracks,
+  });
+
+  final LibraryScanBatch batch;
+  final int addedTracks;
+  final int modifiedTracks;
+  final int movedTracks;
+  final int removedTracks;
+  final int unchangedTracks;
 }
 
 class _RemoteMetadata {
