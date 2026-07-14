@@ -204,6 +204,58 @@ void main() {
     await repository.close();
   });
 
+  test('leaves unchanged track rows untouched during a rescan', () async {
+    final createdAt = DateTime.utc(2026, 7, 14, 9);
+    final database = LibraryDatabase(NativeDatabase.memory());
+    final repository = DriftLibraryRepository(database);
+    await repository.upsertSource(_source(createdAt));
+    final track = _track('track-one', '01-one.flac', title: 'One');
+    await repository.replaceSourceScan(
+      _scan(
+        completedAt: createdAt.add(const Duration(minutes: 1)),
+        tracks: [track],
+      ),
+    );
+    await database.customStatement(
+      'CREATE TABLE track_mutations (operation TEXT NOT NULL)',
+    );
+    await database.customStatement('''
+      CREATE TRIGGER audit_track_insert AFTER INSERT ON library_tracks
+      BEGIN INSERT INTO track_mutations VALUES ('insert'); END
+    ''');
+    await database.customStatement('''
+      CREATE TRIGGER audit_track_update AFTER UPDATE ON library_tracks
+      BEGIN INSERT INTO track_mutations VALUES ('update'); END
+    ''');
+    await database.customStatement('''
+      CREATE TRIGGER audit_track_delete AFTER DELETE ON library_tracks
+      BEGIN INSERT INTO track_mutations VALUES ('delete'); END
+    ''');
+
+    await repository.replaceSourceScan(
+      _scan(
+        completedAt: createdAt.add(const Duration(minutes: 2)),
+        tracks: [track],
+      ),
+    );
+    var mutations = await database
+        .customSelect('SELECT operation FROM track_mutations')
+        .get();
+    expect(mutations, isEmpty);
+
+    await repository.replaceSourceScan(
+      _scan(
+        completedAt: createdAt.add(const Duration(minutes: 3)),
+        tracks: [_track('track-one', '01-one.flac', title: 'Updated')],
+      ),
+    );
+    mutations = await database
+        .customSelect('SELECT operation FROM track_mutations')
+        .get();
+    expect(mutations.map((row) => row.read<String>('operation')), ['update']);
+    await repository.close();
+  });
+
   test('favorites and play history survive rescans and reopening', () async {
     final createdAt = DateTime.utc(2026, 7, 13, 12);
     var repository = _openRepository(databaseFile);

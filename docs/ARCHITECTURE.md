@@ -91,11 +91,14 @@ retry that reloads the current track.
 - Drift manages the SQLite v3 schema. Catalog entity primary keys are stable
   text IDs supplied by source scanners; only lyric ordering uses a composite
   key. Favorite, history, and playlist-member rows deliberately avoid catalog
-  foreign keys so the atomic delete-and-reinsert phase of a rescan cannot erase
-  user state. Playlist membership does reference its owning playlist so an
+  foreign keys so catalog changes and temporary source loss cannot erase user
+  state. Playlist membership does reference its owning playlist so an
   explicit playlist deletion cleans up its entries.
-- A source scan is replaced inside one transaction. Failed constraints roll
-  back metadata, lyrics, deletions, and the source scan revision together.
+- A source scan is applied as a complete snapshot inside one transaction, but
+  the repository diffs artists, albums, tracks, and lyrics first. Unchanged
+  rows receive no write; additions, updates, and removals commit together.
+  Failed constraints roll back metadata, lyrics, deletions, and the source scan
+  revision together.
 - All persisted timestamps cross the repository boundary as UTC values.
 - Native databases live in the application documents directory and can be
   shared across Flutter isolates. The development Web build uses the matching
@@ -182,9 +185,20 @@ The `web/sqlite3.wasm` binary must match the `sqlite3` version resolved in
   any stale scroll animation, while natural cue changes use a fixed short
   follow animation. User wheel or touch scrolling pauses follow for three
   seconds and exposes an immediate return action.
+- Local rescans compare path, file size, and modification time before metadata
+  extraction. Unchanged files reuse persisted metadata and lyrics. A unique
+  size/time match between one missing path and one new path is treated as a
+  move: metadata is refreshed but the stable track ID is retained so favorites,
+  history, and playlists continue to point at the song. Ambiguous matches are
+  deliberately handled as remove/add instead of guessing.
+- Local scans have a cooperative cancellation token checked around discovery,
+  metadata extraction, artwork, and the final transaction. Cancelling from the
+  source screen restores the previous source state and never advances the scan
+  revision or replaces the last completed snapshot.
 - Damaged files and artwork-write failures become scan warnings instead of
-  discarding other valid tracks. A completed scan replaces the source batch in
-  one existing Drift transaction, so removed files disappear atomically.
+  discarding other valid tracks. A completed snapshot is diffed and committed
+  in one Drift transaction, so removed files disappear atomically without
+  rewriting unchanged rows.
 
 ## WebDAV connection management
 

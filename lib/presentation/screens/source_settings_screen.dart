@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/sound_theme.dart';
 import '../../library/library_records.dart';
 import '../../library/scanning/local_library_scanner.dart';
+import '../../library/scanning/scan_cancellation.dart';
 import '../../sources/local/local_source_service.dart';
 import '../../sources/webdav/webdav_connection_service.dart';
 import '../../sources/webdav/webdav_discovery.dart';
@@ -78,9 +79,27 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       final skipped = report.skippedFiles == 0
           ? ''
           : '，跳过 ${report.skippedFiles} 个文件';
+      final changes = [
+        if (report.addedTracks > 0) '新增 ${report.addedTracks}',
+        if (report.modifiedTracks > 0) '更新 ${report.modifiedTracks}',
+        if (report.movedTracks > 0) '移动 ${report.movedTracks}',
+        if (report.removedTracks > 0) '移除 ${report.removedTracks}',
+      ];
+      final changeSummary = changes.isEmpty
+          ? '，没有文件变化'
+          : '，${changes.join('、')}';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已索引 ${report.indexedTracks} 首歌曲$skipped')),
+        SnackBar(
+          content: Text(
+            '已索引 ${report.indexedTracks} 首歌曲$changeSummary$skipped',
+          ),
+        ),
       );
+    } on ScanCancelledException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('扫描已取消，原资料库保持不变')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -412,18 +431,27 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
             return Column(
               children: [
                 for (var index = 0; index < sources.length; index++) ...[
-                  _SourceCard(
-                    icon: Icons.folder_rounded,
-                    iconColor: SoundColors.local,
-                    title: sources[index].displayName,
-                    subtitle: sources[index].rootUri,
-                    status: _sourceStatus(sources[index]),
-                    statusColor: _sourceStatusColor(sources[index]),
-                    folders: [sources[index].displayName],
-                    onRemove: () => _removeLocalSource(sources[index]),
-                    onRescan: _scanningSourceIds.contains(sources[index].id)
-                        ? null
-                        : () => _scanLocalSource(sources[index]),
+                  Builder(
+                    builder: (context) {
+                      final source = sources[index];
+                      final scanning = _scanningSourceIds.contains(source.id);
+                      return _SourceCard(
+                        icon: Icons.folder_rounded,
+                        iconColor: SoundColors.local,
+                        title: source.displayName,
+                        subtitle: source.rootUri,
+                        status: _sourceStatus(source),
+                        statusColor: _sourceStatusColor(source),
+                        folders: [source.displayName],
+                        onRemove: scanning
+                            ? null
+                            : () => _removeLocalSource(source),
+                        onRescan: scanning
+                            ? () => widget.scanner.cancel(source.id)
+                            : () => _scanLocalSource(source),
+                        rescanLabel: scanning ? '取消扫描' : '重新扫描',
+                      );
+                    },
                   ),
                   if (index != sources.length - 1) const SizedBox(height: 14),
                 ],

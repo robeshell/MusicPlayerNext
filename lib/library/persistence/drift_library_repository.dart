@@ -298,30 +298,11 @@ class DriftLibraryRepository implements LibraryRepository {
         throw StateError('Unknown library source: ${batch.sourceId}');
       }
 
-      // A scan batch is a complete snapshot of one source. Rebuilding that
-      // source inside the same transaction avoids SQLite NOT IN parameter
-      // lists and conflict updates that become expensive at 10,000+ tracks,
-      // while preserving the previous catalog if any insert fails.
-      await _deleteSourceCatalog(batch.sourceId);
-
-      await _database.batch((writer) {
-        writer.insertAll(
-          _database.libraryArtists,
-          batch.artists.map(_artistCompanion),
-        );
-        writer.insertAll(
-          _database.libraryAlbums,
-          batch.albums.map(_albumCompanion),
-        );
-        writer.insertAll(
-          _database.libraryTracks,
-          batch.tracks.map(_trackCompanion),
-        );
-        writer.insertAll(
-          _database.libraryLyrics,
-          batch.lyrics.map(_lyricCompanion),
-        );
-      });
+      // A scan batch remains a complete source snapshot, but applying it is
+      // differential. Unchanged rows are left untouched, which avoids a full
+      // delete/reinsert cycle on every rescan and keeps moved tracks connected
+      // to user state when the scanner deliberately preserves their IDs.
+      await _applySourceScanDelta(batch);
 
       await (_database.update(
         _database.librarySources,
@@ -335,6 +316,147 @@ class DriftLibraryRepository implements LibraryRepository {
         ),
       );
     });
+  }
+
+  Future<void> _applySourceScanDelta(LibraryScanBatch batch) async {
+    final existingArtists = await (_database.select(
+      _database.libraryArtists,
+    )..where((row) => row.sourceId.equals(batch.sourceId))).get();
+    final existingAlbums = await (_database.select(
+      _database.libraryAlbums,
+    )..where((row) => row.sourceId.equals(batch.sourceId))).get();
+    final existingTracks = await (_database.select(
+      _database.libraryTracks,
+    )..where((row) => row.sourceId.equals(batch.sourceId))).get();
+    final existingLyricRows =
+        await (_database.select(_database.libraryLyrics).join([
+          innerJoin(
+            _database.libraryTracks,
+            _database.libraryTracks.id.equalsExp(
+                  _database.libraryLyrics.trackId,
+                ) &
+                _database.libraryTracks.sourceId.equals(batch.sourceId),
+          ),
+        ])).get();
+
+    final oldArtists = {for (final row in existingArtists) row.id: row};
+    final oldAlbums = {for (final row in existingAlbums) row.id: row};
+    final oldTracks = {for (final row in existingTracks) row.id: row};
+    final newArtists = {for (final record in batch.artists) record.id: record};
+    final newAlbums = {for (final record in batch.albums) record.id: record};
+    final newTracks = {for (final record in batch.tracks) record.id: record};
+
+    final removedTrackIds = oldTracks.keys
+        .where((id) => !newTracks.containsKey(id))
+        .toList(growable: false);
+    final removedAlbumIds = oldAlbums.keys
+        .where((id) => !newAlbums.containsKey(id))
+        .toList(growable: false);
+    final removedArtistIds = oldArtists.keys
+        .where((id) => !newArtists.containsKey(id))
+        .toList(growable: false);
+
+    await _deleteIdsInChunks(
+      removedTrackIds,
+      (ids) => (_database.delete(
+        _database.libraryTracks,
+      )..where((row) => row.id.isIn(ids))).go(),
+    );
+    await _deleteIdsInChunks(
+      removedAlbumIds,
+      (ids) => (_database.delete(
+        _database.libraryAlbums,
+      )..where((row) => row.id.isIn(ids))).go(),
+    );
+    await _deleteIdsInChunks(
+      removedArtistIds,
+      (ids) => (_database.delete(
+        _database.libraryArtists,
+      )..where((row) => row.id.isIn(ids))).go(),
+    );
+
+    final changedArtists = batch.artists
+        .where((record) {
+          final old = oldArtists[record.id];
+          return old == null || !_sameArtist(old, record);
+        })
+        .toList(growable: false);
+    final changedAlbums = batch.albums
+        .where((record) {
+          final old = oldAlbums[record.id];
+          return old == null || !_sameAlbum(old, record);
+        })
+        .toList(growable: false);
+    final changedTracks = batch.tracks
+        .where((record) {
+          final old = oldTracks[record.id];
+          return old == null || !_sameTrack(old, record);
+        })
+        .toList(growable: false);
+
+    await _database.batch((writer) {
+      writer.insertAllOnConflictUpdate(
+        _database.libraryArtists,
+        changedArtists.map(_artistCompanion),
+      );
+      writer.insertAllOnConflictUpdate(
+        _database.libraryAlbums,
+        changedAlbums.map(_albumCompanion),
+      );
+      writer.insertAllOnConflictUpdate(
+        _database.libraryTracks,
+        changedTracks.map(_trackCompanion),
+      );
+    });
+
+    final oldLyrics = <String, List<db.LibraryLyric>>{};
+    for (final joined in existingLyricRows) {
+      final row = joined.readTable(_database.libraryLyrics);
+      oldLyrics.putIfAbsent(row.trackId, () => []).add(row);
+    }
+    final newLyrics = <String, List<LibraryLyricRecord>>{};
+    for (final lyric in batch.lyrics) {
+      newLyrics.putIfAbsent(lyric.trackId, () => []).add(lyric);
+    }
+    final changedLyricTrackIds = <String>{};
+    for (final trackId in newTracks.keys) {
+      if (!_sameLyrics(
+        oldLyrics[trackId] ?? const [],
+        newLyrics[trackId] ?? const [],
+      )) {
+        changedLyricTrackIds.add(trackId);
+      }
+    }
+    await _deleteIdsInChunks(
+      changedLyricTrackIds.toList(growable: false),
+      (ids) => (_database.delete(
+        _database.libraryLyrics,
+      )..where((row) => row.trackId.isIn(ids))).go(),
+    );
+    final changedLyrics = batch.lyrics
+        .where((lyric) => changedLyricTrackIds.contains(lyric.trackId))
+        .toList(growable: false);
+    if (changedLyrics.isNotEmpty) {
+      await _database.batch(
+        (writer) => writer.insertAll(
+          _database.libraryLyrics,
+          changedLyrics.map(_lyricCompanion),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteIdsInChunks(
+    List<String> ids,
+    Future<int> Function(List<String> chunk) delete,
+  ) async {
+    const chunkSize = 400;
+    for (var start = 0; start < ids.length; start += chunkSize) {
+      final end = start + chunkSize < ids.length
+          ? start + chunkSize
+          : ids.length;
+      await delete(ids.sublist(start, end));
+    }
   }
 
   @override
@@ -540,18 +662,6 @@ class DriftLibraryRepository implements LibraryRepository {
           db.LibraryPlaylistsCompanion(updatedAt: Value(changedAt.toUtc())),
         );
     if (changed == 0) throw StateError('Unknown playlist: $playlistId');
-  }
-
-  Future<void> _deleteSourceCatalog(String sourceId) async {
-    await (_database.delete(
-      _database.libraryTracks,
-    )..where((row) => row.sourceId.equals(sourceId))).go();
-    await (_database.delete(
-      _database.libraryAlbums,
-    )..where((row) => row.sourceId.equals(sourceId))).go();
-    await (_database.delete(
-      _database.libraryArtists,
-    )..where((row) => row.sourceId.equals(sourceId))).go();
   }
 
   void _validateBatch(LibraryScanBatch batch) {
@@ -785,4 +895,73 @@ db.LibraryLyricsCompanion _lyricCompanion(LibraryLyricRecord lyric) {
     timestampMs: lyric.timestampMs,
     content: lyric.text,
   );
+}
+
+bool _sameArtist(db.LibraryArtist old, LibraryArtistRecord current) {
+  return old.id == current.id &&
+      old.sourceId == current.sourceId &&
+      old.name == current.name &&
+      old.sortName == current.sortName;
+}
+
+bool _sameAlbum(db.LibraryAlbum old, LibraryAlbumRecord current) {
+  return old.id == current.id &&
+      old.sourceId == current.sourceId &&
+      old.artistId == current.artistId &&
+      old.title == current.title &&
+      old.sortTitle == current.sortTitle &&
+      old.albumArtist == current.albumArtist &&
+      old.year == current.year &&
+      old.genre == current.genre &&
+      old.artworkKey == current.artworkKey;
+}
+
+bool _sameTrack(db.LibraryTrack old, LibraryTrackRecord current) {
+  return old.id == current.id &&
+      old.sourceId == current.sourceId &&
+      old.albumId == current.albumId &&
+      old.artistId == current.artistId &&
+      old.relativePath == current.relativePath &&
+      old.mediaUri == current.mediaUri &&
+      old.title == current.title &&
+      old.artistName == current.artistName &&
+      old.albumTitle == current.albumTitle &&
+      old.durationMs == current.durationMs &&
+      old.trackNumber == current.trackNumber &&
+      old.discNumber == current.discNumber &&
+      old.year == current.year &&
+      old.genre == current.genre &&
+      old.contentType == current.contentType &&
+      old.fileSize == current.fileSize &&
+      old.modifiedAt.toUtc() == current.modifiedAt.toUtc() &&
+      old.artworkKey == current.artworkKey;
+}
+
+bool _sameLyrics(List<db.LibraryLyric> old, List<LibraryLyricRecord> current) {
+  if (old.length != current.length) return false;
+  final sortedOld = [...old]
+    ..sort((left, right) {
+      final bySequence = left.sequence.compareTo(right.sequence);
+      return bySequence != 0
+          ? bySequence
+          : left.timestampMs.compareTo(right.timestampMs);
+    });
+  final sortedCurrent = [...current]
+    ..sort((left, right) {
+      final bySequence = left.sequence.compareTo(right.sequence);
+      return bySequence != 0
+          ? bySequence
+          : left.timestampMs.compareTo(right.timestampMs);
+    });
+  for (var index = 0; index < sortedOld.length; index++) {
+    final left = sortedOld[index];
+    final right = sortedCurrent[index];
+    if (left.trackId != right.trackId ||
+        left.sequence != right.sequence ||
+        left.timestampMs != right.timestampMs ||
+        left.content != right.text) {
+      return false;
+    }
+  }
+  return true;
 }

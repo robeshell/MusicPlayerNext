@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,6 +12,7 @@ import 'package:sound_player/library/scanning/artwork_store.dart';
 import 'package:sound_player/library/scanning/audio_metadata_extractor.dart';
 import 'package:sound_player/library/scanning/file_system_local_media_catalog.dart';
 import 'package:sound_player/library/scanning/local_library_scanner.dart';
+import 'package:sound_player/library/scanning/scan_cancellation.dart';
 
 void main() {
   test(
@@ -99,6 +101,162 @@ void main() {
       expect((await repository.getSource(source.id))?.scanRevision, 2);
     },
   );
+
+  test(
+    'reuses unchanged metadata and preserves a moved track identity',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'sound-incremental-scan-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final music = Directory(path.join(directory.path, 'Music'));
+      await music.create(recursive: true);
+      final first = File(path.join(music.path, 'first.mp3'));
+      final second = File(path.join(music.path, 'second.flac'));
+      await first.writeAsBytes([1]);
+      await second.writeAsBytes([2, 2]);
+      final firstModified = DateTime.utc(2026, 7, 14, 10);
+      final secondModified = DateTime.utc(2026, 7, 14, 11);
+      await first.setLastModified(firstModified);
+      await second.setLastModified(secondModified);
+
+      final repository = DriftLibraryRepository(
+        LibraryDatabase(NativeDatabase.memory()),
+      );
+      addTearDown(repository.close);
+      final source = _source(
+        music.uri.toString(),
+        DateTime.utc(2026, 7, 14, 12),
+      );
+      await repository.upsertSource(source);
+      final extractor = _CountingMetadataExtractor({
+        'first.mp3': const ExtractedAudioMetadata(
+          title: 'First',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+        ),
+        'second.flac': const ExtractedAudioMetadata(
+          title: 'Second',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 2,
+        ),
+        'moved.flac': const ExtractedAudioMetadata(
+          title: 'Second',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 2,
+        ),
+      });
+      final scanner = LocalLibraryScanner(
+        repository: repository,
+        catalog: FileSystemLocalMediaCatalog(),
+        metadataExtractor: extractor,
+      );
+
+      final initial = await scanner.scan(source);
+      expect(initial.addedTracks, 2);
+      expect(extractor.calls, 2);
+
+      final unchanged = await scanner.scan(source);
+      expect(unchanged.unchangedTracks, 2);
+      expect(unchanged.addedTracks, 0);
+      expect(extractor.calls, 2);
+
+      await first.writeAsBytes([1, 1, 1]);
+      await first.setLastModified(
+        firstModified.add(const Duration(seconds: 1)),
+      );
+      final modified = await scanner.scan(source);
+      expect(modified.modifiedTracks, 1);
+      expect(modified.unchangedTracks, 1);
+      expect(extractor.calls, 3);
+
+      final beforeMove = (await repository.getTracks(
+        sourceId: source.id,
+      )).singleWhere((track) => track.title == 'Second');
+      await repository.setTrackFavorite(
+        beforeMove.id,
+        favorite: true,
+        changedAt: DateTime.utc(2026, 7, 14, 13),
+      );
+      final movedFile = await second.rename(
+        path.join(music.path, 'moved.flac'),
+      );
+      await movedFile.setLastModified(secondModified);
+
+      final moved = await scanner.scan(source);
+      expect(moved.movedTracks, 1);
+      expect(moved.addedTracks, 0);
+      expect(moved.removedTracks, 0);
+      expect(extractor.calls, 4);
+      final afterMove = (await repository.getTracks(
+        sourceId: source.id,
+      )).singleWhere((track) => track.title == 'Second');
+      expect(afterMove.id, beforeMove.id);
+      expect(afterMove.relativePath, 'moved.flac');
+      expect(
+        (await repository.getFavoriteTracks()).single.trackId,
+        beforeMove.id,
+      );
+
+      await first.delete();
+      final removed = await scanner.scan(source);
+      expect(removed.removedTracks, 1);
+      expect(removed.unchangedTracks, 1);
+      expect(await repository.getTracks(sourceId: source.id), hasLength(1));
+    },
+  );
+
+  test('cancelling a scan keeps the previous source snapshot', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'sound-cancelled-scan-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final music = Directory(path.join(directory.path, 'Music'));
+    await music.create(recursive: true);
+    final retained = File(path.join(music.path, 'retained.mp3'));
+    await retained.writeAsBytes([1]);
+
+    final repository = DriftLibraryRepository(
+      LibraryDatabase(NativeDatabase.memory()),
+    );
+    addTearDown(repository.close);
+    final source = _source(music.uri.toString(), DateTime.utc(2026, 7, 14, 12));
+    await repository.upsertSource(source);
+    final initialScanner = LocalLibraryScanner(
+      repository: repository,
+      catalog: FileSystemLocalMediaCatalog(),
+      metadataExtractor: const _FakeMetadataExtractor({
+        'retained.mp3': ExtractedAudioMetadata(
+          title: 'Retained',
+          artist: 'Artist',
+          album: 'Album',
+        ),
+      }),
+    );
+    await initialScanner.scan(source);
+
+    await File(path.join(music.path, 'new.mp3')).writeAsBytes([2]);
+    final extractor = _BlockingMetadataExtractor();
+    final scanner = LocalLibraryScanner(
+      repository: repository,
+      catalog: FileSystemLocalMediaCatalog(),
+      metadataExtractor: extractor,
+    );
+    final scan = scanner.scan(source);
+    await extractor.entered.future;
+    expect(scanner.cancel(source.id), isTrue);
+    extractor.release.complete();
+
+    await expectLater(scan, throwsA(isA<ScanCancelledException>()));
+    final tracks = await repository.getTracks(sourceId: source.id);
+    expect(tracks.map((track) => track.title), ['Retained']);
+    final restoredSource = await repository.getSource(source.id);
+    expect(restoredSource?.scanRevision, 1);
+    expect(restoredSource?.status, LibrarySourceStatus.available);
+  });
 
   test('groups multi-disc, compilation, and same-title releases', () async {
     final directory = await Directory.systemTemp.createTemp('sound-groups-');
@@ -233,6 +391,37 @@ class _FakeMetadataExtractor implements AudioMetadataExtractor {
     final value = metadata[path.basename(file.path)];
     if (value == null) throw const FormatException('Damaged audio fixture.');
     return value;
+  }
+}
+
+class _CountingMetadataExtractor implements AudioMetadataExtractor {
+  _CountingMetadataExtractor(this.metadata);
+
+  final Map<String, ExtractedAudioMetadata> metadata;
+  int calls = 0;
+
+  @override
+  Future<ExtractedAudioMetadata> extract(File file) async {
+    calls++;
+    final value = metadata[path.basename(file.path)];
+    if (value == null) throw const FormatException('Unknown audio fixture.');
+    return value;
+  }
+}
+
+class _BlockingMetadataExtractor implements AudioMetadataExtractor {
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  Future<ExtractedAudioMetadata> extract(File file) async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    return const ExtractedAudioMetadata(
+      title: 'New',
+      artist: 'Artist',
+      album: 'Album',
+    );
   }
 }
 
