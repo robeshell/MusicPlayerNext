@@ -629,7 +629,7 @@ void main() {
       expect(result.error, WebDavConnectionError.authenticationFailed);
     });
 
-    test('unreachable host returns error', () async {
+    test('unavailable host returns a transient connection error', () async {
       final result = await discovery.probe(
         'http://127.0.0.1:1/',
         credentials: credentials,
@@ -638,7 +638,10 @@ void main() {
       expect(result.status, DiscoveryStatus.error);
       expect(
         result.error,
-        WebDavConnectionError.unreachable,
+        anyOf(
+          WebDavConnectionError.unreachable,
+          WebDavConnectionError.serverUnavailable,
+        ),
         reason: result.errorMessage,
       );
     });

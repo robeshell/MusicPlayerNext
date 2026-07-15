@@ -22,6 +22,7 @@ class SoundApp extends StatefulWidget {
     this.sessionStore,
     this.audioHandler,
     this.webDavCache,
+    this.enableFirstRunGuide,
     super.key,
   });
 
@@ -30,6 +31,7 @@ class SoundApp extends StatefulWidget {
   final PlaybackSessionStore? sessionStore;
   final SoundAudioHandler? audioHandler;
   final WebDavCache? webDavCache;
+  final bool? enableFirstRunGuide;
 
   @override
   State<SoundApp> createState() => _SoundAppState();
@@ -275,6 +277,8 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
               playback: playback,
               libraryRepository: widget.repository,
               webDavCache: widget.webDavCache,
+              enableFirstRunGuide:
+                  widget.enableFirstRunGuide ?? widget.repository == null,
             ),
     );
   }

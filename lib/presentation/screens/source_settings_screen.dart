@@ -387,8 +387,9 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
         resource.kind == SourceManagedResourceKind.connection ? '正在探测' : '正在扫描',
       SourceManagedStatus.available =>
         resource.kind == SourceManagedResourceKind.connection ? '已连接' : '已索引',
-      SourceManagedStatus.authenticationFailed => '认证失败',
-      SourceManagedStatus.unavailable => '无法连接',
+      SourceManagedStatus.authenticationFailed =>
+        resource.errorMessage ?? '认证失败',
+      SourceManagedStatus.unavailable => resource.errorMessage ?? '无法连接',
       SourceManagedStatus.error => resource.errorMessage ?? '错误',
     };
   }

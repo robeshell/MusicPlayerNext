@@ -85,6 +85,18 @@ class WebDavConnectionService {
         .toList(growable: false);
   }
 
+  Future<List<WebDavConnectionRecord>> connectionsForMediaUri(
+    String? mediaUri,
+  ) async {
+    if (mediaUri == null || mediaUri.trim().isEmpty) return const [];
+    final connections = await listConnections();
+    return connections
+        .where(
+          (connection) => _mediaBelongsToConnection(mediaUri, connection.url),
+        )
+        .toList(growable: false);
+  }
+
   Future<WebDavConnectionRecord?> getManagedSource(String sourceId) async {
     final source = await repository.getSource(sourceId);
     if (source == null || source.type != LibrarySourceType.webDav) return null;
@@ -356,6 +368,9 @@ class WebDavConnectionService {
         ? WebDavConnectionStatus.connected
         : switch (result.error!) {
             WebDavConnectionError.unreachable =>
+              WebDavConnectionStatus.unreachable,
+            WebDavConnectionError.timedOut ||
+            WebDavConnectionError.serverUnavailable =>
               WebDavConnectionStatus.unreachable,
             WebDavConnectionError.authenticationFailed =>
               WebDavConnectionStatus.authenticationFailed,

@@ -151,7 +151,7 @@ class SoundPlaybackController extends ChangeNotifier {
     }
     if (_snapshot.phase == PlaybackPhase.loading) return;
     if (_snapshot.phase == PlaybackPhase.error) {
-      await playTrack(_snapshot.track!);
+      await retryCurrent();
       return;
     }
     if (_snapshot.phase == PlaybackPhase.completed) {
@@ -165,6 +165,24 @@ class SoundPlaybackController extends ChangeNotifier {
     } else {
       await _engine.play();
     }
+  }
+
+  Future<void> pause() => _engine.pause();
+
+  /// Reloads the failed item without losing the active queue or listen point.
+  ///
+  /// Network recovery uses this instead of starting the track from zero. The
+  /// regular session-generation checks still reject callbacks from the failed
+  /// native load.
+  Future<void> retryCurrent() async {
+    final track = displayTrack;
+    if (track == null) return;
+    final retryPosition = displayPosition;
+    if (retryPosition > Duration.zero) {
+      _resumeTrackId = track.id;
+      _resumePosition = retryPosition;
+    }
+    await playTrack(track);
   }
 
   Future<void> seek(Duration position) async {

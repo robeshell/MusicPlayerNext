@@ -12,6 +12,8 @@ import 'webdav_credentials.dart';
 
 enum WebDavConnectionError {
   unreachable,
+  timedOut,
+  serverUnavailable,
   authenticationFailed,
   notAWebDavServer,
   unknown,
@@ -43,7 +45,10 @@ class WebDavDiscoveryResult {
   final List<String> capabilities;
   final List<WebDavFileEntry> files;
 
-  bool get isReachable => error != WebDavConnectionError.unreachable;
+  bool get isReachable =>
+      error != WebDavConnectionError.unreachable &&
+      error != WebDavConnectionError.timedOut &&
+      error != WebDavConnectionError.serverUnavailable;
 }
 
 enum DiscoveryStatus { unknown, probing, error, success }
@@ -114,7 +119,7 @@ class WebDavDiscoveryService {
     } on TimeoutException catch (error) {
       debugPrint('WebDAV discovery timeout: $url\n${error.toString()}');
       return WebDavDiscoveryResult.error(
-        WebDavConnectionError.unreachable,
+        WebDavConnectionError.timedOut,
         message: '连接超时',
       );
     } on http.ClientException catch (error) {
@@ -173,7 +178,7 @@ class WebDavDiscoveryService {
       debugPrint('WebDAV OPTIONS non-2xx: $uri → HTTP $statusCode');
       return WebDavDiscoveryResult.error(
         statusCode >= 500
-            ? WebDavConnectionError.unreachable
+            ? WebDavConnectionError.serverUnavailable
             : WebDavConnectionError.notAWebDavServer,
         message: 'OPTIONS 请求失败（HTTP $statusCode）',
       );
@@ -231,7 +236,7 @@ class WebDavDiscoveryService {
       debugPrint('WebDAV PROPFIND non-207: $uri → HTTP ${response.statusCode}');
       return WebDavDiscoveryResult.error(
         response.statusCode >= 500
-            ? WebDavConnectionError.unreachable
+            ? WebDavConnectionError.serverUnavailable
             : WebDavConnectionError.notAWebDavServer,
         message: 'PROPFIND 未返回 Multi-Status（HTTP ${response.statusCode}）',
       );

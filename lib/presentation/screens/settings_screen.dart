@@ -1,19 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/sound_theme.dart';
 import '../../library/scanning/local_library_scanner.dart';
 import '../../offline/offline_media_provider.dart';
 import '../../playback/playback_controller.dart';
 import '../../playback/playback_mode.dart';
+import '../../playback/sleep_timer_controller.dart';
 import '../../sources/local/local_source_service.dart';
 import '../../sources/webdav/webdav_connection_service.dart';
+import '../controllers/app_diagnostics_controller.dart';
 import '../controllers/offline_download_controller.dart';
 import '../widgets/sound_components.dart';
 import 'source_settings_screen.dart';
 
-enum SettingsDestination { overview, sources, offline }
+enum SettingsDestination { overview, sources, offline, diagnostics }
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -21,6 +24,8 @@ class SettingsScreen extends StatefulWidget {
     required this.localSources,
     required this.scanner,
     required this.onShowKeyboardShortcuts,
+    required this.sleepTimer,
+    required this.diagnostics,
     this.webDavService,
     this.offline,
     this.initialDestination = SettingsDestination.overview,
@@ -33,6 +38,8 @@ class SettingsScreen extends StatefulWidget {
   final WebDavConnectionService? webDavService;
   final OfflineDownloadController? offline;
   final VoidCallback onShowKeyboardShortcuts;
+  final SleepTimerController sleepTimer;
+  final AppDiagnosticsController diagnostics;
   final SettingsDestination initialDestination;
 
   @override
@@ -42,6 +49,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late SettingsDestination _destination = widget.initialDestination;
   bool _playbackModesExpanded = false;
+  bool _sleepTimerExpanded = false;
 
   @override
   void didUpdateWidget(SettingsScreen oldWidget) {
@@ -69,9 +77,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             setState(() => _destination = SettingsDestination.overview),
       );
     }
+    if (_destination == SettingsDestination.diagnostics) {
+      return DiagnosticsSettingsView(
+        diagnostics: widget.diagnostics,
+        onBack: () =>
+            setState(() => _destination = SettingsDestination.overview),
+      );
+    }
 
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.playback, ?widget.offline]),
+      animation: Listenable.merge([
+        widget.playback,
+        widget.sleepTimer,
+        widget.diagnostics,
+        ?widget.offline,
+      ]),
       builder: (context, _) => ListView(
         key: const ValueKey('settings-overview'),
         padding: EdgeInsets.fromLTRB(
@@ -117,6 +137,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     setState(() => _playbackModesExpanded = false);
                   },
                 ),
+              _SettingsRow(
+                key: const ValueKey('settings-sleep-timer-row'),
+                icon: Icons.bedtime_outlined,
+                iconColor: SoundColors.webDav,
+                title: '睡眠定时',
+                subtitle: '定时暂停，或在当前歌曲播放结束后停止',
+                value: _sleepTimerLabel(widget.sleepTimer),
+                expanded: _sleepTimerExpanded,
+                onTap: () =>
+                    setState(() => _sleepTimerExpanded = !_sleepTimerExpanded),
+              ),
+              if (_sleepTimerExpanded)
+                _SleepTimerSelector(
+                  timer: widget.sleepTimer,
+                  hasTrack: widget.playback.displayTrack != null,
+                ),
             ],
           ),
           const SizedBox(height: 22),
@@ -157,6 +193,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: '查看播放、导航和搜索快捷键',
                 onTap: widget.onShowKeyboardShortcuts,
               ),
+              _SettingsRow(
+                key: const ValueKey('settings-diagnostics-row'),
+                icon: Icons.health_and_safety_outlined,
+                iconColor: widget.diagnostics.problemCount == 0
+                    ? context.soundSecondaryText
+                    : SoundColors.accent,
+                title: '问题与诊断',
+                subtitle: '查看播放、来源和资料库的最近错误',
+                value: widget.diagnostics.problemCount == 0
+                    ? '没有问题'
+                    : '${widget.diagnostics.problemCount} 条',
+                onTap: () => setState(
+                  () => _destination = SettingsDestination.diagnostics,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 22),
@@ -171,6 +222,222 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: '开发版本',
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _sleepTimerLabel(SleepTimerController timer) {
+  return switch (timer.mode) {
+    SleepTimerMode.off => '关闭',
+    SleepTimerMode.endOfTrack => '播完当前歌曲',
+    SleepTimerMode.duration => _formatRemaining(timer.remaining),
+  };
+}
+
+String _formatRemaining(Duration duration) {
+  final totalMinutes = duration.inMinutes;
+  final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return '$totalMinutes:$seconds';
+}
+
+class _SleepTimerSelector extends StatelessWidget {
+  const _SleepTimerSelector({required this.timer, required this.hasTrack});
+
+  final SleepTimerController timer;
+  final bool hasTrack;
+
+  @override
+  Widget build(BuildContext context) {
+    const durations = [15, 30, 45, 60];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(26, 0, 26, 20),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          for (final minutes in durations)
+            ChoiceChip(
+              key: ValueKey('sleep-timer-$minutes'),
+              label: Text('$minutes 分钟'),
+              selected:
+                  timer.mode == SleepTimerMode.duration &&
+                  timer.remaining.inMinutes <= minutes &&
+                  timer.remaining.inMinutes >= minutes - 1,
+              onSelected: (_) => timer.start(Duration(minutes: minutes)),
+            ),
+          ChoiceChip(
+            key: const ValueKey('sleep-timer-end-of-track'),
+            label: const Text('播完当前歌曲'),
+            selected: timer.mode == SleepTimerMode.endOfTrack,
+            onSelected: hasTrack ? (_) => timer.stopAfterCurrentTrack() : null,
+          ),
+          if (timer.isActive)
+            ActionChip(
+              key: const ValueKey('sleep-timer-cancel'),
+              avatar: const Icon(Icons.close_rounded, size: 18),
+              label: const Text('取消定时'),
+              onPressed: timer.cancel,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class DiagnosticsSettingsView extends StatelessWidget {
+  const DiagnosticsSettingsView({
+    required this.diagnostics,
+    required this.onBack,
+    super.key,
+  });
+
+  final AppDiagnosticsController diagnostics;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: diagnostics,
+      builder: (context, _) => ListView(
+        key: const ValueKey('diagnostics-settings'),
+        padding: EdgeInsets.fromLTRB(
+          context.soundPageGutter,
+          20,
+          context.soundPageGutter,
+          context.soundContentBottomPadding,
+        ),
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              key: const ValueKey('diagnostics-settings-back'),
+              onPressed: onBack,
+              tooltip: '返回设置',
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '问题与诊断',
+                  style: TextStyle(
+                    fontSize: context.soundPageTitleSize,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.8,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                key: const ValueKey('copy-diagnostics'),
+                onPressed: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: diagnostics.exportText()),
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('诊断信息已复制，不包含密码')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.copy_all_outlined),
+                label: const Text('复制'),
+              ),
+              if (diagnostics.events.isNotEmpty)
+                TextButton(
+                  key: const ValueKey('clear-diagnostics'),
+                  onPressed: diagnostics.clear,
+                  child: const Text('清空'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '仅记录本次运行中的错误类型和技术信息，不记录 WebDAV 密码。',
+            style: TextStyle(color: context.soundMutedText, fontSize: 12),
+          ),
+          const SizedBox(height: 22),
+          if (diagnostics.events.isEmpty)
+            SoundGlassSurface(
+              blur: false,
+              showShadow: false,
+              padding: const EdgeInsets.all(28),
+              child: const Center(child: Text('当前没有已记录的问题')),
+            )
+          else
+            for (final event in diagnostics.events.reversed) ...[
+              _DiagnosticEventCard(event: event),
+              const SizedBox(height: 12),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DiagnosticEventCard extends StatelessWidget {
+  const _DiagnosticEventCard({required this.event});
+
+  final DiagnosticEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final localTime = event.occurredAt.toLocal();
+    final timestamp =
+        '${localTime.hour.toString().padLeft(2, '0')}:'
+        '${localTime.minute.toString().padLeft(2, '0')}:'
+        '${localTime.second.toString().padLeft(2, '0')}';
+    return SoundGlassSurface(
+      blur: false,
+      showShadow: false,
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline_rounded, color: SoundColors.accent),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  event.failure.title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  event.failure.message,
+                  style: TextStyle(
+                    color: context.soundSecondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                SelectableText(
+                  event.failure.rawMessage,
+                  style: TextStyle(color: context.soundMutedText, fontSize: 11),
+                ),
+                if (event.context case final value?) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      color: context.soundMutedText,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            timestamp,
+            style: TextStyle(color: context.soundMutedText, fontSize: 10),
           ),
         ],
       ),

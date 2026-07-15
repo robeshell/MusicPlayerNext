@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/app_failure.dart';
 import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
 import '../../playback/playback_controller.dart';
@@ -553,6 +554,7 @@ class _PlaybackErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final failure = AppFailure.fromMessage(message);
     return SafeArea(
       top: false,
       child: Padding(
@@ -571,14 +573,26 @@ class _PlaybackErrorBanner extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  message,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: context.soundSecondaryText,
-                    fontSize: 12,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      failure.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      failure.message,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: context.soundSecondaryText,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               TextButton.icon(

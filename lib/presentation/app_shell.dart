@@ -3,24 +3,30 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/app_failure.dart';
 import '../core/sound_theme.dart';
 import '../domain/library_models.dart';
 import '../library/library_repository.dart';
+import '../library/library_records.dart';
 import '../library/persistence/drift_library_repository.dart';
 import '../library/scanning/local_library_scanner.dart';
 import '../library/scanning/local_media_catalog_factory.dart';
 import '../playback/playback_controller.dart';
 import '../playback/playback_media_provider.dart';
+import '../playback/sleep_timer_controller.dart';
 import '../sources/local/local_directory_access_factory.dart';
 import '../sources/local/local_source_service.dart';
 import '../sources/webdav/webdav_connection_service.dart';
 import '../sources/webdav/webdav_cache.dart';
 import '../sources/webdav/webdav_offline_media_provider.dart';
+import 'controllers/app_diagnostics_controller.dart';
 import 'controllers/library_catalog_controller.dart';
 import 'controllers/library_search_controller.dart';
 import 'controllers/library_user_state_controller.dart';
 import 'controllers/offline_download_controller.dart';
+import 'controllers/playback_recovery_controller.dart';
 import 'screens/album_detail_screen.dart';
+import 'screens/first_run_dialog.dart';
 import 'screens/library_collection_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/library_user_screen.dart';
@@ -40,12 +46,14 @@ class AppShell extends StatefulWidget {
     required this.playback,
     this.libraryRepository,
     this.webDavCache,
+    this.enableFirstRunGuide = false,
     super.key,
   });
 
   final SoundPlaybackController playback;
   final LibraryRepository? libraryRepository;
   final WebDavCache? webDavCache;
+  final bool enableFirstRunGuide;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -68,13 +76,23 @@ class _AppShellState extends State<AppShell> {
   late final FocusNode _keyboardFocusNode;
   late final FocusNode _searchFocusNode;
   late final WebDavConnectionService _webDavService;
+  late final AppDiagnosticsController _diagnostics;
+  late final PlaybackRecoveryController _playbackRecovery;
+  late final SleepTimerController _sleepTimer;
   OfflineDownloadController? _offline;
   WebDavOfflineMediaProvider? _webDavOfflineProvider;
   late final StreamSubscription<List<WebDavConnectionRecord>>
   _webDavConnectionSubscription;
+  late final StreamSubscription<List<LibrarySourceRecord>>
+  _sourceHealthSubscription;
   late final StreamSubscription<Track> _trackStartedSubscription;
   LocalSourceService? _localSourceService;
   LocalLibraryScanner? _localLibraryScanner;
+  final Map<String, String> _sourceProblemSignatures = {};
+  final Map<String, String> _downloadProblemSignatures = {};
+  String? _lastCatalogError;
+  bool _firstRunCheckStarted = false;
+  bool _firstRunDialogShown = false;
 
   @override
   void initState() {
@@ -99,6 +117,13 @@ class _AppShellState extends State<AppShell> {
       (track) => unawaited(_libraryUserState.recordTrackStarted(track)),
     );
     _webDavService = WebDavConnectionService(repository: _libraryRepository);
+    _diagnostics = AppDiagnosticsController();
+    _sleepTimer = SleepTimerController(widget.playback);
+    _playbackRecovery = PlaybackRecoveryController(
+      widget.playback,
+      _diagnostics,
+      beforeRetry: _preparePlaybackRetry,
+    );
     final cache = widget.webDavCache;
     if (cache != null) {
       _webDavOfflineProvider = WebDavOfflineMediaProvider(cache: cache);
@@ -108,6 +133,7 @@ class _AppShellState extends State<AppShell> {
       _offline!.updateLibraryTracks(
         _libraryCatalog.albums.expand((album) => album.tracks),
       );
+      _offline!.addListener(_observeOfflineFailures);
       unawaited(_offline!.refresh());
     }
     // Resolve security-scoped bookmarks at startup so that local files are
@@ -119,6 +145,14 @@ class _AppShellState extends State<AppShell> {
     ) {
       unawaited(_refreshWebDavAuthHeaders());
     });
+    _sourceHealthSubscription = _libraryRepository.watchSources().listen(
+      _observeSourceHealth,
+      onError: (Object error) => _diagnostics.record(
+        area: DiagnosticArea.library,
+        failure: AppFailure.from(error),
+        context: '读取音乐来源状态',
+      ),
+    );
     unawaited(_refreshWebDavAuthHeaders());
     // Keep the selected album in sync when the catalog refreshes its objects.
     _libraryCatalog.addListener(_syncLibrarySelection);
@@ -156,6 +190,101 @@ class _AppShellState extends State<AppShell> {
         if (collectionChanged) _selectedCollection = freshCollection;
       });
     }
+    final catalogError = _libraryCatalog.errorMessage;
+    if (_libraryCatalog.status == LibraryCatalogStatus.error &&
+        catalogError != null &&
+        catalogError != _lastCatalogError) {
+      _lastCatalogError = catalogError;
+      _diagnostics.record(
+        area: DiagnosticArea.library,
+        failure: AppFailure.fromMessage(catalogError),
+        context: '刷新资料库',
+      );
+    } else if (_libraryCatalog.status == LibraryCatalogStatus.ready) {
+      _lastCatalogError = null;
+      unawaited(_maybeShowFirstRun());
+    }
+  }
+
+  void _observeSourceHealth(List<LibrarySourceRecord> sources) {
+    for (final source in sources) {
+      final problem = switch (source.status) {
+        LibrarySourceStatus.permissionRequired =>
+          source.lastError ?? '来源权限或登录凭据已失效',
+        LibrarySourceStatus.unavailable => source.lastError ?? '音乐来源暂时不可用',
+        LibrarySourceStatus.error => source.lastError ?? '音乐来源发生错误',
+        _ => null,
+      };
+      if (problem == null) {
+        _sourceProblemSignatures.remove(source.id);
+        continue;
+      }
+      final signature = '${source.status.name}:$problem';
+      if (_sourceProblemSignatures[source.id] == signature) continue;
+      _sourceProblemSignatures[source.id] = signature;
+      _diagnostics.record(
+        area: DiagnosticArea.source,
+        failure: AppFailure.fromMessage(problem),
+        context: source.displayName,
+      );
+    }
+  }
+
+  void _observeOfflineFailures() {
+    final offline = _offline;
+    if (offline == null) return;
+    for (final item in offline.offlineItems) {
+      final error = item.task?.error;
+      if (item.task?.state != OfflineDownloadTaskState.failed ||
+          error == null) {
+        _downloadProblemSignatures.remove(item.reference.storageKey);
+        continue;
+      }
+      if (_downloadProblemSignatures[item.reference.storageKey] == error) {
+        continue;
+      }
+      _downloadProblemSignatures[item.reference.storageKey] = error;
+      _diagnostics.record(
+        area: DiagnosticArea.download,
+        failure: AppFailure.fromMessage(error),
+        context: '${item.title} · ${item.providerLabel}',
+      );
+    }
+  }
+
+  Future<void> _maybeShowFirstRun() async {
+    if (!widget.enableFirstRunGuide ||
+        _firstRunCheckStarted ||
+        _firstRunDialogShown ||
+        _libraryCatalog.tracks.isNotEmpty) {
+      return;
+    }
+    _firstRunCheckStarted = true;
+    late final List<LibrarySourceRecord> sources;
+    try {
+      sources = await _libraryRepository.getSources();
+    } catch (error) {
+      _firstRunCheckStarted = false;
+      _diagnostics.record(
+        area: DiagnosticArea.library,
+        failure: AppFailure.from(error),
+        context: '检查首次使用状态',
+      );
+      return;
+    }
+    if (!mounted || sources.isNotEmpty || _libraryCatalog.tracks.isNotEmpty) {
+      return;
+    }
+    _firstRunDialogShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final manageSources = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const FirstRunDialog(),
+      );
+      if (mounted && manageSources == true) _openSourceSettings();
+    });
   }
 
   Future<void> _refreshWebDavAuthHeaders() async {
@@ -185,6 +314,52 @@ class _AppShellState extends State<AppShell> {
       authHeaders: headers,
       allowBadCertificateUrls: allowBadCertificateUrls,
     );
+  }
+
+  Future<void> _preparePlaybackRetry() async {
+    final mediaUri = widget.playback.displayTrack?.mediaUri;
+    final matches = await _webDavService.connectionsForMediaUri(mediaUri);
+    for (final connection in matches) {
+      final result = await _webDavService.probeConnection(
+        connection,
+        allowBadCertificate: connection.allowBadCertificate,
+      );
+      if (result.error != null) {
+        throw StateError(result.errorMessage ?? '音乐来源仍不可用');
+      }
+    }
+    await _refreshWebDavAuthHeaders();
+  }
+
+  Future<void> _retryUnavailableSources() async {
+    final connections = await _webDavService.listConnections();
+    var failed = false;
+    for (final connection in connections.where((item) => !item.isAvailable)) {
+      final result = await _webDavService.probeConnection(
+        connection,
+        allowBadCertificate: connection.allowBadCertificate,
+      );
+      failed = failed || result.error != null;
+    }
+    await _refreshWebDavAuthHeaders();
+    if (failed) throw StateError('部分音乐来源仍然不可用');
+  }
+
+  Future<void> _retryFailedDownloads() async {
+    final offline = _offline;
+    if (offline == null) return;
+    final failed = offline.offlineItems
+        .where((item) => item.canRetry)
+        .toList(growable: false);
+    Object? lastError;
+    for (final item in failed) {
+      try {
+        await offline.retry(item.reference);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastError != null) throw lastError;
   }
 
   LocalSourceService get _sources {
@@ -225,6 +400,53 @@ class _AppShellState extends State<AppShell> {
       _libraryUserMode = null;
       _selectedPlaylistId = null;
     });
+  }
+
+  void _openOfflineSettings() {
+    if (_offline == null) return;
+    setState(() {
+      _section = AppSection.settings;
+      _settingsDestination = SettingsDestination.offline;
+      _settingsNavigationRevision++;
+      _selectedAlbum = null;
+      _selectedCollection = null;
+      _libraryUserMode = null;
+      _selectedPlaylistId = null;
+    });
+  }
+
+  Future<void> _handleFailureAction(DiagnosticEvent event) async {
+    switch (event.failure.action) {
+      case AppFailureAction.retry:
+        try {
+          if (event.area == DiagnosticArea.playback) {
+            await _playbackRecovery.retryNow();
+          } else if (event.area == DiagnosticArea.download) {
+            await _retryFailedDownloads();
+          } else {
+            await _retryUnavailableSources();
+          }
+          _diagnostics.dismissActive();
+        } catch (error) {
+          _diagnostics.record(
+            area: event.area,
+            failure: AppFailure.from(error),
+            context: '手动恢复',
+          );
+        }
+        return;
+      case AppFailureAction.editSource || AppFailureAction.locateFile:
+        _diagnostics.dismissActive();
+        _openSourceSettings();
+        return;
+      case AppFailureAction.manageStorage:
+        _diagnostics.dismissActive();
+        _openOfflineSettings();
+        return;
+      case AppFailureAction.none:
+        _diagnostics.dismissActive();
+        return;
+    }
   }
 
   void _selectLibraryMode(LibraryBrowseMode mode) {
@@ -488,6 +710,8 @@ class _AppShellState extends State<AppShell> {
                       scanner: _scanner,
                       webDavService: _webDavService,
                       offline: _offline,
+                      sleepTimer: _sleepTimer,
+                      diagnostics: _diagnostics,
                       onShowKeyboardShortcuts: _showKeyboardShortcuts,
                       initialDestination: _settingsDestination,
                     ),
@@ -557,6 +781,40 @@ class _AppShellState extends State<AppShell> {
                         onOpenQueue: _openQueue,
                       ),
                     ),
+                  Positioned.fill(
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([
+                        _diagnostics,
+                        _playbackRecovery,
+                      ]),
+                      builder: (context, _) {
+                        final event = _diagnostics.activeEvent;
+                        if (event == null) {
+                          return const IgnorePointer(child: SizedBox.shrink());
+                        }
+                        return Align(
+                          alignment: Alignment.topCenter,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              top: context.soundTitlebarInset + 12,
+                              left: desktop ? sidebarWidth + 24 : 18,
+                              right: 18,
+                            ),
+                            child: _AppFailureBanner(
+                              event: event,
+                              busy: _playbackRecovery.isRetrying,
+                              onAction:
+                                  event.failure.action == AppFailureAction.none
+                                  ? null
+                                  : () =>
+                                        unawaited(_handleFailureAction(event)),
+                              onDismiss: _diagnostics.dismissActive,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ],
               ),
               bottomNavigationBar: desktop
@@ -600,18 +858,102 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     unawaited(_webDavConnectionSubscription.cancel());
+    unawaited(_sourceHealthSubscription.cancel());
     unawaited(_trackStartedSubscription.cancel());
     _libraryCatalog.removeListener(_syncLibrarySelection);
     _librarySearch.dispose();
     _keyboardFocusNode.dispose();
     _searchFocusNode.dispose();
     _libraryUserState.dispose();
+    _offline?.removeListener(_observeOfflineFailures);
     _offline?.dispose();
+    _playbackRecovery.dispose();
+    _sleepTimer.dispose();
+    _diagnostics.dispose();
     _libraryCatalog.dispose();
     if (_ownsLibraryRepository) unawaited(_libraryRepository.close());
     super.dispose();
   }
 }
+
+class _AppFailureBanner extends StatelessWidget {
+  const _AppFailureBanner({
+    required this.event,
+    required this.busy,
+    required this.onAction,
+    required this.onDismiss,
+  });
+
+  final DiagnosticEvent event;
+  final bool busy;
+  final VoidCallback? onAction;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: SoundGlassSurface(
+        key: const ValueKey('global-failure-banner'),
+        strong: true,
+        borderColor: SoundColors.accent.withValues(alpha: 0.42),
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline_rounded, color: SoundColors.accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event.failure.title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    event.failure.message,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.soundSecondaryText,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (onAction != null)
+              TextButton(
+                key: const ValueKey('global-failure-action'),
+                onPressed: busy ? null : onAction,
+                child: busy
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(_failureActionLabel(event.failure.action)),
+              ),
+            IconButton(
+              key: const ValueKey('global-failure-dismiss'),
+              onPressed: onDismiss,
+              tooltip: '暂时关闭',
+              icon: const Icon(Icons.close_rounded, size: 19),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _failureActionLabel(AppFailureAction action) => switch (action) {
+  AppFailureAction.retry => '重试',
+  AppFailureAction.editSource => '更新来源',
+  AppFailureAction.locateFile => '重新扫描',
+  AppFailureAction.manageStorage => '管理空间',
+  AppFailureAction.none => '知道了',
+};
 
 extension _PlaybackShortcutWrapper on Widget {
   Widget withPlaybackShortcuts(SoundPlaybackController playback) {

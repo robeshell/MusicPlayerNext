@@ -191,7 +191,7 @@ void main() {
 
       expect(find.text(testCase.$2), findsNWidgets(2));
       if (testCase.$1 == PlaybackPhase.error) {
-        expect(find.text('network failed'), findsOneWidget);
+        expect(find.text('操作没有完成'), findsOneWidget);
         expect(find.text('重试'), findsOneWidget);
       }
 
