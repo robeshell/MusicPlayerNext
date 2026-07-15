@@ -20,10 +20,19 @@ class FilePlaybackSessionStorage implements PlaybackSessionStorage {
   final String directory;
 
   File get _file => File(p.join(directory, 'playback_session.json'));
+  File get _checkpointFile =>
+      File(p.join(directory, 'playback_session_checkpoint.json'));
 
   @override
   Future<String?> read() async {
     final file = _file;
+    if (!await file.exists()) return null;
+    return file.readAsString();
+  }
+
+  @override
+  Future<String?> readCheckpoint() async {
+    final file = _checkpointFile;
     if (!await file.exists()) return null;
     return file.readAsString();
   }
@@ -36,8 +45,17 @@ class FilePlaybackSessionStorage implements PlaybackSessionStorage {
   }
 
   @override
+  Future<void> writeCheckpoint(String value) async {
+    final file = _checkpointFile;
+    await file.parent.create(recursive: true);
+    await file.writeAsString(value, flush: true);
+  }
+
+  @override
   Future<void> clear() async {
     final file = _file;
     if (await file.exists()) await file.delete();
+    final checkpointFile = _checkpointFile;
+    if (await checkpointFile.exists()) await checkpointFile.delete();
   }
 }

@@ -10,32 +10,42 @@ import '../library/persistence/drift_library_repository.dart';
 import '../library/scanning/local_library_scanner.dart';
 import '../library/scanning/local_media_catalog_factory.dart';
 import '../playback/playback_controller.dart';
+import '../playback/playback_media_provider.dart';
 import '../sources/local/local_directory_access_factory.dart';
 import '../sources/local/local_source_service.dart';
 import '../sources/webdav/webdav_connection_service.dart';
+import '../sources/webdav/webdav_cache.dart';
+import '../sources/webdav/webdav_offline_media_provider.dart';
 import 'controllers/library_catalog_controller.dart';
 import 'controllers/library_search_controller.dart';
 import 'controllers/library_user_state_controller.dart';
+import 'controllers/offline_download_controller.dart';
 import 'screens/album_detail_screen.dart';
 import 'screens/library_collection_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/library_user_screen.dart';
 import 'screens/now_playing_screen.dart';
 import 'screens/search_screen.dart';
-import 'screens/source_settings_screen.dart';
+import 'screens/settings_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/playback_queue_sheet.dart';
 import 'widgets/sound_components.dart';
 
-enum AppSection { library, search, sources }
+enum AppSection { library, search, settings }
 
 const _compactMiniPlayerBottomGap = 10.0;
 
 class AppShell extends StatefulWidget {
-  const AppShell({required this.playback, this.libraryRepository, super.key});
+  const AppShell({
+    required this.playback,
+    this.libraryRepository,
+    this.webDavCache,
+    super.key,
+  });
 
   final SoundPlaybackController playback;
   final LibraryRepository? libraryRepository;
+  final WebDavCache? webDavCache;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -48,6 +58,8 @@ class _AppShellState extends State<AppShell> {
   int? _selectedPlaylistId;
   Album? _selectedAlbum;
   LibraryCollection? _selectedCollection;
+  SettingsDestination _settingsDestination = SettingsDestination.overview;
+  int _settingsNavigationRevision = 0;
   late final LibraryRepository _libraryRepository;
   late final bool _ownsLibraryRepository;
   late final LibraryCatalogController _libraryCatalog;
@@ -56,6 +68,8 @@ class _AppShellState extends State<AppShell> {
   late final FocusNode _keyboardFocusNode;
   late final FocusNode _searchFocusNode;
   late final WebDavConnectionService _webDavService;
+  OfflineDownloadController? _offline;
+  WebDavOfflineMediaProvider? _webDavOfflineProvider;
   late final StreamSubscription<List<WebDavConnectionRecord>>
   _webDavConnectionSubscription;
   late final StreamSubscription<Track> _trackStartedSubscription;
@@ -85,6 +99,17 @@ class _AppShellState extends State<AppShell> {
       (track) => unawaited(_libraryUserState.recordTrackStarted(track)),
     );
     _webDavService = WebDavConnectionService(repository: _libraryRepository);
+    final cache = widget.webDavCache;
+    if (cache != null) {
+      _webDavOfflineProvider = WebDavOfflineMediaProvider(cache: cache);
+      _offline = OfflineDownloadController(
+        providers: [_webDavOfflineProvider!],
+      );
+      _offline!.updateLibraryTracks(
+        _libraryCatalog.albums.expand((album) => album.tracks),
+      );
+      unawaited(_offline!.refresh());
+    }
     // Resolve security-scoped bookmarks at startup so that local files are
     // playable without the user first opening the source-settings screen.
     unawaited(_sources.restoreLocalFolders());
@@ -100,6 +125,9 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _syncLibrarySelection() {
+    _offline?.updateLibraryTracks(
+      _libraryCatalog.albums.expand((album) => album.tracks),
+    );
     final selectedAlbum = _selectedAlbum;
     final selectedCollection = _selectedCollection;
     final freshAlbum = selectedAlbum == null
@@ -144,10 +172,17 @@ class _AppShellState extends State<AppShell> {
       if (c.allowBadCertificate) allowBadCertificateUrls.add(c.url);
     }
     if (!mounted) return;
-    _libraryCatalog.webDavAuthHeaders = headers;
-    unawaited(_libraryCatalog.refresh());
-    widget.playback.setEngineAuthHeaders(
-      headers,
+    widget.playback.updatePlaybackMediaAccess([
+      for (final entry in headers.entries)
+        if (Uri.tryParse(entry.key) case final baseUri?)
+          PlaybackMediaAccessRule(
+            baseUri: baseUri,
+            headers: entry.value,
+            allowBadCertificate: allowBadCertificateUrls.contains(entry.key),
+          ),
+    ]);
+    _webDavOfflineProvider?.updateAccess(
+      authHeaders: headers,
       allowBadCertificateUrls: allowBadCertificateUrls,
     );
   }
@@ -169,6 +204,22 @@ class _AppShellState extends State<AppShell> {
   void _selectSection(AppSection section) {
     setState(() {
       _section = section;
+      if (section == AppSection.settings) {
+        _settingsDestination = SettingsDestination.overview;
+        _settingsNavigationRevision++;
+      }
+      _selectedAlbum = null;
+      _selectedCollection = null;
+      _libraryUserMode = null;
+      _selectedPlaylistId = null;
+    });
+  }
+
+  void _openSourceSettings() {
+    setState(() {
+      _section = AppSection.settings;
+      _settingsDestination = SettingsDestination.sources;
+      _settingsNavigationRevision++;
       _selectedAlbum = null;
       _selectedCollection = null;
       _libraryUserMode = null;
@@ -251,7 +302,7 @@ class _AppShellState extends State<AppShell> {
       return KeyEventResult.handled;
     }
     if (primaryModifier && key == LogicalKeyboardKey.digit3) {
-      _selectSection(AppSection.sources);
+      _selectSection(AppSection.settings);
       _restoreApplicationFocus();
       return KeyEventResult.handled;
     }
@@ -366,16 +417,19 @@ class _AppShellState extends State<AppShell> {
             if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
               return const SizedBox.shrink();
             }
-            // A landscape phone can exceed the desktop width breakpoint while
-            // remaining far too short for the full sidebar. Require enough
-            // vertical room as well so iPhone landscape keeps mobile navigation.
+            // Desktop operating systems always retain desktop navigation and
+            // the bottom dock. Mobile/tablet platforms may promote themselves
+            // to the wider shell when both dimensions can support it.
             final desktop =
-                constraints.maxWidth >= 820 && constraints.maxHeight >= 600;
+                soundUsesDesktopPlatform ||
+                context.soundWindowClass != SoundWindowClass.compact;
+            final sidebarWidth = context.soundSidebarWidth;
             final content = _selectedAlbum != null
                 ? AlbumDetailScreen(
                     album: _selectedAlbum!,
                     playback: widget.playback,
                     userState: _libraryUserState,
+                    offline: _offline,
                     onBack: () => setState(() => _selectedAlbum = null),
                   )
                 : _selectedCollection != null
@@ -400,8 +454,7 @@ class _AppShellState extends State<AppShell> {
                                 widget.playback.playTrack(track, queue: queue),
                               ),
                               onOpenUserMode: _selectLibraryUserMode,
-                              onManageSources: () =>
-                                  _selectSection(AppSection.sources),
+                              onManageSources: _openSourceSettings,
                             )
                           : LibraryUserScreen(
                               mode: _libraryUserMode!,
@@ -426,10 +479,17 @@ class _AppShellState extends State<AppShell> {
                       onOpenAlbum: _openAlbum,
                       focusNode: _searchFocusNode,
                     ),
-                    AppSection.sources => SourceSettingsScreen(
+                    AppSection.settings => SettingsScreen(
+                      key: ValueKey(
+                        'settings-screen-$_settingsNavigationRevision',
+                      ),
+                      playback: widget.playback,
                       localSources: _sources,
                       scanner: _scanner,
                       webDavService: _webDavService,
+                      offline: _offline,
+                      onShowKeyboardShortcuts: _showKeyboardShortcuts,
+                      initialDestination: _settingsDestination,
                     ),
                   };
 
@@ -437,11 +497,27 @@ class _AppShellState extends State<AppShell> {
               body: Stack(
                 children: [
                   Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Theme.of(context).scaffoldBackgroundColor,
+                            context.soundGlass.canvasHighlight,
+                            Theme.of(context).colorScheme.surfaceContainerHigh,
+                          ],
+                          stops: const [0, 0.46, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
                     child: desktop
                         ? Row(
                             children: [
                               SizedBox(
-                                width: 236,
+                                width: sidebarWidth,
                                 child: _Sidebar(
                                   selection: _section,
                                   libraryMode: _libraryBrowseMode,
@@ -453,31 +529,45 @@ class _AppShellState extends State<AppShell> {
                                       _showKeyboardShortcuts,
                                 ),
                               ),
-                              VerticalDivider(
-                                width: 1,
-                                color: Colors.white.withValues(alpha: 0.06),
+                              Expanded(
+                                child: SafeArea(
+                                  left: false,
+                                  right: false,
+                                  bottom: false,
+                                  minimum: EdgeInsets.only(
+                                    top: context.soundTitlebarInset,
+                                  ),
+                                  child: content,
+                                ),
                               ),
-                              Expanded(child: content),
                             ],
                           )
                         : content,
                   ),
-                  Positioned(
-                    left: desktop ? 258 : 10,
-                    right: desktop ? 22 : 10,
-                    bottom: desktop ? 18 : _compactMiniPlayerBottomGap,
-                    child: MiniPlayer(
-                      playback: widget.playback,
-                      userState: _libraryUserState,
-                      compact: !desktop,
-                      onOpen: _openNowPlaying,
-                      onOpenQueue: _openQueue,
+                  if (!desktop)
+                    Positioned(
+                      left: 10,
+                      right: 10,
+                      bottom: _compactMiniPlayerBottomGap,
+                      child: MiniPlayer(
+                        playback: widget.playback,
+                        userState: _libraryUserState,
+                        compact: true,
+                        onOpen: _openNowPlaying,
+                        onOpenQueue: _openQueue,
+                      ),
                     ),
-                  ),
                 ],
               ),
               bottomNavigationBar: desktop
-                  ? null
+                  ? MiniPlayer(
+                      playback: widget.playback,
+                      userState: _libraryUserState,
+                      compact: false,
+                      docked: true,
+                      onOpen: _openNowPlaying,
+                      onOpenQueue: _openQueue,
+                    )
                   : SoundNavigationBar(
                       selectedIndex: _section.index,
                       onDestinationSelected: (index) =>
@@ -516,6 +606,7 @@ class _AppShellState extends State<AppShell> {
     _keyboardFocusNode.dispose();
     _searchFocusNode.dispose();
     _libraryUserState.dispose();
+    _offline?.dispose();
     _libraryCatalog.dispose();
     if (_ownsLibraryRepository) unawaited(_libraryRepository.close());
     super.dispose();
@@ -583,70 +674,89 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: SoundColors.darkSurface.withValues(alpha: 0.96),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 18, 10, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(10, 4, 10, 18),
-                child: Text(
-                  'Sound',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
+    return SoundGlassSurface(
+      strong: true,
+      borderRadius: BorderRadius.zero,
+      shadowOffset: const Offset(4, 0),
+      shadowBlur: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: SafeArea(
+          minimum: EdgeInsets.only(top: context.soundTitlebarInset),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 18, 10, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(10, 4, 10, 18),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.graphic_eq_rounded,
+                        size: 20,
+                        color: SoundColors.accent,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Sound',
+                        style: TextStyle(
+                          color: context.soundPrimaryText,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.35,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    _SidebarRow(
-                      label: '搜索',
-                      icon: Icons.search_rounded,
-                      active: selection == AppSection.search,
-                      onTap: () => onSelect(AppSection.search),
-                    ),
-                    const _SidebarHeading('资料库'),
-                    for (final mode in LibraryBrowseMode.values)
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
                       _SidebarRow(
-                        label: mode.label,
-                        icon: mode.icon,
-                        active:
-                            selection == AppSection.library &&
-                            userMode == null &&
-                            libraryMode == mode,
-                        onTap: () => onSelectLibraryMode(mode),
+                        label: '搜索',
+                        icon: Icons.search_rounded,
+                        active: selection == AppSection.search,
+                        onTap: () => onSelect(AppSection.search),
                       ),
-                    const _SidebarHeading('我的音乐'),
-                    for (final mode in LibraryUserBrowseMode.values)
-                      _SidebarRow(
-                        label: mode.label,
-                        icon: mode.icon,
-                        active:
-                            selection == AppSection.library && userMode == mode,
-                        onTap: () => onSelectUserMode(mode),
-                      ),
-                  ],
+                      const _SidebarHeading('资料库'),
+                      for (final mode in LibraryBrowseMode.values)
+                        _SidebarRow(
+                          label: mode.label,
+                          icon: mode.icon,
+                          active:
+                              selection == AppSection.library &&
+                              userMode == null &&
+                              libraryMode == mode,
+                          onTap: () => onSelectLibraryMode(mode),
+                        ),
+                      const _SidebarHeading('我的音乐'),
+                      for (final mode in LibraryUserBrowseMode.values)
+                        _SidebarRow(
+                          label: mode.label,
+                          icon: mode.icon,
+                          active:
+                              selection == AppSection.library &&
+                              userMode == mode,
+                          onTap: () => onSelectUserMode(mode),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              _SidebarRow(
-                label: '快捷键',
-                icon: Icons.keyboard_alt_outlined,
-                onTap: onShowKeyboardShortcuts,
-              ),
-              _SidebarRow(
-                label: '设置',
-                icon: Icons.settings_outlined,
-                active: selection == AppSection.sources,
-                onTap: () => onSelect(AppSection.sources),
-              ),
-            ],
+                _SidebarRow(
+                  label: '快捷键',
+                  icon: Icons.keyboard_alt_outlined,
+                  onTap: onShowKeyboardShortcuts,
+                ),
+                _SidebarRow(
+                  label: '设置',
+                  icon: Icons.settings_outlined,
+                  active: selection == AppSection.settings,
+                  onTap: () => onSelect(AppSection.settings),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -665,8 +775,8 @@ class _SidebarHeading extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 20, 10, 5),
       child: Text(
         label,
-        style: const TextStyle(
-          color: Colors.white38,
+        style: TextStyle(
+          color: context.soundMutedText,
           fontSize: 10,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.8,
@@ -699,15 +809,21 @@ class _SidebarRow extends StatelessWidget {
         horizontalTitleGap: 8,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
         selected: active,
-        selectedTileColor: Colors.white.withValues(alpha: 0.08),
+        selectedTileColor: context.soundTint(0.055),
         leading: Icon(
           icon,
           size: 18,
-          color: active ? SoundColors.accent : Colors.white70,
+          color: active ? SoundColors.accent : context.soundSecondaryText,
         ),
         title: Text(
           label,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            color: active
+                ? context.soundPrimaryText
+                : context.soundSecondaryText,
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
         onTap: onTap,
       ),
@@ -768,7 +884,7 @@ class _KeyboardShortcutDialog extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 7),
                       child: Text(
                         description,
-                        style: const TextStyle(color: Colors.white70),
+                        style: TextStyle(color: context.soundSecondaryText),
                       ),
                     ),
                   ],

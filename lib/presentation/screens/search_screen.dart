@@ -86,10 +86,11 @@ class _SearchScreenState extends State<SearchScreen> {
           ?widget.userState,
         ]),
         builder: (context, _) {
+          final gutter = context.soundPageGutter;
           return CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(32, 34, 32, 12),
+                padding: EdgeInsets.fromLTRB(gutter, 28, gutter, 12),
                 sliver: SliverToBoxAdapter(child: _buildHeader()),
               ),
               if (widget.catalog.status == LibraryCatalogStatus.loading)
@@ -151,14 +152,14 @@ class _SearchScreenState extends State<SearchScreen> {
                 )
               else ...[
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(32, 10, 32, 8),
+                  padding: EdgeInsets.fromLTRB(gutter, 10, gutter, 8),
                   sliver: SliverToBoxAdapter(
                     child: Row(
                       children: [
                         Text(
                           '${widget.search.hits.length} 首歌曲',
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -174,7 +175,12 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 140),
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    0,
+                    gutter,
+                    context.soundContentBottomPadding,
+                  ),
                   sliver: SliverList.builder(
                     itemCount: widget.search.hits.length,
                     itemBuilder: (context, index) => _SearchResultRow(
@@ -222,15 +228,15 @@ class _SearchScreenState extends State<SearchScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '搜索',
           style: TextStyle(
-            fontSize: 32,
+            fontSize: context.soundPageTitleSize,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.8,
           ),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 18),
         TextField(
           key: const ValueKey('library-search-field'),
           controller: _queryController,
@@ -249,13 +255,13 @@ class _SearchScreenState extends State<SearchScreen> {
                     icon: const Icon(Icons.close_rounded),
                   ),
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.06),
+            fillColor: context.soundTint(0.045),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(SoundRadii.control),
               borderSide: BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(SoundRadii.control),
               borderSide: const BorderSide(color: SoundColors.accent, width: 2),
             ),
           ),
@@ -276,7 +282,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           selected: widget.search.field == field,
                           onSelected: (_) => widget.search.setField(field),
                           selectedColor: SoundColors.accent.withValues(
-                            alpha: 0.24,
+                            alpha: 0.14,
                           ),
                         ),
                       ),
@@ -351,7 +357,7 @@ class _SearchResultRow extends StatelessWidget {
           ].join(' · '),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 12, color: Colors.white54),
+          style: TextStyle(fontSize: 12, color: context.soundMutedText),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -407,14 +413,19 @@ class _SearchMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(32, 30, 32, 150),
+        padding: EdgeInsets.fromLTRB(
+          context.soundPageGutter,
+          30,
+          context.soundPageGutter,
+          context.soundContentBottomPadding,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (loading)
               const CircularProgressIndicator()
             else
-              Icon(icon, size: 48, color: Colors.white38),
+              Icon(icon, size: 48, color: context.soundMutedText),
             const SizedBox(height: 18),
             Text(
               title,
@@ -425,7 +436,7 @@ class _SearchMessage extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white54, height: 1.5),
+              style: TextStyle(color: context.soundMutedText, height: 1.5),
             ),
           ],
         ),

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
 import '../controllers/library_user_state_controller.dart';
 import 'sound_components.dart';
@@ -147,7 +148,9 @@ class _AddToPlaylistSheet extends StatelessWidget {
                               track.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white54),
+                              style: TextStyle(
+                                color: context.soundSecondaryText,
+                              ),
                             ),
                           ],
                         ),
@@ -163,13 +166,15 @@ class _AddToPlaylistSheet extends StatelessWidget {
                 const Divider(height: 1),
                 Flexible(
                   child: userState.playlists.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(28),
+                      ? Padding(
+                          padding: const EdgeInsets.all(28),
                           child: Center(
                             child: Text(
                               '还没有播放列表。新建一个后，这首歌会自动加入。',
                               textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.white54),
+                              style: TextStyle(
+                                color: context.soundSecondaryText,
+                              ),
                             ),
                           ),
                         )

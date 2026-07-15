@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sound_player/domain/library_models.dart';
@@ -6,6 +7,7 @@ import 'package:sound_player/playback/playback_mode.dart';
 import 'package:sound_player/playback/simulated_playback_engine.dart';
 import 'package:sound_player/presentation/screens/album_detail_screen.dart';
 import 'package:sound_player/presentation/screens/now_playing_screen.dart';
+import 'package:sound_player/presentation/controllers/offline_download_controller.dart';
 import 'package:sound_player/presentation/widgets/playback_queue_sheet.dart';
 
 void main() {
@@ -56,6 +58,8 @@ void main() {
   testWidgets('now playing exposes real mode controls and queue sheet', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -82,6 +86,7 @@ void main() {
 
     await playback.clearQueue();
     await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = null;
     playback.dispose();
     engine.dispose();
   });
@@ -172,6 +177,128 @@ void main() {
     playback.dispose();
     engine.dispose();
   });
+
+  testWidgets('WebDAV album can be saved for offline playback', (tester) async {
+    tester.view.physicalSize = const Size(900, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final offline = _FakeOfflineController();
+    final engine = SimulatedPlaybackEngine();
+    final playback = SoundPlaybackController(engine: engine);
+    final track = Track(
+      id: 'remote',
+      title: 'Remote Song',
+      artist: 'Artist',
+      albumTitle: 'Remote Album',
+      duration: const Duration(minutes: 3),
+      source: SourceKind.webDav,
+      mediaUri: 'https://dav.example.com/remote.flac',
+    );
+    final album = Album(
+      id: 'remote-album',
+      title: 'Remote Album',
+      artist: 'Artist',
+      source: SourceKind.webDav,
+      palette: albumPaletteForId('remote-album'),
+      tracks: [track],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AlbumDetailScreen(
+            album: album,
+            playback: playback,
+            offline: offline,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.widgetWithText(OutlinedButton, '离线保存'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('album-offline-action')));
+    await tester.pumpAndSettle();
+
+    expect(offline.isPinned(track), isTrue);
+    expect(find.widgetWithText(OutlinedButton, '已离线'), findsOneWidget);
+
+    offline.startDownloadForTest();
+    await tester.pump();
+    expect(find.text('取消下载 35%'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('album-offline-action')));
+    await tester.pump();
+    expect(offline.cancelled, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    offline.dispose();
+    playback.dispose();
+    engine.dispose();
+  });
+}
+
+class _FakeOfflineController extends OfflineDownloadController {
+  _FakeOfflineController() : super(providers: const []);
+
+  bool pinned = false;
+  bool downloading = false;
+  bool cancelled = false;
+
+  @override
+  bool supports(Track track) => track.source == SourceKind.webDav;
+
+  @override
+  bool isPinned(Track track) => pinned;
+
+  @override
+  bool areAllPinned(Iterable<Track> tracks) => pinned;
+
+  @override
+  bool isDownloadingAny(Iterable<Track> tracks) => downloading;
+
+  @override
+  bool isDownloading(Track track) => downloading;
+
+  @override
+  int pinnedCount(Iterable<Track> tracks) => pinned ? tracks.length : 0;
+
+  @override
+  double? progressFor(Iterable<Track> tracks) => downloading
+      ? 0.35
+      : pinned
+      ? 1
+      : 0;
+
+  @override
+  OfflineDownloadTask? taskFor(Track track) => downloading
+      ? const OfflineDownloadTask(
+          state: OfflineDownloadTaskState.downloading,
+          progress: 0.35,
+        )
+      : null;
+
+  @override
+  Future<OfflineDownloadBatchResult> pinTracks(Iterable<Track> tracks) async {
+    pinned = true;
+    notifyListeners();
+    return OfflineDownloadBatchResult(completed: tracks.length, failed: 0);
+  }
+
+  void startDownloadForTest() {
+    pinned = false;
+    downloading = true;
+    notifyListeners();
+  }
+
+  @override
+  bool cancelTracks(Iterable<Track> tracks) {
+    downloading = false;
+    cancelled = true;
+    notifyListeners();
+    return true;
+  }
 }
 
 const _first = Track(

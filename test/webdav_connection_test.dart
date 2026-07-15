@@ -7,9 +7,11 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sound_player/library/library_records.dart';
 import 'package:sound_player/library/library_repository.dart';
+import 'package:sound_player/sources/source_provider.dart';
 import 'package:sound_player/sources/webdav/webdav_connection_service.dart';
 import 'package:sound_player/sources/webdav/webdav_credentials.dart';
 import 'package:sound_player/sources/webdav/webdav_discovery.dart';
+import 'package:sound_player/sources/webdav/webdav_source_connection_provider.dart';
 
 import '../tool/webdav_fixture_server.dart';
 
@@ -119,6 +121,27 @@ void main() {
       final stored = await credentialStore.read(connections.first.id);
       expect(stored?.username, 'user');
       expect(stored?.password, 'pass');
+    });
+
+    test('connection provider maps lifecycle and opens a browser', () async {
+      final provider = WebDavSourceConnectionProvider(service);
+      final resourcesFuture = provider.watchResources().firstWhere(
+        (resources) => resources.length == 1 && resources.single.isAvailable,
+      );
+      await service.addConnection(
+        url: 'https://nas.local/dav',
+        displayName: 'My NAS',
+        credentials: const WebDavCredentials(username: 'user', password: 'pw'),
+      );
+
+      final resources = await resourcesFuture;
+      final connection = resources.single;
+      final browser = await provider.openBrowser(connection.id);
+
+      expect(connection.type, LibrarySourceType.webDav);
+      expect(connection.kind, SourceManagedResourceKind.connection);
+      expect(connection.status, SourceManagedStatus.available);
+      expect(browser.rootId, '/dav/');
     });
 
     test('addConnection records error status when discovery fails', () async {

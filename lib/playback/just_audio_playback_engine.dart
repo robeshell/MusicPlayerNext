@@ -4,18 +4,19 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
 
 import '../domain/library_models.dart';
-import '../sources/webdav/webdav_cache.dart';
+import 'http_stream_audio_source.dart';
 import 'native_position_gate.dart';
 import 'playback_engine.dart';
+import 'playback_media_provider.dart';
 import 'request_header_policy.dart';
-import 'webdav_stream_audio_source.dart';
 
 /// Production adapter backed by each platform's just_audio implementation
 /// (ExoPlayer on Android and AVPlayer on Apple platforms).
 ///
 /// It deliberately exposes the same immutable snapshot contract as the
 /// playback contract so the UI and coordinator remain engine-agnostic.
-class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
+class JustAudioPlaybackEngine
+    implements PlaylistPlaybackEngine, PlaybackMediaAccessSink {
   static const _traceEnabled = bool.fromEnvironment('SOUND_PLAYBACK_TRACE');
   static const _validationMuted = bool.fromEnvironment(
     'SOUND_VALIDATION_MUTED',
@@ -34,10 +35,10 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
 
   JustAudioPlaybackEngine({
     just_audio.AudioPlayer? player,
-    this.webDavAuthHeaders = const {},
-    this.webDavAllowBadCertificateUrls = const {},
-    this.webDavCache,
-  }) : _player =
+    PlaybackMediaProviderRegistry? mediaProviders,
+  }) : _mediaProviders =
+           mediaProviders ?? PlaybackMediaProviderRegistry.direct(),
+       _player =
            player ??
            just_audio.AudioPlayer(
              // Android and Apple platforms send headers through their native
@@ -61,19 +62,8 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
   }
 
   final just_audio.AudioPlayer _player;
+  final PlaybackMediaProviderRegistry _mediaProviders;
   late final Future<void> _configuration;
-
-  /// Auth headers for WebDAV sources, keyed by connection base URL.
-  /// Set by [SoundApp] when connections are available.
-  Map<String, Map<String, String>> webDavAuthHeaders;
-
-  /// Connection base URLs whose user explicitly allowed an untrusted TLS
-  /// certificate. The exception is applied only to cache downloads for that
-  /// connection, never process-wide.
-  Set<String> webDavAllowBadCertificateUrls;
-
-  /// Optional cache for remote WebDAV files.
-  WebDavCache? webDavCache;
 
   final StreamController<PlaybackSnapshot> _snapshots =
       StreamController<PlaybackSnapshot>.broadcast(sync: true);
@@ -83,7 +73,7 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
 
   PlaybackSnapshot _current = const PlaybackSnapshot.idle();
   List<Track> _queue = const [];
-  List<bool> _queueCacheMisses = const [];
+  List<_DeferredMediaCache?> _queueCacheActions = const [];
   Track? _track;
   int _sessionId = 0;
   Duration _position = Duration.zero;
@@ -106,6 +96,11 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
   Stream<PlaybackSnapshot> get snapshots => _snapshots.stream;
 
   @override
+  void updatePlaybackMediaAccess(List<PlaybackMediaAccessRule> rules) {
+    _mediaProviders.updatePlaybackMediaAccess(rules);
+  }
+
+  @override
   Future<void> load(Track track, {required int sessionId}) => loadQueue(
     [track],
     initialIndex: 0,
@@ -126,7 +121,7 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
     final track = tracks[initialIndex];
     _sessionId = sessionId;
     _queue = List.of(tracks);
-    _queueCacheMisses = List<bool>.filled(tracks.length, false);
+    _queueCacheActions = List<_DeferredMediaCache?>.filled(tracks.length, null);
     _track = track;
     _position = Duration.zero;
     _duration = track.duration;
@@ -155,7 +150,7 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
         );
         if (_disposed || operationSession != _sessionId) return;
       }
-      _queueCacheMisses = [for (final item in prepared) item.shouldCache];
+      _queueCacheActions = [for (final item in prepared) item.deferredCache];
       await _player.setLoopMode(_justAudioLoopMode(loopMode));
       if (_disposed || operationSession != _sessionId) return;
       final loadedDuration = await _player.setAudioSources(
@@ -220,86 +215,57 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
     Track track, {
     bool requirePreciseLocalCache = false,
   }) async {
-    final resource = track.mediaUri?.trim();
-    if (resource == null || resource.isEmpty) {
+    final rawUri = Uri.tryParse(track.mediaUri?.trim() ?? '');
+    final resource = await _mediaProviders.resolve(
+      track,
+      preferLocalFile:
+          requirePreciseLocalCache &&
+          rawUri != null &&
+          _requiresPreciseDarwinTiming(rawUri),
+    );
+    if (resource == null) {
       return _PreparedAudioSource(
         just_audio.AudioSource.uri(
           Uri(scheme: 'sound-unavailable', path: track.id),
           tag: track.id,
         ),
-        shouldCache: false,
       );
     }
 
-    final uri = Uri.tryParse(resource);
-    final isRemote =
-        uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+    final uri = resource.uri;
+    final isRemote = uri.scheme == 'http' || uri.scheme == 'https';
     if (isRemote) {
-      final remote = _remoteAccessFor(track, resource);
-      final cache = webDavCache;
-      var cachedPath = cache != null && track.source == SourceKind.webDav
-          ? await cache.get(resource)
-          : null;
-      if (cachedPath == null &&
-          requirePreciseLocalCache &&
-          cache != null &&
-          track.source == SourceKind.webDav &&
-          remote.allowBadCertificate &&
-          _requiresPreciseDarwinTiming(uri)) {
-        // StreamAudioSource cannot pass ProgressiveAudioSourceOptions to the
-        // Darwin implementation. Download only the initially selected FLAC so
-        // AVPlayer can build an exact timeline from a local AVURLAsset. Other
-        // queue items continue to load lazily and cache in the background.
-        try {
-          cachedPath = await cache.download(
-            resource,
-            headers: remote.headers,
-            allowBadCertificate: true,
-          );
-        } catch (error) {
-          debugPrint(
-            'WebDAV precise FLAC preparation failed; falling back to stream: '
-            '$error',
-          );
-        }
-      }
-      if (cachedPath != null) {
+      if (!kIsWeb && resource.allowBadCertificate) {
         return _PreparedAudioSource(
-          _progressiveAudioSource(Uri.file(cachedPath), tag: track.id),
-          shouldCache: false,
-        );
-      }
-      if (!kIsWeb &&
-          track.source == SourceKind.webDav &&
-          remote.allowBadCertificate) {
-        return _PreparedAudioSource(
-          WebDavStreamAudioSource(
+          HttpStreamAudioSource(
             uri: uri,
-            headers: remote.headers,
+            headers: resource.headers,
             allowBadCertificate: true,
             tag: track.id,
           ),
-          shouldCache: cache != null,
+          deferredCache: _deferredCache(resource),
         );
       }
       return _PreparedAudioSource(
-        _progressiveAudioSource(uri, headers: remote.headers, tag: track.id),
-        shouldCache: cache != null && track.source == SourceKind.webDav,
+        _progressiveAudioSource(uri, headers: resource.headers, tag: track.id),
+        deferredCache: _deferredCache(resource),
       );
     }
 
-    if (uri != null && uri.scheme.isNotEmpty && uri.scheme != 'file') {
+    if (uri.scheme.isNotEmpty && uri.scheme != 'file') {
       return _PreparedAudioSource(
         just_audio.AudioSource.uri(uri, tag: track.id),
-        shouldCache: false,
       );
     }
-    return _PreparedAudioSource(
-      _progressiveAudioSource(
-        Uri.file(uri?.scheme == 'file' ? uri!.toFilePath() : resource),
-        tag: track.id,
-      ),
-      shouldCache: false,
+    return _PreparedAudioSource(_progressiveAudioSource(uri, tag: track.id));
+  }
+
+  _DeferredMediaCache? _deferredCache(PlaybackMediaResource resource) {
+    final action = resource.cache;
+    if (action == null) return null;
+    return _DeferredMediaCache(
+      key: resource.cacheKey ?? resource.uri.toString(),
+      action: action,
     );
   }
 
@@ -338,15 +304,15 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
       if (existingIndex >= 0) {
         await _player.moveAudioSource(existingIndex, index);
         final movedTrack = _queue.removeAt(existingIndex);
-        final movedCacheState = _queueCacheMisses.removeAt(existingIndex);
+        final movedCacheAction = _queueCacheActions.removeAt(existingIndex);
         _queue.insert(index, movedTrack);
-        _queueCacheMisses.insert(index, movedCacheState);
+        _queueCacheActions.insert(index, movedCacheAction);
       } else {
         final prepared = await _prepareAudioSource(desired[index]);
         if (_disposed || operationSession != _sessionId) return;
         await _player.insertAudioSource(index, prepared.source);
         _queue.insert(index, desired[index]);
-        _queueCacheMisses.insert(index, prepared.shouldCache);
+        _queueCacheActions.insert(index, prepared.deferredCache);
       }
     }
     while (_queue.length > desired.length) {
@@ -354,7 +320,7 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
       final index = _queue.length - 1;
       await _player.removeAudioSourceAt(index);
       _queue.removeAt(index);
-      _queueCacheMisses.removeAt(index);
+      _queueCacheActions.removeAt(index);
     }
   }
 
@@ -439,7 +405,7 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
     } finally {
       _track = null;
       _queue = const [];
-      _queueCacheMisses = const [];
+      _queueCacheActions = const [];
       _sessionId = 0;
       _position = Duration.zero;
       _duration = Duration.zero;
@@ -558,87 +524,33 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
     return message.isEmpty ? '播放引擎发生未知错误。' : message;
   }
 
-  _RemoteAccess _remoteAccessFor(Track track, String resource) {
-    var headers = track.httpHeaders;
-    String? bestKey;
-    if (track.source == SourceKind.webDav && webDavAuthHeaders.isNotEmpty) {
-      for (final key in webDavAuthHeaders.keys) {
-        if (_isWithinWebDavBase(resource, key) &&
-            (bestKey == null || key.length > bestKey.length)) {
-          bestKey = key;
-        }
-      }
-      if (bestKey != null) headers = webDavAuthHeaders[bestKey]!;
-    }
-    return _RemoteAccess(
-      headers: headers,
-      allowBadCertificate:
-          bestKey != null && webDavAllowBadCertificateUrls.contains(bestKey),
-    );
-  }
-
   void _scheduleCurrentTrackCacheDownload() {
     final track = _track;
-    if (track == null || track.source != SourceKind.webDav) return;
+    if (track == null) return;
     final index = _queue.indexWhere((candidate) => candidate.id == track.id);
     if (index < 0 ||
-        index >= _queueCacheMisses.length ||
-        !_queueCacheMisses[index]) {
+        index >= _queueCacheActions.length ||
+        _queueCacheActions[index] == null) {
       return;
     }
-    _queueCacheMisses[index] = false;
-    final resource = track.mediaUri?.trim();
-    if (resource == null || resource.isEmpty) return;
-    final remote = _remoteAccessFor(track, resource);
-    _scheduleCacheDownload(
-      webDavCache,
-      resource,
-      remote.headers,
-      allowBadCertificate: remote.allowBadCertificate,
-    );
+    final deferred = _queueCacheActions[index]!;
+    _queueCacheActions[index] = null;
+    _scheduleCacheDownload(deferred);
   }
 
-  bool _isWithinWebDavBase(String resource, String base) {
-    final resourceUri = Uri.tryParse(resource);
-    final baseUri = Uri.tryParse(base);
-    if (resourceUri == null || baseUri == null) return false;
-    if (resourceUri.scheme.toLowerCase() != baseUri.scheme.toLowerCase() ||
-        resourceUri.host.toLowerCase() != baseUri.host.toLowerCase() ||
-        resourceUri.port != baseUri.port) {
-      return false;
-    }
-    final basePath = baseUri.path.endsWith('/')
-        ? baseUri.path
-        : '${baseUri.path}/';
-    return resourceUri.path.startsWith(basePath);
-  }
-
-  void _scheduleCacheDownload(
-    WebDavCache? cache,
-    String? url,
-    Map<String, String> headers, {
-    required bool allowBadCertificate,
-  }) {
-    if (cache == null || url == null) return;
-    final capturedHeaders = Map.of(headers);
+  void _scheduleCacheDownload(_DeferredMediaCache deferred) {
     // Defer to avoid competing with the playback stream for bandwidth.
-    _cacheDownloadTimers.putIfAbsent(url, () {
+    _cacheDownloadTimers.putIfAbsent(deferred.key, () {
       return Timer(const Duration(seconds: 2), () {
-        _cacheDownloadTimers.remove(url);
+        _cacheDownloadTimers.remove(deferred.key);
         if (_disposed) return;
         unawaited(
-          cache
-              .download(
-                url,
-                headers: capturedHeaders,
-                allowBadCertificate: allowBadCertificate,
-              )
-              .then(
-                (_) => debugPrint('WebDAV cache: background download complete'),
-                onError: (Object error) => debugPrint(
-                  'WebDAV cache: background download failed: $error',
-                ),
-              ),
+          deferred.action().then(
+            (_) => debugPrint('Playback cache: background download complete'),
+            onError: (Object error) => debugPrint(
+              'Playback cache: background download failed: $error',
+            ),
+          ),
         );
       });
     });
@@ -661,18 +573,15 @@ class JustAudioPlaybackEngine implements PlaylistPlaybackEngine {
 }
 
 class _PreparedAudioSource {
-  const _PreparedAudioSource(this.source, {required this.shouldCache});
+  const _PreparedAudioSource(this.source, {this.deferredCache});
 
   final just_audio.AudioSource source;
-  final bool shouldCache;
+  final _DeferredMediaCache? deferredCache;
 }
 
-class _RemoteAccess {
-  const _RemoteAccess({
-    required this.headers,
-    required this.allowBadCertificate,
-  });
+class _DeferredMediaCache {
+  const _DeferredMediaCache({required this.key, required this.action});
 
-  final Map<String, String> headers;
-  final bool allowBadCertificate;
+  final String key;
+  final Future<void> Function() action;
 }

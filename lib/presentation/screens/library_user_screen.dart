@@ -8,6 +8,7 @@ import '../../library/library_records.dart';
 import '../../playback/playback_controller.dart';
 import '../controllers/library_catalog_controller.dart';
 import '../controllers/library_user_state_controller.dart';
+import '../models/library_source_filter.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
 import '../widgets/sound_components.dart';
@@ -29,8 +30,6 @@ extension LibraryUserBrowseModePresentation on LibraryUserBrowseMode {
     LibraryUserBrowseMode.playlists => Icons.queue_music_rounded,
   };
 }
-
-enum _UserSourceFilter { all, local, webDav }
 
 class LibraryUserScreen extends StatefulWidget {
   const LibraryUserScreen({
@@ -61,7 +60,7 @@ class LibraryUserScreen extends StatefulWidget {
 }
 
 class _LibraryUserScreenState extends State<LibraryUserScreen> {
-  _UserSourceFilter _sourceFilter = _UserSourceFilter.all;
+  LibrarySourceFilter _sourceFilter = LibrarySourceFilter.all;
 
   @override
   Widget build(BuildContext context) {
@@ -78,13 +77,18 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
               for (final track in album.tracks) track.id: album,
           };
           final favoriteIds = widget.userState.favoriteTrackIds;
-          final tracks = _filterTracks(switch (widget.mode) {
+          final rawTracks = switch (widget.mode) {
             LibraryUserBrowseMode.favorites => widget.userState.favoriteTracks,
             LibraryUserBrowseMode.recent => widget.userState.recentTracks,
             LibraryUserBrowseMode.history => const <Track>[],
             LibraryUserBrowseMode.playlists => const <Track>[],
-          });
+          };
+          final tracks = _filterTracks(rawTracks);
           final history = _filterHistory(widget.userState.historyItems);
+          final sourceOptions = LibrarySourceFilter.options([
+            for (final track in rawTracks) track.source,
+            for (final item in widget.userState.historyItems) item.track.source,
+          ]);
           final resultCount = widget.mode == LibraryUserBrowseMode.history
               ? history.length
               : tracks.length;
@@ -92,12 +96,18 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
           return CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(32, 24, 32, 18),
+                padding: EdgeInsets.fromLTRB(
+                  context.soundPageGutter,
+                  24,
+                  context.soundPageGutter,
+                  18,
+                ),
                 sliver: SliverToBoxAdapter(
                   child: _UserLibraryHeader(
                     mode: widget.mode,
                     resultCount: resultCount,
                     sourceFilter: _sourceFilter,
+                    sourceOptions: sourceOptions,
                     onModeChanged: widget.onModeChanged,
                     onSourceChanged: (value) =>
                         setState(() => _sourceFilter = value),
@@ -148,7 +158,12 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
       return CustomScrollView(
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(32, 24, 32, 18),
+            padding: EdgeInsets.fromLTRB(
+              context.soundPageGutter,
+              24,
+              context.soundPageGutter,
+              18,
+            ),
             sliver: SliverToBoxAdapter(
               child: _PlaylistOverviewHeader(
                 playlistCount: widget.userState.playlists.length,
@@ -183,7 +198,12 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
+              padding: EdgeInsets.fromLTRB(
+                context.soundPageGutter,
+                0,
+                context.soundPageGutter,
+                context.soundContentBottomPadding,
+              ),
               sliver: SliverList.separated(
                 itemCount: widget.userState.playlists.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -232,7 +252,12 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
     return CustomScrollView(
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(32, 24, 32, 18),
+          padding: EdgeInsets.fromLTRB(
+            context.soundPageGutter,
+            24,
+            context.soundPageGutter,
+            18,
+          ),
           sliver: SliverToBoxAdapter(
             child: _PlaylistDetailHeader(
               playlist: selectedPlaylist,
@@ -262,7 +287,12 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
           )
         else
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
+            padding: EdgeInsets.fromLTRB(
+              context.soundPageGutter,
+              0,
+              context.soundPageGutter,
+              context.soundContentBottomPadding,
+            ),
             sliver: SliverReorderableList(
               itemCount: tracks.length,
               onReorderItem: (oldIndex, newIndex) => _reorderPlaylist(
@@ -385,11 +415,7 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
     ];
   }
 
-  bool _matchesSource(Track track) => switch (_sourceFilter) {
-    _UserSourceFilter.all => true,
-    _UserSourceFilter.local => track.source == SourceKind.local,
-    _UserSourceFilter.webDav => track.source == SourceKind.webDav,
-  };
+  bool _matchesSource(Track track) => _sourceFilter.matches(track.source);
 
   Widget _trackSliver(
     List<Track> tracks,
@@ -397,7 +423,12 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
     Set<String> favoriteIds,
   ) {
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
+      padding: EdgeInsets.fromLTRB(
+        context.soundPageGutter,
+        0,
+        context.soundPageGutter,
+        context.soundContentBottomPadding,
+      ),
       sliver: SliverPrototypeExtentList.builder(
         itemCount: tracks.length,
         prototypeItem: _UserTrackRow(
@@ -439,7 +470,12 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
   ) {
     final recentQueue = _filterTracks(widget.userState.recentTracks);
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
+      padding: EdgeInsets.fromLTRB(
+        context.soundPageGutter,
+        0,
+        context.soundPageGutter,
+        context.soundContentBottomPadding,
+      ),
       sliver: SliverPrototypeExtentList.builder(
         itemCount: history.length,
         prototypeItem: _UserTrackRow(
@@ -558,10 +594,10 @@ class _PlaylistOverviewHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     '播放列表',
                     style: TextStyle(
-                      fontSize: 32,
+                      fontSize: context.soundPageTitleSize,
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.8,
                     ),
@@ -569,7 +605,10 @@ class _PlaylistOverviewHeader extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     '$playlistCount 个列表',
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                    style: TextStyle(
+                      color: context.soundMutedText,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -596,7 +635,7 @@ class _PlaylistOverviewHeader extends StatelessWidget {
                     label: Text(candidate.label),
                     selected: candidate == LibraryUserBrowseMode.playlists,
                     onSelected: (_) => onModeChanged(candidate),
-                    selectedColor: SoundColors.accent.withValues(alpha: 0.24),
+                    selectedColor: SoundColors.accent.withValues(alpha: 0.14),
                   ),
                 ),
             ],
@@ -630,7 +669,7 @@ class _PlaylistTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.045),
+      color: context.soundTint(0.045),
       borderRadius: BorderRadius.circular(12),
       child: ListTile(
         contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
@@ -658,7 +697,7 @@ class _PlaylistTile extends StatelessWidget {
           missingTrackCount == 0
               ? '$trackCount 首歌'
               : '$trackCount 首歌 · $missingTrackCount 首来源暂不可用',
-          style: const TextStyle(color: Colors.white54),
+          style: TextStyle(color: context.soundMutedText),
         ),
         trailing: PopupMenuButton<String>(
           key: ValueKey('playlist-actions-${playlist.id}'),
@@ -720,14 +759,14 @@ class _PlaylistDetailHeader extends StatelessWidget {
         const SizedBox(height: 14),
         Text(
           playlist.name,
-          style: const TextStyle(
-            fontSize: 34,
+          style: TextStyle(
+            fontSize: context.soundPageTitleSize,
             fontWeight: FontWeight.w900,
             letterSpacing: -0.8,
           ),
         ),
         const SizedBox(height: 6),
-        Text(summary, style: const TextStyle(color: Colors.white54)),
+        Text(summary, style: TextStyle(color: context.soundMutedText)),
         const SizedBox(height: 18),
         Wrap(
           spacing: 10,
@@ -793,9 +832,7 @@ class _PlaylistTrackRow extends StatelessWidget {
         color: Theme.of(context).scaffoldBackgroundColor,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-            ),
+            border: Border(bottom: BorderSide(color: context.soundDivider)),
           ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(vertical: 5),
@@ -813,7 +850,7 @@ class _PlaylistTrackRow extends StatelessWidget {
               '${track.artist} · ${album.title}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.white54),
+              style: TextStyle(fontSize: 12, color: context.soundMutedText),
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -844,11 +881,11 @@ class _PlaylistTrackRow extends StatelessWidget {
                 ),
                 ReorderableDragStartListener(
                   index: index,
-                  child: const Padding(
-                    padding: EdgeInsets.all(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
                     child: Icon(
                       Icons.drag_handle_rounded,
-                      color: Colors.white54,
+                      color: context.soundMutedText,
                     ),
                   ),
                 ),
@@ -866,6 +903,7 @@ class _UserLibraryHeader extends StatelessWidget {
     required this.mode,
     required this.resultCount,
     required this.sourceFilter,
+    required this.sourceOptions,
     required this.onModeChanged,
     required this.onSourceChanged,
     required this.onBack,
@@ -874,9 +912,10 @@ class _UserLibraryHeader extends StatelessWidget {
 
   final LibraryUserBrowseMode mode;
   final int resultCount;
-  final _UserSourceFilter sourceFilter;
+  final LibrarySourceFilter sourceFilter;
+  final List<LibrarySourceFilter> sourceOptions;
   final ValueChanged<LibraryUserBrowseMode> onModeChanged;
-  final ValueChanged<_UserSourceFilter> onSourceChanged;
+  final ValueChanged<LibrarySourceFilter> onSourceChanged;
   final VoidCallback onBack;
   final VoidCallback? onClearHistory;
 
@@ -899,8 +938,8 @@ class _UserLibraryHeader extends StatelessWidget {
                 children: [
                   Text(
                     mode.label,
-                    style: const TextStyle(
-                      fontSize: 32,
+                    style: TextStyle(
+                      fontSize: context.soundPageTitleSize,
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.8,
                     ),
@@ -908,7 +947,10 @@ class _UserLibraryHeader extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     '$resultCount ${mode == LibraryUserBrowseMode.favorites ? '首收藏' : '条记录'}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                    style: TextStyle(
+                      color: context.soundMutedText,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -935,7 +977,7 @@ class _UserLibraryHeader extends StatelessWidget {
                     label: Text(candidate.label),
                     selected: candidate == mode,
                     onSelected: (_) => onModeChanged(candidate),
-                    selectedColor: SoundColors.accent.withValues(alpha: 0.24),
+                    selectedColor: SoundColors.accent.withValues(alpha: 0.14),
                   ),
                 ),
             ],
@@ -946,13 +988,9 @@ class _UserLibraryHeader extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final filter in _UserSourceFilter.values)
+            for (final filter in sourceOptions)
               FilterChip(
-                label: Text(switch (filter) {
-                  _UserSourceFilter.all => '全部来源',
-                  _UserSourceFilter.local => '本地',
-                  _UserSourceFilter.webDav => 'WebDAV',
-                }),
+                label: Text(filter.label),
                 selected: sourceFilter == filter,
                 onSelected: (_) => onSourceChanged(filter),
               ),
@@ -992,9 +1030,7 @@ class _UserTrackRow extends StatelessWidget {
       semanticLabel: track.title,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(vertical: 5),
-        shape: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-        ),
+        shape: Border(bottom: BorderSide(color: context.soundDivider)),
         leading: SizedBox.square(
           dimension: 48,
           child: AlbumArt(album: album, borderRadius: 6),
@@ -1014,7 +1050,7 @@ class _UserTrackRow extends StatelessWidget {
           ].join(' · '),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 12, color: Colors.white54),
+          style: TextStyle(fontSize: 12, color: context.soundMutedText),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1063,13 +1099,18 @@ class _UserLibraryMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(32, 40, 32, 150),
+        padding: EdgeInsets.fromLTRB(
+          context.soundPageGutter,
+          40,
+          context.soundPageGutter,
+          context.soundContentBottomPadding,
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 430),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 48, color: Colors.white38),
+              Icon(icon, size: 48, color: context.soundMutedText),
               const SizedBox(height: 18),
               Text(
                 title,
@@ -1083,7 +1124,7 @@ class _UserLibraryMessage extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white54, height: 1.5),
+                style: TextStyle(color: context.soundMutedText, height: 1.5),
               ),
             ],
           ),

@@ -117,7 +117,10 @@ class PlaybackStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = onLightSurface
-        ? Color.alphaBlend(state.color.withValues(alpha: 0.24), Colors.black)
+        ? Color.alphaBlend(
+            state.color.withValues(alpha: 0.24),
+            context.soundPrimaryText,
+          )
         : state.color;
     final iconSize = compact ? 10.0 : 12.0;
     return Semantics(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/sound_theme.dart';
+
 class ProgressScrubber extends StatefulWidget {
   const ProgressScrubber({
     required this.position,
@@ -50,14 +52,13 @@ class _ProgressScrubberState extends State<ProgressScrubber> {
         overlayShape: RoundSliderOverlayShape(
           overlayRadius: widget.overlayRadius,
         ),
-        inactiveTrackColor:
-            widget.inactiveColor ?? Colors.white.withValues(alpha: 0.16),
+        inactiveTrackColor: widget.inactiveColor ?? context.soundTint(0.14),
       ),
       child: Slider(
         value: displayValue,
         max: _durationMs,
         padding: widget.padding,
-        activeColor: widget.activeColor ?? Colors.white,
+        activeColor: widget.activeColor ?? context.soundPrimaryText,
         onChanged: enabled
             ? (value) => setState(() => _previewMilliseconds = value)
             : null,

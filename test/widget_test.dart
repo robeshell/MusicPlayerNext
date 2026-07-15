@@ -1,7 +1,9 @@
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sound_player/app/sound_app.dart';
+import 'package:sound_player/core/sound_theme.dart';
 import 'package:sound_player/domain/library_models.dart';
 import 'package:sound_player/library/library_records.dart';
 import 'package:sound_player/library/persistence/drift_library_repository.dart';
@@ -62,6 +64,7 @@ void main() {
   testWidgets('browses real artists and genres without debug tools', (
     tester,
   ) async {
+    _simulatePlatform(TargetPlatform.iOS);
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -145,10 +148,10 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('library-source-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('WebDAV'));
+    expect(find.text('WebDAV'), findsNothing);
+    await tester.tap(find.text('本地').last);
     await tester.pumpAndSettle();
-    expect(find.text('当前筛选没有内容'), findsOneWidget);
-    expect(find.text('Test Album'), findsNothing);
+    expect(find.text('Test Album'), findsWidgets);
 
     await tester.tap(find.byKey(const ValueKey('library-source-menu')));
     await tester.pumpAndSettle();
@@ -168,6 +171,7 @@ void main() {
   testWidgets('favorites and playback history are fully interactive', (
     tester,
   ) async {
+    _simulatePlatform(TargetPlatform.iOS);
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -229,6 +233,7 @@ void main() {
   testWidgets('playlists support creation, editing, ordering, and deletion', (
     tester,
   ) async {
+    _simulatePlatform(TargetPlatform.iOS);
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -389,8 +394,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Test Track'), findsOneWidget);
-    expect(find.text('1:00'), findsOneWidget);
-    expect(find.text('-2:00'), findsOneWidget);
+    final restoredSlider = tester.widget<Slider>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mini-player-progress')),
+        matching: find.byType(Slider),
+      ),
+    );
+    expect(restoredSlider.value, 60000);
+    expect(restoredSlider.max, 180000);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
 
     await _unmountAndFlush(tester);
@@ -439,6 +450,7 @@ void main() {
   testWidgets('compact mini player sits just above bottom navigation', (
     tester,
   ) async {
+    _simulatePlatform(TargetPlatform.iOS);
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -465,9 +477,94 @@ void main() {
     await repository.close();
   });
 
+  testWidgets('desktop mini player is a full-width bottom dock', (
+    tester,
+  ) async {
+    _simulatePlatform(TargetPlatform.macOS);
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _repository();
+    final engine = SimulatedPlaybackEngine();
+    final playback = SoundPlaybackController(engine: engine);
+    await playback.playTrack(_testTrack, queue: const [_testTrack]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: SoundTheme.light,
+        home: AppShell(playback: playback, libraryRepository: repository),
+      ),
+    );
+    await tester.pump();
+
+    final rect = tester.getRect(find.byType(MiniPlayer));
+    expect(rect.left, 0);
+    expect(rect.right, 1200);
+    expect(rect.bottom, 800);
+    expect(rect.height, 76);
+    expect(find.byType(SoundNavigationBar), findsNothing);
+
+    final progressRect = tester.getRect(
+      find.byKey(const ValueKey('mini-player-progress')),
+    );
+    final toggleCenter = tester.getCenter(
+      find.byKey(const ValueKey('mini-player-playback-toggle')),
+    );
+    expect(progressRect.center.dy, closeTo(rect.top + 8, 0.1));
+    expect((toggleCenter.dy - rect.center.dy).abs(), lessThan(8));
+
+    await _unmountAndFlush(tester);
+    playback.dispose();
+    engine.dispose();
+    await repository.close();
+  });
+
+  testWidgets(
+    'desktop never falls back to the mobile shell in a short window',
+    (tester) async {
+      _simulatePlatform(TargetPlatform.macOS);
+      tester.view.physicalSize = const Size(1000, 480);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repository = _repository();
+      final engine = SimulatedPlaybackEngine();
+      final playback = SoundPlaybackController(engine: engine);
+      await playback.playTrack(_testTrack, queue: const [_testTrack]);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SoundTheme.light,
+          home: AppShell(playback: playback, libraryRepository: repository),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sound'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Sound')).dy,
+        greaterThan(soundMacOSTitlebarInset),
+      );
+      expect(find.byType(SoundNavigationBar), findsNothing);
+      final dockRect = tester.getRect(find.byType(MiniPlayer));
+      expect(dockRect.left, 0);
+      expect(dockRect.right, 1000);
+      expect(dockRect.bottom, 480);
+      expect(dockRect.height, 76);
+      expect(tester.takeException(), isNull);
+
+      await _unmountAndFlush(tester);
+      playback.dispose();
+      engine.dispose();
+      await repository.close();
+    },
+  );
+
   testWidgets('shell adapts between full iPad and split-view widths', (
     tester,
   ) async {
+    _simulatePlatform(TargetPlatform.iOS);
     tester.view.physicalSize = const Size(834, 1194);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -496,7 +593,26 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('来源'), findsOneWidget);
+    expect(find.text('设置'), findsWidgets);
+    expect(find.text('播放'), findsOneWidget);
+    expect(find.text('资料库'), findsWidgets);
+    expect(find.text('音乐来源'), findsOneWidget);
+    expect(find.text('键盘快捷键'), findsOneWidget);
+    expect(find.text('添加本地文件夹'), findsNothing);
+
+    await tester.tap(find.text('播放模式'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('settings-playback-mode-shuffle')),
+    );
+    await tester.pumpAndSettle();
+    expect(playback.playbackMode.name, 'shuffle');
+    expect(find.text('随机播放'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('settings-sources-row')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('source-settings')), findsOneWidget);
+    expect(find.text('音乐来源'), findsOneWidget);
     expect(find.text('添加本地文件夹'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
@@ -516,6 +632,7 @@ void main() {
   testWidgets('now playing fits iPhone and portrait iPad widths', (
     tester,
   ) async {
+    _simulatePlatform(TargetPlatform.iOS);
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -640,8 +757,8 @@ void main() {
           )
           .first,
     );
-    expect(activeStyle.style.fontSize, 23);
-    expect(sourceTextStyle.style.fontSize, 22);
+    expect(activeStyle.style.fontSize, 22);
+    expect(sourceTextStyle.style.fontSize, 20);
     expect(tester.takeException(), isNull);
 
     await _unmountAndFlush(tester);
@@ -688,7 +805,7 @@ void main() {
             )
             .first,
       );
-      expect(style.style.fontSize, 23);
+      expect(style.style.fontSize, 22);
     }
     expect(tester.takeException(), isNull);
 
@@ -698,9 +815,15 @@ void main() {
   });
 }
 
+void _simulatePlatform(TargetPlatform platform) {
+  debugDefaultTargetPlatformOverride = platform;
+  addTearDown(() => debugDefaultTargetPlatformOverride = null);
+}
+
 Future<void> _unmountAndFlush(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump(const Duration(milliseconds: 1));
+  debugDefaultTargetPlatformOverride = null;
 }
 
 DriftLibraryRepository _repository() {

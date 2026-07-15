@@ -7,8 +7,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'app/sound_app.dart';
 import 'playback/just_audio_playback_engine.dart';
+import 'playback/playback_media_provider.dart';
 import 'playback/sound_audio_handler.dart';
 import 'sources/webdav/webdav_cache.dart';
+import 'sources/webdav/webdav_playback_media_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,8 +37,14 @@ Future<void> main() async {
 
   runApp(
     SoundApp(
-      engine: JustAudioPlaybackEngine(webDavCache: cache),
+      engine: JustAudioPlaybackEngine(
+        mediaProviders: PlaybackMediaProviderRegistry([
+          WebDavPlaybackMediaProvider(cache: cache),
+          const DirectPlaybackMediaProvider(),
+        ]),
+      ),
       audioHandler: audioHandler,
+      webDavCache: cache,
     ),
   );
 }

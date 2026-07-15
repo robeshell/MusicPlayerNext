@@ -14,19 +14,28 @@ class PlaybackSession {
     required this.queueIndex,
     required this.positionMs,
     this.playbackMode = PlaybackMode.repeatAll,
+    this.queueRevision = 0,
   });
 
   final List<Track> queue;
   final int queueIndex;
   final int positionMs;
   final PlaybackMode playbackMode;
+  final int queueRevision;
 
   Map<String, dynamic> toJson() => {
-    'version': 2,
-    'queue': queue.map(_trackToJson).toList(growable: false),
+    'version': 3,
+    'queue': [
+      for (final (index, track) in queue.indexed)
+        _trackToJson(track, includeLyrics: index == queueIndex),
+    ],
     'queueIndex': queueIndex,
     'positionMs': positionMs,
     'playbackMode': playbackMode.name,
+    'queueRevision': queueRevision,
+    'lyricsTrackId': queueIndex >= 0 && queueIndex < queue.length
+        ? queue[queueIndex].id
+        : null,
   };
 
   factory PlaybackSession.fromJson(Map<String, dynamic> json) {
@@ -40,6 +49,17 @@ class PlaybackSession {
       queueIndex: (json['queueIndex'] as int?) ?? 0,
       positionMs: (json['positionMs'] as int?) ?? 0,
       playbackMode: _playbackModeFromJson(json['playbackMode']),
+      queueRevision: (json['queueRevision'] as int?) ?? 0,
+    );
+  }
+
+  PlaybackSession _withCheckpoint(_PlaybackSessionCheckpoint checkpoint) {
+    return PlaybackSession(
+      queue: queue,
+      queueIndex: checkpoint.queueIndex,
+      positionMs: checkpoint.positionMs,
+      playbackMode: checkpoint.playbackMode,
+      queueRevision: queueRevision,
     );
   }
 }
@@ -54,24 +74,26 @@ PlaybackMode _playbackModeFromJson(Object? value) {
   return PlaybackMode.repeatAll;
 }
 
-Map<String, dynamic> _trackToJson(Track track) => {
-  'id': track.id,
-  'title': track.title,
-  'artist': track.artist,
-  'albumTitle': track.albumTitle,
-  'durationMs': track.duration.inMilliseconds,
-  'source': track.source.name,
-  'trackNumber': track.trackNumber,
-  'discNumber': track.discNumber,
-  'mediaUri': track.mediaUri,
-  'artworkUri': track.artworkUri,
-  'year': track.year,
-  'genre': track.genre,
-  'lyrics': [
-    for (final lyric in track.lyrics)
-      {'timeMs': lyric.time?.inMilliseconds, 'text': lyric.text},
-  ],
-};
+Map<String, dynamic> _trackToJson(Track track, {required bool includeLyrics}) =>
+    {
+      'id': track.id,
+      'title': track.title,
+      'artist': track.artist,
+      'albumTitle': track.albumTitle,
+      'durationMs': track.duration.inMilliseconds,
+      'source': track.source.name,
+      'trackNumber': track.trackNumber,
+      'discNumber': track.discNumber,
+      'mediaUri': track.mediaUri,
+      'artworkUri': track.artworkUri,
+      'year': track.year,
+      'genre': track.genre,
+      if (includeLyrics)
+        'lyrics': [
+          for (final lyric in track.lyrics)
+            {'timeMs': lyric.time?.inMilliseconds, 'text': lyric.text},
+        ],
+    };
 
 Track _trackFromJson(Map<String, dynamic> json) {
   final rawLyrics = json['lyrics'];
@@ -81,7 +103,7 @@ Track _trackFromJson(Map<String, dynamic> json) {
     artist: json['artist'] as String,
     albumTitle: json['albumTitle'] as String,
     duration: Duration(milliseconds: json['durationMs'] as int),
-    source: SourceKind.values.byName(json['source'] as String),
+    source: SourceKind.fromName(json['source'] as String),
     trackNumber: (json['trackNumber'] as int?) ?? 1,
     discNumber: (json['discNumber'] as int?) ?? 0,
     mediaUri: json['mediaUri'] as String?,
@@ -132,6 +154,9 @@ class PlaybackSessionStore {
   }
 
   final PlaybackSessionStorage _storage;
+  int? _persistedQueueRevision;
+  String? _persistedLyricsTrackId;
+  bool _requiresStructureWrite = false;
 
   static Future<PlaybackSessionStore> create() async {
     return PlaybackSessionStore.withStorage(
@@ -145,8 +170,25 @@ class PlaybackSessionStore {
       if (content == null) return null;
       if (content.trim().isEmpty) return null;
       final json = jsonDecode(content) as Map<String, dynamic>;
-      final session = PlaybackSession.fromJson(json);
+      var session = PlaybackSession.fromJson(json);
       if (session.queue.isEmpty) return null;
+      _persistedQueueRevision = session.queueRevision;
+      _persistedLyricsTrackId = json['lyricsTrackId'] as String?;
+      _requiresStructureWrite = (json['version'] as int? ?? 1) < 3;
+
+      final checkpointContent = await _storage.readCheckpoint();
+      if (checkpointContent != null && checkpointContent.trim().isNotEmpty) {
+        try {
+          final checkpoint = _PlaybackSessionCheckpoint.fromJson(
+            jsonDecode(checkpointContent) as Map<String, dynamic>,
+          );
+          if (checkpoint.queueRevision == session.queueRevision) {
+            session = session._withCheckpoint(checkpoint);
+          }
+        } catch (error) {
+          debugPrint('Failed to load playback checkpoint: $error');
+        }
+      }
       return session;
     } catch (error) {
       debugPrint('Failed to load playback session: $error');
@@ -156,8 +198,21 @@ class PlaybackSessionStore {
 
   Future<void> save(PlaybackSession session) async {
     try {
-      final json = jsonEncode(session.toJson());
-      await _storage.write(json);
+      final currentTrackId =
+          session.queueIndex >= 0 && session.queueIndex < session.queue.length
+          ? session.queue[session.queueIndex].id
+          : null;
+      if (_requiresStructureWrite ||
+          _persistedQueueRevision != session.queueRevision ||
+          _persistedLyricsTrackId != currentTrackId) {
+        await _storage.write(jsonEncode(session.toJson()));
+        _persistedQueueRevision = session.queueRevision;
+        _persistedLyricsTrackId = currentTrackId;
+        _requiresStructureWrite = false;
+      }
+      await _storage.writeCheckpoint(
+        jsonEncode(_PlaybackSessionCheckpoint.fromSession(session).toJson()),
+      );
     } catch (error) {
       debugPrint('Failed to save playback session: $error');
     }
@@ -166,8 +221,51 @@ class PlaybackSessionStore {
   Future<void> clear() async {
     try {
       await _storage.clear();
+      _persistedQueueRevision = null;
+      _persistedLyricsTrackId = null;
+      _requiresStructureWrite = false;
     } catch (error) {
       debugPrint('Failed to clear playback session: $error');
     }
   }
+}
+
+class _PlaybackSessionCheckpoint {
+  const _PlaybackSessionCheckpoint({
+    required this.queueRevision,
+    required this.queueIndex,
+    required this.positionMs,
+    required this.playbackMode,
+  });
+
+  factory _PlaybackSessionCheckpoint.fromSession(PlaybackSession session) {
+    return _PlaybackSessionCheckpoint(
+      queueRevision: session.queueRevision,
+      queueIndex: session.queueIndex,
+      positionMs: session.positionMs,
+      playbackMode: session.playbackMode,
+    );
+  }
+
+  factory _PlaybackSessionCheckpoint.fromJson(Map<String, dynamic> json) {
+    return _PlaybackSessionCheckpoint(
+      queueRevision: (json['queueRevision'] as int?) ?? 0,
+      queueIndex: (json['queueIndex'] as int?) ?? 0,
+      positionMs: (json['positionMs'] as int?) ?? 0,
+      playbackMode: _playbackModeFromJson(json['playbackMode']),
+    );
+  }
+
+  final int queueRevision;
+  final int queueIndex;
+  final int positionMs;
+  final PlaybackMode playbackMode;
+
+  Map<String, dynamic> toJson() => {
+    'version': 1,
+    'queueRevision': queueRevision,
+    'queueIndex': queueIndex,
+    'positionMs': positionMs,
+    'playbackMode': playbackMode.name,
+  };
 }

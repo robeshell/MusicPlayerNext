@@ -712,7 +712,7 @@ class DriftLibraryRepository implements LibraryRepository {
 LibrarySourceRecord _sourceRecord(db.LibrarySource row) {
   return LibrarySourceRecord(
     id: row.id,
-    type: LibrarySourceType.values.byName(row.type),
+    type: LibrarySourceType.fromName(row.type),
     displayName: row.displayName,
     rootUri: row.rootUri,
     permissionBookmark: row.permissionBookmark,

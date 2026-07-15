@@ -6,6 +6,7 @@ import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
 import '../controllers/library_catalog_controller.dart';
 import '../controllers/library_user_state_controller.dart';
+import '../models/library_source_filter.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
 import '../widgets/source_badge.dart';
@@ -22,8 +23,6 @@ enum LibrarySortOrder {
   yearDescending,
   trackCountDescending,
 }
-
-enum LibrarySourceFilter { all, local, webDav }
 
 extension LibraryBrowseModePresentation on LibraryBrowseMode {
   String get label => switch (this) {
@@ -49,20 +48,6 @@ extension LibrarySortOrderPresentation on LibrarySortOrder {
     LibrarySortOrder.albumAscending => '专辑 A–Z',
     LibrarySortOrder.yearDescending => '年份（新到旧）',
     LibrarySortOrder.trackCountDescending => '歌曲数量（多到少）',
-  };
-}
-
-extension LibrarySourceFilterPresentation on LibrarySourceFilter {
-  String get label => switch (this) {
-    LibrarySourceFilter.all => '全部来源',
-    LibrarySourceFilter.local => '本地',
-    LibrarySourceFilter.webDav => 'WebDAV',
-  };
-
-  IconData get icon => switch (this) {
-    LibrarySourceFilter.all => Icons.library_music_outlined,
-    LibrarySourceFilter.local => SourceKind.local.icon,
-    LibrarySourceFilter.webDav => SourceKind.webDav.icon,
   };
 }
 
@@ -108,6 +93,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return AnimatedBuilder(
       animation: Listenable.merge([widget.catalog, ?widget.userState]),
       builder: (context, _) {
+        final gutter = context.soundPageGutter;
+        final bottomPadding = context.soundContentBottomPadding;
         final allAlbums = widget.catalog.albums;
         final albums = _sortAlbums(_filterAlbums(allAlbums));
         final albumByTrackId = {
@@ -117,6 +104,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final tracks = _sortTracks([
           for (final album in albums) ...album.tracks,
         ]);
+        final sourceOptions = LibrarySourceFilter.options(
+          allAlbums.map((album) => album.source),
+        );
         final artists = _sortCollections(buildArtistCollections(albums));
         final genres = _sortCollections(buildGenreCollections(albums));
         final resultCount = switch (widget.mode) {
@@ -128,7 +118,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return CustomScrollView(
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(32, 34, 32, 20),
+              padding: EdgeInsets.fromLTRB(gutter, 28, gutter, 18),
               sliver: SliverToBoxAdapter(
                 child: _LibraryHeader(
                   mode: widget.mode,
@@ -159,7 +149,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               )
             else ...[
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(32, 0, 32, 12),
+                padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
                 sliver: SliverToBoxAdapter(
                   child: _LibraryToolbar(
                     mode: widget.mode,
@@ -167,6 +157,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     sortOrder: _sortOrder,
                     sortOptions: _sortOptions(widget.mode),
                     sourceFilter: _sourceFilter,
+                    sourceOptions: sourceOptions,
                     onSortChanged: (value) =>
                         setState(() => _sortByMode[widget.mode] = value),
                     onSourceChanged: (value) =>
@@ -181,18 +172,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 )
               else
                 ...switch (widget.mode) {
-                  LibraryBrowseMode.albums => _albumSlivers(albums),
+                  LibraryBrowseMode.albums => _albumSlivers(
+                    albums,
+                    gutter,
+                    bottomPadding,
+                  ),
                   LibraryBrowseMode.artists => _collectionSlivers(
                     artists,
+                    gutter: gutter,
+                    bottomPadding: bottomPadding,
                     emptyMessage: '资料库中没有可浏览的艺人。',
                   ),
                   LibraryBrowseMode.genres => _collectionSlivers(
                     genres,
+                    gutter: gutter,
+                    bottomPadding: bottomPadding,
                     emptyMessage: '资料库中没有流派信息。',
                   ),
                   LibraryBrowseMode.songs => _songSlivers(
                     tracks,
                     albumByTrackId,
+                    gutter,
+                    bottomPadding,
                   ),
                 },
             ],
@@ -203,11 +204,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   List<Album> _filterAlbums(List<Album> albums) {
-    final source = switch (_sourceFilter) {
-      LibrarySourceFilter.all => null,
-      LibrarySourceFilter.local => SourceKind.local,
-      LibrarySourceFilter.webDav => SourceKind.webDav,
-    };
+    final source = _sourceFilter.source;
     if (source == null) return albums;
     return [
       for (final album in albums)
@@ -301,17 +298,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return sorted;
   }
 
-  List<Widget> _albumSlivers(List<Album> albums) {
+  List<Widget> _albumSlivers(
+    List<Album> albums,
+    double gutter,
+    double bottomPadding,
+  ) {
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(32, 12, 32, 140),
+        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, bottomPadding),
         sliver: SliverGrid.builder(
           itemCount: albums.length,
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 210,
-            mainAxisExtent: 280,
-            crossAxisSpacing: 24,
-            mainAxisSpacing: 24,
+            mainAxisExtent: 272,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 22,
           ),
           itemBuilder: (context, index) {
             final album = albums[index];
@@ -327,6 +328,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   List<Widget> _collectionSlivers(
     List<LibraryCollection> collections, {
+    required double gutter,
+    required double bottomPadding,
     required String emptyMessage,
   }) {
     if (collections.isEmpty) {
@@ -343,14 +346,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(32, 12, 32, 140),
+        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, bottomPadding),
         sliver: SliverGrid.builder(
           itemCount: collections.length,
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 240,
             mainAxisExtent: 300,
-            crossAxisSpacing: 24,
-            mainAxisSpacing: 24,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 22,
           ),
           itemBuilder: (context, index) {
             final collection = collections[index];
@@ -367,10 +370,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
   List<Widget> _songSlivers(
     List<Track> tracks,
     Map<String, Album> albumByTrackId,
+    double gutter,
+    double bottomPadding,
   ) {
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(32, 12, 32, 12),
+        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 12),
         sliver: SliverToBoxAdapter(
           child: _SongHeader(
             trackCount: tracks.length,
@@ -379,7 +384,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
       ),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
+        padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottomPadding),
         sliver: SliverPrototypeExtentList.builder(
           itemCount: tracks.length,
           prototypeItem: _LibraryTrackRow(
@@ -478,9 +483,7 @@ class _LibraryTrackRow extends StatelessWidget {
       semanticLabel: track.title,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-          ),
+          border: Border(bottom: BorderSide(color: context.soundDivider)),
         ),
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(vertical: 5),
@@ -498,7 +501,7 @@ class _LibraryTrackRow extends StatelessWidget {
             '${track.artist} · ${track.albumTitle}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -558,10 +561,10 @@ class _LibraryHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '资料库',
           style: TextStyle(
-            fontSize: 32,
+            fontSize: context.soundPageTitleSize,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.8,
           ),
@@ -569,7 +572,7 @@ class _LibraryHeader extends StatelessWidget {
         const SizedBox(height: 5),
         Text(
           '$albumCount 张专辑 · $trackCount 首歌曲',
-          style: const TextStyle(color: Colors.white54, fontSize: 13),
+          style: TextStyle(color: context.soundMutedText, fontSize: 12),
         ),
         const SizedBox(height: 20),
         SingleChildScrollView(
@@ -585,7 +588,7 @@ class _LibraryHeader extends StatelessWidget {
                     label: Text(candidate.label),
                     selected: mode == candidate,
                     onSelected: (_) => onModeChanged(candidate),
-                    selectedColor: SoundColors.accent.withValues(alpha: 0.24),
+                    selectedColor: SoundColors.accent.withValues(alpha: 0.14),
                   ),
                 ),
               if (onOpenUserMode case final openUserMode?)
@@ -614,6 +617,7 @@ class _LibraryToolbar extends StatelessWidget {
     required this.sortOrder,
     required this.sortOptions,
     required this.sourceFilter,
+    required this.sourceOptions,
     required this.onSortChanged,
     required this.onSourceChanged,
   });
@@ -623,6 +627,7 @@ class _LibraryToolbar extends StatelessWidget {
   final LibrarySortOrder sortOrder;
   final List<LibrarySortOrder> sortOptions;
   final LibrarySourceFilter sourceFilter;
+  final List<LibrarySourceFilter> sourceOptions;
   final ValueChanged<LibrarySortOrder> onSortChanged;
   final ValueChanged<LibrarySourceFilter> onSourceChanged;
 
@@ -638,7 +643,7 @@ class _LibraryToolbar extends StatelessWidget {
           LibraryBrowseMode.artists => '$resultCount 位艺人',
           LibraryBrowseMode.genres => '$resultCount 个流派',
           LibraryBrowseMode.songs => '$resultCount 首歌曲',
-        }, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        }, style: TextStyle(color: context.soundMutedText, fontSize: 12)),
         PopupMenuButton<LibrarySortOrder>(
           key: const ValueKey('library-sort-menu'),
           tooltip: '选择排序方式',
@@ -665,7 +670,7 @@ class _LibraryToolbar extends StatelessWidget {
           initialValue: sourceFilter,
           onSelected: onSourceChanged,
           itemBuilder: (context) => [
-            for (final option in LibrarySourceFilter.values)
+            for (final option in sourceOptions)
               PopupMenuItem(
                 value: option,
                 child: Row(
@@ -702,8 +707,8 @@ class _ToolbarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.045),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        color: context.soundTint(0.045),
+        border: Border.all(color: context.soundDivider),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
@@ -711,7 +716,7 @@ class _ToolbarButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: Colors.white70),
+            Icon(icon, size: 17, color: context.soundSecondaryText),
             const SizedBox(width: 7),
             Text(
               label,
@@ -802,7 +807,12 @@ class _CatalogMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(32, 40, 32, 150),
+        padding: EdgeInsets.fromLTRB(
+          context.soundPageGutter,
+          40,
+          context.soundPageGutter,
+          context.soundContentBottomPadding,
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
@@ -811,7 +821,11 @@ class _CatalogMessage extends StatelessWidget {
               if (loading)
                 const CircularProgressIndicator()
               else
-                Icon(icon, size: 48, color: Colors.white38),
+                Icon(
+                  icon,
+                  size: 48,
+                  color: context.soundSecondaryText.withValues(alpha: 0.65),
+                ),
               const SizedBox(height: 18),
               Text(
                 title,
@@ -825,7 +839,10 @@ class _CatalogMessage extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white54, height: 1.5),
+                style: TextStyle(
+                  color: context.soundSecondaryText,
+                  height: 1.5,
+                ),
               ),
               if (actionLabel != null && onAction != null) ...[
                 const SizedBox(height: 20),
@@ -906,7 +923,10 @@ class _AlbumCard extends StatelessWidget {
                   album.artist,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.soundSecondaryText,
+                  ),
                 ),
               ),
               SourceBadge(album.source),
@@ -970,7 +990,7 @@ class _CollectionCard extends StatelessWidget {
             '${collection.albums.length} 张专辑 · ${collection.tracks.length} 首歌',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
           ),
         ],
       ),

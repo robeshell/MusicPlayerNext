@@ -51,6 +51,8 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
   @override
   Widget build(BuildContext context) {
     final collection = widget.collection;
+    final gutter = context.soundPageGutter;
+    final bottomPadding = context.soundContentBottomPadding;
     final sortedTracks = _sortTracks(collection.tracks);
     final albumByTrackId = {
       for (final album in collection.albums)
@@ -75,9 +77,9 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
               ),
             ),
             if (collection.albums.isNotEmpty) ...[
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(32, 8, 32, 12),
-                sliver: SliverToBoxAdapter(
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 12),
+                sliver: const SliverToBoxAdapter(
                   child: Text(
                     '专辑',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
@@ -85,7 +87,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(32, 0, 32, 28),
+                padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 28),
                 sliver: SliverGrid.builder(
                   itemCount: collection.albums.length,
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -105,7 +107,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
               ),
             ],
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(32, 0, 32, 12),
+              padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
               sliver: SliverToBoxAdapter(
                 child: _CollectionTrackHeader(
                   trackCount: sortedTracks.length,
@@ -116,7 +118,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
             ),
             if (sortedTracks.isNotEmpty)
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(32, 0, 32, 140),
+                padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottomPadding),
                 sliver: SliverPrototypeExtentList.builder(
                   itemCount: sortedTracks.length,
                   prototypeItem: _CollectionTrackRow(
@@ -244,8 +246,8 @@ class _CollectionTrackHeader extends StatelessWidget {
           ],
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.045),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              color: context.soundTint(0.045),
+              border: Border.all(color: context.soundDivider),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Padding(
@@ -307,7 +309,7 @@ class _CollectionHero extends StatelessWidget {
             Text(
               collection.title,
               style: TextStyle(
-                fontSize: compact ? 30 : 40,
+                fontSize: compact ? 28 : 34,
                 height: 1.05,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -1,
@@ -316,7 +318,7 @@ class _CollectionHero extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               '${collection.albums.length} 张专辑 · ${collection.tracks.length} 首歌曲',
-              style: const TextStyle(fontSize: 13, color: Colors.white54),
+              style: TextStyle(fontSize: 12, color: context.soundMutedText),
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
@@ -328,7 +330,7 @@ class _CollectionHero extends StatelessWidget {
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
-                  vertical: 15,
+                  vertical: 11,
                 ),
               ),
             ),
@@ -338,11 +340,16 @@ class _CollectionHero extends StatelessWidget {
             ? const SizedBox.square(dimension: 220)
             : AlbumArt(
                 album: collection.albums.first,
-                size: compact ? 210 : 230,
+                size: compact ? 200 : 220,
               );
 
         return Container(
-          padding: const EdgeInsets.fromLTRB(32, 24, 32, 34),
+          padding: EdgeInsets.fromLTRB(
+            context.soundPageGutter,
+            20,
+            context.soundPageGutter,
+            30,
+          ),
           decoration: BoxDecoration(
             gradient: RadialGradient(
               center: const Alignment(-0.65, 0.8),
@@ -409,7 +416,7 @@ class _CollectionAlbumCard extends StatelessWidget {
             album.artist,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
           ),
         ],
       ),
@@ -445,9 +452,7 @@ class _CollectionTrackRow extends StatelessWidget {
       semanticLabel: track.title,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-          ),
+          border: Border(bottom: BorderSide(color: context.soundDivider)),
         ),
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(vertical: 5),
@@ -465,7 +470,7 @@ class _CollectionTrackRow extends StatelessWidget {
             '${track.artist} · ${album.title}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -473,9 +478,9 @@ class _CollectionTrackRow extends StatelessWidget {
               SourceBadge(track.source),
               Text(
                 formatDuration(track.duration),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Colors.white54,
+                  color: context.soundSecondaryText,
                   fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),

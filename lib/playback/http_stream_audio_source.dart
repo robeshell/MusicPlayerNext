@@ -7,11 +7,11 @@ import 'package:just_audio/just_audio.dart';
 
 import '../library/scanning/audio_format_registry.dart';
 
-/// A range-capable WebDAV source used when a connection explicitly permits an
-/// untrusted certificate. Keeping the [HttpClient] here avoids weakening TLS
-/// checks for just_audio's process-wide proxy or unrelated network traffic.
-class WebDavStreamAudioSource extends StreamAudioSource {
-  WebDavStreamAudioSource({
+/// A range-capable HTTP source for a connection that explicitly permits an
+/// untrusted certificate. Its private [HttpClient] keeps the TLS exception
+/// scoped to this media resource instead of weakening process-wide checks.
+class HttpStreamAudioSource extends StreamAudioSource {
+  HttpStreamAudioSource({
     required this.uri,
     required this.headers,
     required this.allowBadCertificate,
@@ -46,13 +46,13 @@ class WebDavStreamAudioSource extends StreamAudioSource {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.drain<void>();
         throw HttpException(
-          'WebDAV stream failed: HTTP ${response.statusCode}',
+          'HTTP media stream failed: HTTP ${response.statusCode}',
           uri: uri,
         );
       }
       if (rangedRequest && response.statusCode != HttpStatus.partialContent) {
         await response.drain<void>();
-        throw HttpException('WebDAV server ignored the byte range', uri: uri);
+        throw HttpException('Media server ignored the byte range', uri: uri);
       }
 
       final contentLength = response.contentLength < 0

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sound_player/playback/webdav_stream_audio_source.dart';
+import 'package:sound_player/playback/http_stream_audio_source.dart';
 
 void main() {
   late HttpServer server;
@@ -38,7 +38,7 @@ void main() {
   tearDown(() => server.close(force: true));
 
   test('forwards authentication and returns a full response', () async {
-    final source = WebDavStreamAudioSource(
+    final source = HttpStreamAudioSource(
       uri: Uri.parse('http://127.0.0.1:${server.port}/audio.mp3'),
       headers: const {'Authorization': 'Basic test'},
       allowBadCertificate: false,
@@ -52,7 +52,7 @@ void main() {
   });
 
   test('maps exclusive byte ranges and reports the source length', () async {
-    final source = WebDavStreamAudioSource(
+    final source = HttpStreamAudioSource(
       uri: Uri.parse('http://127.0.0.1:${server.port}/audio.mp3'),
       headers: const {'Authorization': 'Basic test'},
       allowBadCertificate: false,

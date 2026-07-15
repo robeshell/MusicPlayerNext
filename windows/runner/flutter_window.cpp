@@ -1,5 +1,7 @@
 #include "flutter_window.h"
 
+#include <flutter_windows.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -62,6 +64,15 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
+    case WM_GETMINMAXINFO: {
+      auto* min_max_info = reinterpret_cast<MINMAXINFO*>(lparam);
+      const HMONITOR monitor =
+          MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+      const UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+      min_max_info->ptMinTrackSize.x = MulDiv(900, dpi, USER_DEFAULT_SCREEN_DPI);
+      min_max_info->ptMinTrackSize.y = MulDiv(600, dpi, USER_DEFAULT_SCREEN_DPI);
+      return 0;
+    }
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;

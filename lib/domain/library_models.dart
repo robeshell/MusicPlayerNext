@@ -1,17 +1,41 @@
 import 'package:flutter/material.dart';
 
-enum SourceKind { local, webDav }
+class SourceKind {
+  const SourceKind(this.name);
+
+  static const local = SourceKind('local');
+  static const webDav = SourceKind('webDav');
+  static const values = [local, webDav];
+
+  factory SourceKind.fromName(String name) {
+    return switch (name) {
+      'local' => local,
+      'webDav' => webDav,
+      _ => SourceKind(name),
+    };
+  }
+
+  final String name;
+
+  @override
+  bool operator ==(Object other) {
+    return other is SourceKind && other.name == name;
+  }
+
+  @override
+  int get hashCode => name.hashCode;
+}
 
 extension SourceKindLabel on SourceKind {
-  String get label => switch (this) {
-    SourceKind.local => '本地',
-    SourceKind.webDav => 'WebDAV',
-  };
+  String get label {
+    if (this == SourceKind.local) return '本地';
+    if (this == SourceKind.webDav) return 'WebDAV';
+    return name;
+  }
 
-  IconData get icon => switch (this) {
-    SourceKind.local => Icons.laptop_mac_rounded,
-    SourceKind.webDav => Icons.cloud_outlined,
-  };
+  IconData get icon => this == SourceKind.local
+      ? Icons.laptop_mac_rounded
+      : Icons.cloud_outlined;
 }
 
 class Track {
@@ -26,7 +50,6 @@ class Track {
     this.discNumber = 0,
     this.lyrics = const [],
     this.mediaUri,
-    this.httpHeaders = const {},
     this.artworkUri,
     this.year,
     this.genre,
@@ -42,7 +65,6 @@ class Track {
   final int discNumber;
   final List<LyricLine> lyrics;
   final String? mediaUri;
-  final Map<String, String> httpHeaders;
   final String? artworkUri;
   final int? year;
   final String? genre;

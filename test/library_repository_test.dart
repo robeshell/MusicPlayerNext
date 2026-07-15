@@ -24,6 +24,27 @@ void main() {
     }
   });
 
+  test('persists an unknown source provider identifier', () async {
+    final now = DateTime.utc(2026, 7, 15);
+    final repository = _openRepository(databaseFile);
+    await repository.upsertSource(
+      LibrarySourceRecord(
+        id: 'source-subsonic',
+        type: const LibrarySourceType('subsonic'),
+        displayName: 'Remote Server',
+        rootUri: 'subsonic://server/library',
+        status: LibrarySourceStatus.available,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    final restored = await repository.getSource('source-subsonic');
+
+    expect(restored!.type, const LibrarySourceType('subsonic'));
+    await repository.close();
+  });
+
   test('persists a complete source scan after closing and reopening', () async {
     final createdAt = DateTime.utc(2026, 7, 11, 10);
     var repository = _openRepository(databaseFile);

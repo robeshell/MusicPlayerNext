@@ -1,6 +1,33 @@
 import 'dart:typed_data';
 
-enum LibrarySourceType { local, webDav }
+class LibrarySourceType {
+  const LibrarySourceType(this.name);
+
+  static const local = LibrarySourceType('local');
+  static const webDav = LibrarySourceType('webDav');
+  static const values = [local, webDav];
+
+  factory LibrarySourceType.fromName(String name) {
+    return switch (name) {
+      'local' => local,
+      'webDav' => webDav,
+      _ => LibrarySourceType(name),
+    };
+  }
+
+  final String name;
+
+  @override
+  bool operator ==(Object other) {
+    return other is LibrarySourceType && other.name == name;
+  }
+
+  @override
+  int get hashCode => name.hashCode;
+
+  @override
+  String toString() => 'LibrarySourceType($name)';
+}
 
 enum LibrarySourceStatus {
   idle,

@@ -9,6 +9,11 @@ class MainFlutterWindow: NSWindow {
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
+    self.contentMinSize = NSSize(width: 900, height: 600)
+    self.titleVisibility = .hidden
+    self.titlebarAppearsTransparent = true
+    self.styleMask.insert(.fullSizeContentView)
+    self.isMovableByWindowBackground = true
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     localDirectoryAccessPlugin = LocalDirectoryAccessPlugin(

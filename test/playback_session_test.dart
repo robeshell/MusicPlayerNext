@@ -11,7 +11,7 @@ import 'package:sound_player/playback/playback_session.dart';
 
 void main() {
   group('Track serialization', () {
-    test('round-trips non-sensitive playback fields and lyrics', () {
+    test('round-trips playback fields without sensitive or heavy data', () {
       final original = Track(
         id: 'track-1',
         title: '测试歌曲',
@@ -22,7 +22,6 @@ void main() {
         trackNumber: 5,
         discNumber: 2,
         mediaUri: 'file:///music/test.mp3',
-        httpHeaders: {'Authorization': 'Basic dGVzdA=='},
         artworkUri: 'file:///music/cover.jpg',
         year: 2024,
         genre: 'Rock',
@@ -43,7 +42,6 @@ void main() {
       expect(restored.trackNumber, original.trackNumber);
       expect(restored.discNumber, original.discNumber);
       expect(restored.mediaUri, original.mediaUri);
-      expect(restored.httpHeaders, isEmpty);
       expect(restored.artworkUri, original.artworkUri);
       expect(restored.year, original.year);
       expect(restored.genre, original.genre);
@@ -58,8 +56,7 @@ void main() {
           positionMs: 0,
         ).toJson(),
       );
-      expect(encoded, isNot(contains('Authorization')));
-      expect(encoded, isNot(contains('Basic dGVzdA==')));
+      expect(encoded, contains('First line'));
     });
 
     test('handles null optional fields', () {
@@ -75,26 +72,41 @@ void main() {
       final restored = _roundTripTrack(original);
 
       expect(restored.mediaUri, isNull);
-      expect(restored.httpHeaders, isEmpty);
       expect(restored.artworkUri, isNull);
       expect(restored.year, isNull);
       expect(restored.genre, isNull);
     });
 
-    test('handles empty httpHeaders', () {
-      final original = Track(
-        id: 'no-headers',
-        title: 'No Headers',
-        artist: 'A',
-        albumTitle: 'B',
-        duration: const Duration(minutes: 1),
+    test('only keeps lyrics for the current track fallback', () {
+      const first = Track(
+        id: 'first',
+        title: 'First',
+        artist: 'Artist',
+        albumTitle: 'Album',
+        duration: Duration(minutes: 1),
         source: SourceKind.local,
-        mediaUri: 'file:///song.mp3',
+        lyrics: [LyricLine(Duration(seconds: 1), 'First lyrics')],
+      );
+      const second = Track(
+        id: 'second',
+        title: 'Second',
+        artist: 'Artist',
+        albumTitle: 'Album',
+        duration: Duration(minutes: 1),
+        source: SourceKind.local,
+        lyrics: [LyricLine(Duration(seconds: 2), 'Second lyrics')],
       );
 
-      final restored = _roundTripTrack(original);
+      final encoded = jsonEncode(
+        const PlaybackSession(
+          queue: [first, second],
+          queueIndex: 1,
+          positionMs: 0,
+        ).toJson(),
+      );
 
-      expect(restored.httpHeaders, isEmpty);
+      expect(encoded, isNot(contains('First lyrics')));
+      expect(encoded, contains('Second lyrics'));
     });
   });
 
@@ -140,6 +152,31 @@ void main() {
 
       expect(legacy.playbackMode, PlaybackMode.repeatAll);
     });
+
+    test('version 2 sessions still restore their embedded lyrics', () {
+      final legacy = PlaybackSession.fromJson({
+        'version': 2,
+        'queue': [
+          {
+            'id': 'legacy-track',
+            'title': 'Legacy',
+            'artist': 'Artist',
+            'albumTitle': 'Album',
+            'durationMs': 60000,
+            'source': 'local',
+            'lyrics': [
+              {'timeMs': 3000, 'text': 'Legacy lyric'},
+            ],
+          },
+        ],
+      });
+
+      expect(legacy.queue.single.lyrics.single.text, 'Legacy lyric');
+      expect(
+        legacy.queue.single.lyrics.single.time,
+        const Duration(seconds: 3),
+      );
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -178,6 +215,160 @@ void main() {
       expect(restored.queue[0].id, _trackA.id);
       expect(restored.queueIndex, 0);
       expect(restored.positionMs, 15000);
+    });
+
+    test('position updates only rewrite the lightweight checkpoint', () async {
+      const queueRevision = 7;
+      final session = PlaybackSession(
+        queue: [_trackA, _trackB],
+        queueIndex: 0,
+        positionMs: 15000,
+        queueRevision: queueRevision,
+      );
+      await store.save(session);
+      final sessionFile = File('${tmpDir.path}/playback_session.json');
+      final structureBefore = await sessionFile.readAsString();
+
+      await store.save(
+        PlaybackSession(
+          queue: session.queue,
+          queueIndex: 0,
+          positionMs: 42000,
+          playbackMode: PlaybackMode.shuffle,
+          queueRevision: queueRevision,
+        ),
+      );
+
+      expect(await sessionFile.readAsString(), structureBefore);
+      final checkpoint =
+          jsonDecode(
+                await File(
+                  '${tmpDir.path}/playback_session_checkpoint.json',
+                ).readAsString(),
+              )
+              as Map<String, dynamic>;
+      expect(checkpoint['positionMs'], 42000);
+      expect(checkpoint['queueIndex'], 0);
+
+      final restored = await PlaybackSessionStore(
+        documentsDir: tmpDir.path,
+      ).load();
+      expect(restored!.positionMs, 42000);
+      expect(restored.queueIndex, 0);
+      expect(restored.playbackMode, PlaybackMode.shuffle);
+    });
+
+    test('changing the current track refreshes its lyrics fallback', () async {
+      const first = Track(
+        id: 'first',
+        title: 'First',
+        artist: 'Artist',
+        albumTitle: 'Album',
+        duration: Duration(minutes: 1),
+        source: SourceKind.local,
+        lyrics: [LyricLine(Duration(seconds: 1), 'First lyrics')],
+      );
+      const second = Track(
+        id: 'second',
+        title: 'Second',
+        artist: 'Artist',
+        albumTitle: 'Album',
+        duration: Duration(minutes: 1),
+        source: SourceKind.local,
+        lyrics: [LyricLine(Duration(seconds: 2), 'Second lyrics')],
+      );
+      const queue = [first, second];
+      await store.save(
+        const PlaybackSession(
+          queue: queue,
+          queueIndex: 0,
+          positionMs: 0,
+          queueRevision: 3,
+        ),
+      );
+
+      await store.save(
+        const PlaybackSession(
+          queue: queue,
+          queueIndex: 1,
+          positionMs: 0,
+          queueRevision: 3,
+        ),
+      );
+      final structure = await File(
+        '${tmpDir.path}/playback_session.json',
+      ).readAsString();
+
+      expect(structure, isNot(contains('First lyrics')));
+      expect(structure, contains('Second lyrics'));
+    });
+
+    test('queue revision changes rewrite the queue structure', () async {
+      await store.save(
+        PlaybackSession(
+          queue: [_trackA],
+          queueIndex: 0,
+          positionMs: 0,
+          queueRevision: 1,
+        ),
+      );
+      final sessionFile = File('${tmpDir.path}/playback_session.json');
+      final structureBefore = await sessionFile.readAsString();
+
+      await store.save(
+        PlaybackSession(
+          queue: [_trackA, _trackB],
+          queueIndex: 1,
+          positionMs: 0,
+          queueRevision: 2,
+        ),
+      );
+
+      expect(await sessionFile.readAsString(), isNot(structureBefore));
+      expect((await store.load())!.queue, hasLength(2));
+    });
+
+    test('saving a version 2 file migrates it to compact version 3', () async {
+      final file = File('${tmpDir.path}/playback_session.json');
+      await file.writeAsString(
+        jsonEncode({
+          'version': 2,
+          'queue': [
+            {
+              'id': 'legacy-track',
+              'title': 'Legacy',
+              'artist': 'Artist',
+              'albumTitle': 'Album',
+              'durationMs': 60000,
+              'source': 'local',
+              'lyrics': [
+                {'timeMs': 1000, 'text': 'Current fallback kept'},
+              ],
+            },
+            {
+              'id': 'legacy-track-2',
+              'title': 'Legacy 2',
+              'artist': 'Artist',
+              'albumTitle': 'Album',
+              'durationMs': 60000,
+              'source': 'local',
+              'lyrics': [
+                {'timeMs': 2000, 'text': 'Removed after migration'},
+              ],
+            },
+          ],
+          'queueIndex': 0,
+          'positionMs': 1000,
+        }),
+      );
+
+      final legacy = await store.load();
+      await store.save(legacy!);
+      final migrated = await file.readAsString();
+
+      expect(jsonDecode(migrated)['version'], 3);
+      expect(migrated, isNot(contains('Removed after migration')));
+      expect(migrated, contains('Current fallback kept'));
     });
 
     test('clear removes the session', () async {

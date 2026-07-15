@@ -10,10 +10,7 @@ import '../../library/scanning/embedded_lyrics_parser.dart';
 enum LibraryCatalogStatus { loading, ready, error }
 
 class LibraryCatalogController extends ChangeNotifier {
-  LibraryCatalogController({
-    required this.repository,
-    this.webDavAuthHeaders = const {},
-  }) {
+  LibraryCatalogController({required this.repository}) {
     _subscription = repository.watchTracks().listen(
       (_) => unawaited(refresh()),
       onError: (Object error, StackTrace stackTrace) {
@@ -26,9 +23,6 @@ class LibraryCatalogController extends ChangeNotifier {
 
   final LibraryRepository repository;
 
-  /// Map of connection base URL → http auth headers for WebDAV tracks.
-  /// Populated by [AppShell] from the credential store.
-  Map<String, Map<String, String>> webDavAuthHeaders;
   late final StreamSubscription<List<LibraryTrackRecord>> _subscription;
   LibraryCatalogStatus _status = LibraryCatalogStatus.loading;
   String? _errorMessage;
@@ -55,7 +49,6 @@ class LibraryCatalogController extends ChangeNotifier {
         albums: albumRecords,
         tracks: trackRecords,
         lyricsByTrackId: lyricsByTrackId,
-        webDavAuthHeaders: webDavAuthHeaders,
       );
       _tracks = List.unmodifiable([
         for (final album in _albums) ...album.tracks,
@@ -84,7 +77,6 @@ List<Album> mapLibraryAlbums({
   required List<LibraryAlbumRecord> albums,
   required List<LibraryTrackRecord> tracks,
   required Map<String, List<LibraryLyricRecord>> lyricsByTrackId,
-  Map<String, Map<String, String>> webDavAuthHeaders = const {},
 }) {
   final sourcesById = {for (final source in sources) source.id: source};
   final tracksByAlbumId = <String, List<LibraryTrackRecord>>{};
@@ -123,10 +115,6 @@ List<Album> mapLibraryAlbums({
                   lyricsByTrackId[track.id] ?? const [],
                 ),
                 mediaUri: track.mediaUri,
-                httpHeaders: _resolveWebDavHeaders(
-                  track.mediaUri,
-                  webDavAuthHeaders,
-                ),
                 artworkUri: track.artworkKey ?? album.artworkKey,
                 year: track.year ?? album.year,
                 genre: track.genre ?? album.genre,
@@ -147,25 +135,6 @@ List<LyricLine> _mapLyrics(String trackId, List<LibraryLyricRecord> records) =>
         ),
     ];
 
-Map<String, String> _resolveWebDavHeaders(
-  String mediaUri,
-  Map<String, Map<String, String>> authHeaders,
-) {
-  if (authHeaders.isEmpty) return const {};
-  // Match the longest connection base URL that is a prefix of the media URI.
-  String? bestKey;
-  for (final key in authHeaders.keys) {
-    if (mediaUri.startsWith(key)) {
-      if (bestKey == null || key.length > bestKey.length) {
-        bestKey = key;
-      }
-    }
-  }
-  return bestKey != null ? authHeaders[bestKey]! : const {};
-}
-
 SourceKind _sourceKind(LibrarySourceType? type) {
-  return type == LibrarySourceType.webDav
-      ? SourceKind.webDav
-      : SourceKind.local;
+  return SourceKind.fromName(type?.name ?? LibrarySourceType.local.name);
 }

@@ -162,9 +162,12 @@ class _WebDavAddDialogState extends State<WebDavAddDialog> {
                     '允许自签名证书',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     '适用于使用自签名 SSL 证书的家庭 NAS',
-                    style: TextStyle(fontSize: 12, color: Colors.white54),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.soundSecondaryText,
+                    ),
                   ),
                   controlAffinity: ListTileControlAffinity.leading,
                 ),

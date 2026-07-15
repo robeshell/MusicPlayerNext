@@ -22,8 +22,10 @@ library
   scanning, metadata, search, SQLite repositories
 playback
   playback controller, engine contract, just_audio adapter, position gate
+offline
+  protocol-neutral download queue, stored-media identity and storage totals
 sources
-  local folders and WebDAV
+  local folders, WebDAV and future protocol adapters
 platform
   background playback, media controls, file pickers, credentials,
   Apple security-scoped URLs and bookmarks
@@ -61,9 +63,11 @@ plugin does not expose custom headers.
   controller, so a late disk read cannot replace active playback. Native
   targets checkpoint at most once every two seconds and flush when the app is
   backgrounded; the development Web target uses an in-memory fallback.
-- Session JSON contains the queue metadata, artwork and lyrics required to
-  render the restored item, but never persists HTTP authorization headers.
-  Restored positions are applied after load and before play.
+- Session v3 stores queue structure separately from the high-frequency
+  position checkpoint. Only the current track keeps lyrics as a restart
+  fallback; the rest of the queue contains compact metadata. Track domain
+  objects and session JSON never carry HTTP authorization headers. Restored
+  positions are applied after load and before play.
 
 The initial state machine is:
 
@@ -232,6 +236,65 @@ The `web/sqlite3.wasm` binary must match the `sqlite3` version resolved in
   stable folder source derived from the parent connection and normalized path.
   A failed recursive scan marks that folder source as errored but does not
   replace or advance the last completed library snapshot.
+
+## Remote-source and offline extensibility
+
+Remote protocols are adapters, not product modes. Screens, albums and the
+download center must never branch on WebDAV, SMB, S3 or a music-server brand.
+
+- `OfflineMediaProvider` is the offline boundary. Each provider declares which
+  tracks it supports and owns protocol-specific authentication, download,
+  cancellation, removal and cache enumeration.
+- `OfflineDownloadController` owns the shared queue, progress, retry, batch
+  operations, library metadata mapping and aggregate storage totals. It only
+  addresses content through an `OfflineMediaReference(providerId, resourceId)`.
+- `WebDavOfflineMediaProvider` is the first implementation and wraps the
+  existing WebDAV cache. TLS exceptions and authorization headers stay inside
+  that adapter; the controller and UI never inspect them.
+- `PlaybackMediaProvider` is the playback boundary. Providers resolve a Track
+  into a URI, scoped request headers, TLS policy and an optional deferred cache
+  action. `PlaybackMediaProviderRegistry` selects the adapter without exposing
+  protocol types to the playback controller or `just_audio` engine.
+- `WebDavPlaybackMediaProvider` owns WebDAV credential matching, local cache
+  lookup, precise Apple FLAC preparation and background caching. The engine
+  only consumes the resolved resource. A generic `HttpStreamAudioSource`
+  handles range requests for explicitly trusted self-signed connections.
+- Authentication is resolved from connection-scoped access rules inside the
+  playback and offline providers. `Track` and `LibraryCatalogController` no
+  longer transport credentials.
+- Source identities are open string-backed values instead of closed enums.
+  `SourceProviderRegistry` supplies product-facing names and capability
+  declarations for local folders, WebDAV and future adapters. Unknown provider
+  identifiers survive SQLite persistence and domain mapping, so adding a
+  protocol does not require a database migration or a shared-model enum edit.
+- `SourceScanProviderRegistry` routes rescans by provider identifier and returns
+  one protocol-neutral change summary. Local and WebDAV adapters own record
+  lookup, credentials, parent connection resolution, cancellation and scanner
+  invocation; the settings screen no longer assembles WebDAV rescan requests.
+- `SourceDirectoryBrowser` exposes a protocol-neutral directory tree. The
+  shared picker owns navigation, selection, loading and error UI, while
+  `WebDavSourceDirectoryBrowser` owns URL containment, credentials, discovery
+  and audio-entry filtering.
+- `SourceConnectionProviderRegistry` exposes protocol-neutral connection and
+  indexed-catalog resources, probing, browser creation and removal. Remote
+  source sections are rendered from adapter descriptors; only the add/edit
+  form remains protocol-specific.
+- Library and user-library source filters are derived from the `SourceKind`
+  values present in real catalog data. They do not contain a local/WebDAV enum.
+- Provider identifiers must be unique. Automated tests mount two independent
+  providers at once and verify routing and storage aggregation.
+- Adding another protocol requires four focused adapters: connection and
+  credential management, catalog scanning, playback resource resolution, and
+  `OfflineMediaProvider`. Shared library, player, offline and presentation code
+  must not gain a new protocol-specific conditional.
+
+Playback, offline, source-definition, connection, scanning and directory
+boundaries are established. Protocol-specific connection forms still own their
+fields and validation; they are intentionally not replaced with a dynamic
+schema. A contract-only Subsonic-style adapter crosses connection, browsing,
+scanning, playback and offline registries in one test without changing shared
+controllers. Shipping a real second protocol is now feature work rather than a
+prerequisite architecture rewrite.
 
 ## Vertical validation before feature development
 

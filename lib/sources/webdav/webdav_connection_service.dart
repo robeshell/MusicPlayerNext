@@ -85,6 +85,12 @@ class WebDavConnectionService {
         .toList(growable: false);
   }
 
+  Future<WebDavConnectionRecord?> getManagedSource(String sourceId) async {
+    final source = await repository.getSource(sourceId);
+    if (source == null || source.type != LibrarySourceType.webDav) return null;
+    return _recordFromSource(source);
+  }
+
   Future<WebDavConnectionRecord?> resolveParentConnection(
     WebDavConnectionRecord folderSource,
   ) async {
@@ -247,6 +253,10 @@ class WebDavConnectionService {
   ) {
     final connectionKey = sha256.convert(utf8.encode(connectionId));
     return sourceId.startsWith('$_folderIdPrefix$connectionKey:');
+  }
+
+  static bool isConnectionSourceId(String sourceId) {
+    return sourceId.startsWith(_connectionIdPrefix);
   }
 
   static bool _mediaBelongsToConnection(String mediaUrl, String baseUrl) {
@@ -436,7 +446,7 @@ class WebDavConnectionService {
 
   static bool _isConnectionSource(LibrarySourceRecord source) {
     return source.type == LibrarySourceType.webDav &&
-        source.id.startsWith(_connectionIdPrefix);
+        isConnectionSourceId(source.id);
   }
 
   static WebDavConnectionRecord _recordFromSource(LibrarySourceRecord source) {

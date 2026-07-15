@@ -37,7 +37,7 @@ class PlaybackQueueSheet extends StatelessWidget {
                 width: 42,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: context.soundSecondaryText.withValues(alpha: 0.38),
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
@@ -59,8 +59,8 @@ class PlaybackQueueSheet extends StatelessWidget {
                           const SizedBox(height: 3),
                           Text(
                             '${queue.length} 首歌 · ${playback.playbackMode.label}',
-                            style: const TextStyle(
-                              color: Colors.white54,
+                            style: TextStyle(
+                              color: context.soundSecondaryText,
                               fontSize: 12,
                             ),
                           ),
@@ -97,20 +97,20 @@ class PlaybackQueueSheet extends StatelessWidget {
                           side: BorderSide(
                             color: playback.playbackMode == mode
                                 ? SoundColors.accent
-                                : Colors.white12,
+                                : context.soundDivider,
                           ),
                         ),
                       ),
                   ],
                 ),
               ),
-              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              Divider(height: 1, color: context.soundDivider),
               Expanded(
                 child: queue.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text(
                           '播放队列是空的',
-                          style: TextStyle(color: Colors.white54),
+                          style: TextStyle(color: context.soundSecondaryText),
                         ),
                       )
                     : ReorderableListView.builder(
@@ -124,8 +124,8 @@ class PlaybackQueueSheet extends StatelessWidget {
                           return ListTile(
                             key: ValueKey(track.id),
                             selected: active,
-                            selectedTileColor: Colors.white.withValues(
-                              alpha: 0.06,
+                            selectedTileColor: SoundColors.accent.withValues(
+                              alpha: 0.08,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -141,8 +141,9 @@ class PlaybackQueueSheet extends StatelessWidget {
                                   : Center(
                                       child: Text(
                                         '${index + 1}',
-                                        style: const TextStyle(
-                                          color: Colors.white38,
+                                        style: TextStyle(
+                                          color: context.soundSecondaryText
+                                              .withValues(alpha: 0.72),
                                         ),
                                       ),
                                     ),
@@ -161,7 +162,9 @@ class PlaybackQueueSheet extends StatelessWidget {
                               '${track.artist} · ${track.albumTitle}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white54),
+                              style: TextStyle(
+                                color: context.soundSecondaryText,
+                              ),
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -174,11 +177,12 @@ class PlaybackQueueSheet extends StatelessWidget {
                                 ),
                                 ReorderableDragStartListener(
                                   index: index,
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(12),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
                                     child: Icon(
                                       Icons.drag_handle_rounded,
-                                      color: Colors.white38,
+                                      color: context.soundSecondaryText
+                                          .withValues(alpha: 0.72),
                                     ),
                                   ),
                                 ),

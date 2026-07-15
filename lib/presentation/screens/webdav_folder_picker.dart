@@ -1,68 +1,32 @@
 import 'package:flutter/material.dart';
 
 import '../../core/sound_theme.dart';
-import '../../library/scanning/audio_format_registry.dart';
-import '../../sources/webdav/webdav_credentials.dart';
-import '../../sources/webdav/webdav_discovery.dart';
+import '../../sources/source_provider.dart';
 import '../widgets/sound_components.dart';
 
 class WebDavFolderPicker extends StatefulWidget {
-  const WebDavFolderPicker({
-    required this.url,
-    required this.credentials,
-    required this.allowBadCertificate,
-    super.key,
-  });
+  const WebDavFolderPicker({required this.browser, super.key});
 
-  final String url;
-  final WebDavCredentials credentials;
-  final bool allowBadCertificate;
+  final SourceDirectoryBrowser browser;
 
   @override
   State<WebDavFolderPicker> createState() => _WebDavFolderPickerState();
 }
 
 class _WebDavFolderPickerState extends State<WebDavFolderPicker> {
-  late final WebDavDiscoveryService _discovery;
   final Set<String> _selected = {};
-  final Map<String, List<WebDavFileEntry>> _cache = {};
+  final Map<String, List<SourceDirectoryEntry>> _cache = {};
   final Set<String> _loading = {};
   String? _errorMessage;
   late String _currentPath;
   final List<String> _pathStack = [];
 
-  String get _url => widget.url;
-  WebDavCredentials get _credentials => widget.credentials;
-
   @override
   void initState() {
     super.initState();
-    _discovery = WebDavDiscoveryService(
-      allowBadCertificate: widget.allowBadCertificate,
-    );
-    final rootPath = Uri.parse(widget.url).path;
-    _currentPath = rootPath.isEmpty ? '/' : rootPath;
+    _currentPath = widget.browser.rootId;
     _pathStack.add(_currentPath);
     _browse(_currentPath);
-  }
-
-  String _fullUrl(String path) {
-    return Uri.parse(_url).resolve(path).toString();
-  }
-
-  /// Extracts the path portion from an absolute href returned by the server.
-  String? _pathFromHref(String href) {
-    if (href.isEmpty) return null;
-    final root = Uri.parse(_url);
-    final hrefUri = Uri.tryParse(href);
-    if (hrefUri == null) return null;
-    final resolved = hrefUri.hasScheme ? hrefUri : root.resolveUri(hrefUri);
-    if (resolved.scheme.toLowerCase() != root.scheme.toLowerCase() ||
-        resolved.host.toLowerCase() != root.host.toLowerCase() ||
-        resolved.port != root.port) {
-      return null;
-    }
-    return resolved.path.isEmpty ? '/' : resolved.path;
   }
 
   Future<void> _browse(String path) async {
@@ -72,34 +36,21 @@ class _WebDavFolderPickerState extends State<WebDavFolderPicker> {
       _errorMessage = null;
     });
 
-    final result = await _discovery.probe(
-      _fullUrl(path),
-      credentials: _credentials,
-    );
+    try {
+      final entries = await widget.browser.browse(path);
 
-    if (!mounted) return;
-    setState(() {
-      _loading.remove(path);
-      if (result.error != null) {
-        _errorMessage = result.errorMessage ?? '无法读取目录';
-      } else {
-        // Filter out the directory's own entry (href matches requested path).
-        final selfHref = path.length > 1 && path.endsWith('/')
-            ? path.substring(0, path.length - 1)
-            : path;
-        _cache[path] = result.files.where((f) {
-          final entryPath = _pathFromHref(f.href);
-          return entryPath != null &&
-              (f.isCollection || _isAudioFile(f.displayName)) &&
-              entryPath != path &&
-              entryPath != selfHref;
-        }).toList();
-      }
-    });
-  }
-
-  bool _isAudioFile(String name) {
-    return isSupportedAudioPath(name);
+      if (!mounted) return;
+      setState(() {
+        _loading.remove(path);
+        _cache[path] = entries;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading.remove(path);
+        _errorMessage = error.toString();
+      });
+    }
   }
 
   void _navigateTo(String path) {
@@ -144,9 +95,9 @@ class _WebDavFolderPickerState extends State<WebDavFolderPicker> {
           const Spacer(),
           Text(
             '已选 ${_selected.length}',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: Colors.white54,
+              color: context.soundSecondaryText,
               fontWeight: FontWeight.w400,
             ),
           ),
@@ -178,19 +129,11 @@ class _WebDavFolderPickerState extends State<WebDavFolderPicker> {
                     for (final entry in entries)
                       _FolderEntry(
                         entry: entry,
-                        isSelected: _selected.contains(
-                          _pathFromHref(entry.href),
-                        ),
+                        isSelected: _selected.contains(entry.id),
                         onTap: () {
-                          if (entry.isCollection) {
-                            final path = _pathFromHref(entry.href);
-                            if (path != null) _navigateTo(path);
-                          }
+                          if (entry.isDirectory) _navigateTo(entry.id);
                         },
-                        onToggle: () {
-                          final path = _pathFromHref(entry.href);
-                          if (path != null) _toggleSelection(path);
-                        },
+                        onToggle: () => _toggleSelection(entry.id),
                       ),
                   ],
                 ),
@@ -248,9 +191,9 @@ class _BreadcrumbBar extends StatelessWidget {
             path,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: Colors.white54,
+              color: context.soundSecondaryText,
               fontFamily: 'monospace',
             ),
           ),
@@ -268,7 +211,7 @@ class _FolderEntry extends StatelessWidget {
     required this.onToggle,
   });
 
-  final WebDavFileEntry entry;
+  final SourceDirectoryEntry entry;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onToggle;
@@ -278,15 +221,17 @@ class _FolderEntry extends StatelessWidget {
     return ListTile(
       dense: true,
       leading: Icon(
-        entry.isCollection ? Icons.folder_rounded : Icons.audio_file_rounded,
-        color: entry.isCollection ? SoundColors.webDav : Colors.white54,
+        entry.isDirectory ? Icons.folder_rounded : Icons.audio_file_rounded,
+        color: entry.isDirectory
+            ? SoundColors.webDav
+            : context.soundSecondaryText,
         size: 20,
       ),
       title: Text(
         entry.displayName,
         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
       ),
-      trailing: entry.isCollection
+      trailing: entry.isDirectory
           ? Checkbox(
               value: isSelected,
               onChanged: (_) => onToggle(),
@@ -294,7 +239,7 @@ class _FolderEntry extends StatelessWidget {
               visualDensity: VisualDensity.compact,
             )
           : null,
-      onTap: entry.isCollection ? onTap : null,
+      onTap: entry.isDirectory ? onTap : null,
     );
   }
 }

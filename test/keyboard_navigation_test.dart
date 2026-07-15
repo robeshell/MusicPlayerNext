@@ -93,7 +93,8 @@ void main() {
     expect(find.text('Test Album'), findsWidgets);
 
     await _sendPrimaryShortcut(tester, LogicalKeyboardKey.digit3);
-    expect(find.text('来源'), findsOneWidget);
+    expect(find.text('设置'), findsWidgets);
+    expect(find.text('音乐来源'), findsOneWidget);
     await _sendPrimaryShortcut(tester, LogicalKeyboardKey.digit1);
     expect(find.text('Test Album'), findsWidgets);
 
@@ -151,7 +152,7 @@ void main() {
     expect(FocusManager.instance.primaryFocus, isNot(focusBeforeArrow));
 
     final theme = Theme.of(tester.element(find.byType(AppShell)));
-    expect(theme.focusColor, SoundTheme.dark.focusColor);
+    expect(theme.focusColor, SoundTheme.light.focusColor);
     final focusSide = theme.iconButtonTheme.style?.side?.resolve({
       WidgetState.focused,
     });

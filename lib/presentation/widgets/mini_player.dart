@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
 import '../../playback/playback_controller.dart';
 import '../controllers/library_user_state_controller.dart';
@@ -10,6 +10,7 @@ import 'album_art.dart';
 import 'playback_status_badge.dart';
 import 'progress_scrubber.dart';
 import 'source_badge.dart';
+import 'sound_components.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({
@@ -17,6 +18,7 @@ class MiniPlayer extends StatelessWidget {
     this.userState,
     required this.onOpen,
     required this.compact,
+    this.docked = false,
     this.onOpenQueue,
     super.key,
   });
@@ -25,6 +27,7 @@ class MiniPlayer extends StatelessWidget {
   final LibraryUserStateController? userState;
   final VoidCallback onOpen;
   final bool compact;
+  final bool docked;
   final VoidCallback? onOpenQueue;
 
   @override
@@ -44,55 +47,58 @@ class MiniPlayer extends StatelessWidget {
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            final wide = !compact && constraints.maxWidth >= 900;
-            final height = compact ? 72.0 : (wide ? 88.0 : 82.0);
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(compact ? 16 : 20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: Container(
-                  height: height,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0EDE7).withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(compact ? 16 : 20),
-                    border: Border.all(
-                      color: visual.primaryVisual == PlaybackPrimaryVisual.retry
-                          ? visual.color.withValues(alpha: 0.68)
-                          : Colors.white.withValues(alpha: 0.42),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.28),
-                        blurRadius: 30,
-                        offset: const Offset(0, 12),
+            final wide = docked || (!compact && constraints.maxWidth >= 900);
+            final height = docked
+                ? 76.0
+                : (compact ? 72.0 : (wide ? 88.0 : 82.0));
+            return SoundGlassSurface(
+              strong: true,
+              shadowOffset: docked ? const Offset(0, -5) : const Offset(0, 10),
+              shadowBlur: docked ? 18 : null,
+              borderRadius: docked
+                  ? BorderRadius.zero
+                  : BorderRadius.circular(compact ? 16 : 20),
+              borderColor: visual.primaryVisual == PlaybackPrimaryVisual.retry
+                  ? visual.color.withValues(alpha: 0.68)
+                  : null,
+              child: SizedBox(
+                height: height,
+                child: docked
+                    ? _DockedMiniPlayer(
+                        track: track,
+                        album: album,
+                        visual: visual,
+                        playback: playback,
+                        userState: userState,
+                        onOpen: onOpen,
+                        onOpenQueue: onOpenQueue,
+                        position: position,
+                        duration: duration,
+                      )
+                    : wide
+                    ? _WideMiniPlayer(
+                        track: track,
+                        album: album,
+                        visual: visual,
+                        playback: playback,
+                        userState: userState,
+                        onOpen: onOpen,
+                        onOpenQueue: onOpenQueue,
+                        position: position,
+                        duration: duration,
+                      )
+                    : _CondensedMiniPlayer(
+                        track: track,
+                        album: album,
+                        visual: visual,
+                        playback: playback,
+                        onOpen: onOpen,
+                        onOpenQueue: onOpenQueue,
+                        position: position,
+                        duration: duration,
+                        compact: compact,
+                        availableWidth: constraints.maxWidth,
                       ),
-                    ],
-                  ),
-                  child: wide
-                      ? _WideMiniPlayer(
-                          track: track,
-                          album: album,
-                          visual: visual,
-                          playback: playback,
-                          userState: userState,
-                          onOpen: onOpen,
-                          onOpenQueue: onOpenQueue,
-                          position: position,
-                          duration: duration,
-                        )
-                      : _CondensedMiniPlayer(
-                          track: track,
-                          album: album,
-                          visual: visual,
-                          playback: playback,
-                          onOpen: onOpen,
-                          onOpenQueue: onOpenQueue,
-                          position: position,
-                          duration: duration,
-                          compact: compact,
-                          availableWidth: constraints.maxWidth,
-                        ),
-                ),
               ),
             );
           },
@@ -158,11 +164,7 @@ class _WideMiniPlayer extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 18),
-          Container(
-            width: 1,
-            height: 38,
-            color: Colors.black.withValues(alpha: 0.08),
-          ),
+          Container(width: 1, height: 38, color: context.soundDivider),
           const SizedBox(width: 9),
           SizedBox(
             width: 158,
@@ -175,7 +177,7 @@ class _WideMiniPlayer extends StatelessWidget {
                         ? Icons.favorite_rounded
                         : Icons.favorite_border_rounded,
                     color: state.isFavorite(track.id)
-                        ? const Color(0xFFE84D67)
+                        ? SoundColors.accent
                         : null,
                     tooltip: state.isFavorite(track.id) ? '取消收藏' : '收藏歌曲',
                     onTap: () => unawaited(state.toggleFavorite(track)),
@@ -195,6 +197,118 @@ class _WideMiniPlayer extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DockedMiniPlayer extends StatelessWidget {
+  const _DockedMiniPlayer({
+    required this.track,
+    required this.album,
+    required this.visual,
+    required this.playback,
+    required this.userState,
+    required this.onOpen,
+    required this.onOpenQueue,
+    required this.position,
+    required this.duration,
+  });
+
+  final Track track;
+  final Album album;
+  final PlaybackVisualState visual;
+  final SoundPlaybackController playback;
+  final LibraryUserStateController? userState;
+  final VoidCallback onOpen;
+  final VoidCallback? onOpenQueue;
+  final Duration position;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final identityWidth = (constraints.maxWidth * 0.22)
+            .clamp(170.0, 320.0)
+            .toDouble();
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 16, 2),
+                child: Row(
+                  children: [
+                    _OpenArtwork(album: album, onOpen: onOpen, dimension: 48),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: identityWidth,
+                      child: _TrackIdentity(
+                        track: track,
+                        visual: visual,
+                        onOpen: onOpen,
+                        showBadges: false,
+                      ),
+                    ),
+                    if (userState case final state?) ...[
+                      const SizedBox(width: 5),
+                      _MiniIconButton(
+                        icon: state.isFavorite(track.id)
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: state.isFavorite(track.id)
+                            ? SoundColors.accent
+                            : null,
+                        tooltip: state.isFavorite(track.id) ? '取消收藏' : '收藏歌曲',
+                        onTap: () => unawaited(state.toggleFavorite(track)),
+                      ),
+                    ],
+                    const Spacer(),
+                    _MiniIconButton(
+                      icon: Icons.lyrics_outlined,
+                      tooltip: '打开歌词',
+                      onTap: onOpen,
+                    ),
+                    _MiniIconButton(
+                      icon: Icons.queue_music_rounded,
+                      tooltip: '打开播放队列',
+                      onTap: onOpenQueue ?? onOpen,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Align(
+                alignment: const Alignment(0, 0.12),
+                child: _TransportControls(
+                  playback: playback,
+                  visual: visual,
+                  accentPrimary: true,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: -6,
+              height: 28,
+              child: ProgressScrubber(
+                key: const ValueKey('mini-player-progress'),
+                position: position,
+                duration: duration,
+                onSeek: playback.seek,
+                activeColor: SoundColors.accent,
+                inactiveColor: context.soundTint(0.1),
+                trackHeight: 3,
+                thumbRadius: 4,
+                overlayRadius: 8,
+                padding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -289,8 +403,8 @@ class _CondensedMiniPlayer extends StatelessWidget {
             position: position,
             duration: duration,
             onSeek: playback.seek,
-            activeColor: const Color(0xD6000000),
-            inactiveColor: Colors.black.withValues(alpha: 0.12),
+            activeColor: context.soundPrimaryText,
+            inactiveColor: context.soundTint(0.12),
             trackHeight: 2.5,
             thumbRadius: 3.5,
             overlayRadius: 12,
@@ -358,7 +472,7 @@ class _TrackIdentity extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.9),
+                color: context.soundPrimaryText,
                 fontSize: showBadges ? 15 : 13,
                 fontWeight: FontWeight.w800,
               ),
@@ -369,7 +483,7 @@ class _TrackIdentity extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.56),
+                color: context.soundSecondaryText,
                 fontSize: showBadges ? 12 : 11,
               ),
             ),
@@ -395,10 +509,15 @@ class _TrackIdentity extends StatelessWidget {
 }
 
 class _TransportControls extends StatelessWidget {
-  const _TransportControls({required this.playback, required this.visual});
+  const _TransportControls({
+    required this.playback,
+    required this.visual,
+    this.accentPrimary = false,
+  });
 
   final SoundPlaybackController playback;
   final PlaybackVisualState visual;
+  final bool accentPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -420,6 +539,7 @@ class _TransportControls extends StatelessWidget {
             tooltip: visual.primaryTooltip,
             onTap: visual.primaryEnabled ? playback.toggle : null,
             prominent: true,
+            accentProminent: accentPrimary,
             size: 24,
           ),
           const SizedBox(width: 4),
@@ -458,7 +578,7 @@ class _MiniProgressRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 38,
-            child: Text(formatDuration(position), style: _timeStyle),
+            child: Text(formatDuration(position), style: _timeStyle(context)),
           ),
           Expanded(
             child: ProgressScrubber(
@@ -466,8 +586,8 @@ class _MiniProgressRow extends StatelessWidget {
               position: position,
               duration: duration,
               onSeek: playback.seek,
-              activeColor: const Color(0xD6000000),
-              inactiveColor: Colors.black.withValues(alpha: 0.12),
+              activeColor: context.soundPrimaryText,
+              inactiveColor: context.soundTint(0.12),
               trackHeight: 3,
               thumbRadius: 4.5,
               overlayRadius: 13,
@@ -479,7 +599,7 @@ class _MiniProgressRow extends StatelessWidget {
             child: Text(
               remainingLabel,
               textAlign: TextAlign.end,
-              style: _timeStyle,
+              style: _timeStyle(context),
             ),
           ),
         ],
@@ -496,6 +616,7 @@ class _MiniIconButton extends StatelessWidget {
     this.tooltip,
     this.color,
     this.prominent = false,
+    this.accentProminent = false,
     super.key,
   });
 
@@ -505,15 +626,17 @@ class _MiniIconButton extends StatelessWidget {
   final String? tooltip;
   final Color? color;
   final bool prominent;
+  final bool accentProminent;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     final foreground = prominent
-        ? (onTap == null ? Colors.white38 : Colors.white)
+        ? context.soundGlass.canvasHighlight.withValues(
+            alpha: enabled ? 1 : 0.45,
+          )
         : color ??
-              (onTap == null
-                  ? const Color(0x52000000)
-                  : const Color(0xD6000000));
+              context.soundPrimaryText.withValues(alpha: enabled ? 0.84 : 0.32);
     return IconButton(
       onPressed: onTap,
       icon: Icon(icon, color: foreground, size: size),
@@ -522,8 +645,16 @@ class _MiniIconButton extends StatelessWidget {
       style: prominent
           ? IconButton.styleFrom(
               backgroundColor: onTap == null
-                  ? Colors.black.withValues(alpha: 0.2)
-                  : Colors.black.withValues(alpha: 0.86),
+                  ? context.soundTint(0.16)
+                  : accentProminent
+                  ? SoundColors.accent
+                  : context.soundPrimaryText,
+              hoverColor: accentProminent
+                  ? SoundColors.accentHover
+                  : context.soundTint(0.08),
+              highlightColor: accentProminent
+                  ? SoundColors.accentPressed
+                  : context.soundTint(0.12),
               minimumSize: const Size.square(40),
               maximumSize: const Size.square(40),
               padding: EdgeInsets.zero,
@@ -537,8 +668,8 @@ class _MiniIconButton extends StatelessWidget {
   }
 }
 
-const _timeStyle = TextStyle(
-  color: Color(0x84000000),
+TextStyle _timeStyle(BuildContext context) => TextStyle(
+  color: context.soundMutedText,
   fontSize: 10,
-  fontFeatures: [FontFeature.tabularFigures()],
+  fontFeatures: const [FontFeature.tabularFigures()],
 );

@@ -118,6 +118,33 @@ void main() {
     engine.dispose();
   });
 
+  testWidgets('wide now-playing fits a short desktop window', (tester) async {
+    tester.view.physicalSize = const Size(1024, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = StaticPlaybackEngine(
+      _snapshot(PlaybackPhase.paused, track: _longTrack),
+    );
+    final playback = SoundPlaybackController(engine: engine);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: SoundTheme.light,
+        home: NowPlayingScreen(playback: playback),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(_longTrack.title), findsOneWidget);
+    expect(find.text('封面'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    playback.dispose();
+    engine.dispose();
+  });
+
   for (final testCase in const [
     (PlaybackPhase.loading, '正在载入'),
     (PlaybackPhase.buffering, '正在缓冲'),

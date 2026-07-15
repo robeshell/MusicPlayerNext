@@ -1,24 +1,199 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+bool get soundUsesDesktopPlatform =>
+    defaultTargetPlatform == TargetPlatform.macOS ||
+    defaultTargetPlatform == TargetPlatform.windows ||
+    defaultTargetPlatform == TargetPlatform.linux;
+
+const soundMacOSTitlebarInset = 38.0;
+
+extension SoundThemeContext on BuildContext {
+  ThemeData get soundTheme => Theme.of(this);
+
+  ColorScheme get soundColors => Theme.of(this).colorScheme;
+
+  SoundGlassTheme get soundGlass =>
+      Theme.of(this).extension<SoundGlassTheme>() ?? SoundGlassTheme.light;
+
+  Color get soundPrimaryText => soundGlass.primaryText;
+
+  Color get soundSecondaryText => soundGlass.secondaryText;
+
+  Color get soundMutedText => soundGlass.mutedText;
+
+  Color get soundDivider => soundColors.outlineVariant;
+
+  Color soundTint(double alpha) => soundPrimaryText.withValues(alpha: alpha);
+
+  double get soundTitlebarInset => defaultTargetPlatform == TargetPlatform.macOS
+      ? soundMacOSTitlebarInset
+      : 0;
+
+  SoundWindowClass get soundWindowClass {
+    final size = MediaQuery.sizeOf(this);
+    // Native desktop windows keep desktop information architecture at every
+    // supported size. Width only changes density; it must never reveal the
+    // phone navigation simply because the window is temporarily short.
+    if (soundUsesDesktopPlatform) {
+      return size.width < 1100
+          ? SoundWindowClass.medium
+          : SoundWindowClass.wide;
+    }
+    if (size.width < 820 || size.height < 600) {
+      return SoundWindowClass.compact;
+    }
+    if (size.width < 1100) return SoundWindowClass.medium;
+    return SoundWindowClass.wide;
+  }
+
+  bool get soundIsCompact => soundWindowClass == SoundWindowClass.compact;
+
+  double get soundPageGutter => switch (soundWindowClass) {
+    SoundWindowClass.compact => 18,
+    SoundWindowClass.medium => 24,
+    SoundWindowClass.wide => 32,
+  };
+
+  double get soundPageTitleSize => soundIsCompact ? 26 : 28;
+
+  double get soundContentBottomPadding => soundIsCompact ? 140 : 32;
+
+  double get soundSidebarWidth => switch (soundWindowClass) {
+    SoundWindowClass.compact => 0,
+    SoundWindowClass.medium => 216,
+    SoundWindowClass.wide => 236,
+  };
+}
+
+enum SoundWindowClass { compact, medium, wide }
+
 abstract final class SoundColors {
-  static const accent = Color(0xFFFA243C);
+  static const accent = Color(0xFFFF5A4D);
+  static const accentHover = Color(0xFFFF7567);
+  static const accentPressed = Color(0xFFE3483E);
   static const darkCanvas = Color(0xFF0D0D0F);
   static const darkSurface = Color(0xFF17171A);
   static const darkElevated = Color(0xFF202024);
   static const darkOverlay = Color(0xFF29292E);
-  static const lightCanvas = Color(0xFFF5F3F0);
-  static const lightSurface = Color(0xFFFCFBF9);
-  static const lightElevated = Color(0xFFFFFFFF);
-  static const lightOverlay = Color(0xFFF0EDEA);
+  static const lightCanvas = Color(0xFFFAF5EE);
+  static const lightSurface = Color(0xFFFCFAF6);
+  static const lightElevated = Color(0xFFFFFDFC);
+  static const lightOverlay = Color(0xFFF6EFE7);
   static const webDav = Color(0xFF5E8BFF);
   static const local = Color(0xFF55B889);
 }
 
+@immutable
+class SoundGlassTheme extends ThemeExtension<SoundGlassTheme> {
+  const SoundGlassTheme({
+    required this.canvasHighlight,
+    required this.surface,
+    required this.strongSurface,
+    required this.border,
+    required this.innerHighlight,
+    required this.shadow,
+    required this.primaryText,
+    required this.secondaryText,
+    required this.mutedText,
+    required this.blur,
+    required this.strongBlur,
+  });
+
+  static const light = SoundGlassTheme(
+    canvasHighlight: Color(0xFFFFFAF4),
+    surface: Color(0xB8FFFFFF),
+    strongSurface: Color(0xDEFFFFFF),
+    border: Color(0x12000000),
+    innerHighlight: Color(0x8CFFFFFF),
+    shadow: Color(0x16000000),
+    primaryText: Color(0xFF1C1C22),
+    secondaryText: Color(0xFF5A5A62),
+    mutedText: Color(0xFF77747D),
+    blur: 20,
+    strongBlur: 28,
+  );
+
+  static const dark = SoundGlassTheme(
+    canvasHighlight: Color(0xFF17171A),
+    surface: Color(0xB817171A),
+    strongSurface: Color(0xE6202024),
+    border: Color(0x1CFFFFFF),
+    innerHighlight: Color(0x1FFFFFFF),
+    shadow: Color(0x6B000000),
+    primaryText: Color(0xFFF7F3F4),
+    secondaryText: Color(0x99FFFFFF),
+    mutedText: Color(0xB3FFFFFF),
+    blur: 20,
+    strongBlur: 28,
+  );
+
+  final Color canvasHighlight;
+  final Color surface;
+  final Color strongSurface;
+  final Color border;
+  final Color innerHighlight;
+  final Color shadow;
+  final Color primaryText;
+  final Color secondaryText;
+  final Color mutedText;
+  final double blur;
+  final double strongBlur;
+
+  @override
+  SoundGlassTheme copyWith({
+    Color? canvasHighlight,
+    Color? surface,
+    Color? strongSurface,
+    Color? border,
+    Color? innerHighlight,
+    Color? shadow,
+    Color? primaryText,
+    Color? secondaryText,
+    Color? mutedText,
+    double? blur,
+    double? strongBlur,
+  }) {
+    return SoundGlassTheme(
+      canvasHighlight: canvasHighlight ?? this.canvasHighlight,
+      surface: surface ?? this.surface,
+      strongSurface: strongSurface ?? this.strongSurface,
+      border: border ?? this.border,
+      innerHighlight: innerHighlight ?? this.innerHighlight,
+      shadow: shadow ?? this.shadow,
+      primaryText: primaryText ?? this.primaryText,
+      secondaryText: secondaryText ?? this.secondaryText,
+      mutedText: mutedText ?? this.mutedText,
+      blur: blur ?? this.blur,
+      strongBlur: strongBlur ?? this.strongBlur,
+    );
+  }
+
+  @override
+  SoundGlassTheme lerp(covariant SoundGlassTheme? other, double t) {
+    if (other == null) return this;
+    return SoundGlassTheme(
+      canvasHighlight: Color.lerp(canvasHighlight, other.canvasHighlight, t)!,
+      surface: Color.lerp(surface, other.surface, t)!,
+      strongSurface: Color.lerp(strongSurface, other.strongSurface, t)!,
+      border: Color.lerp(border, other.border, t)!,
+      innerHighlight: Color.lerp(innerHighlight, other.innerHighlight, t)!,
+      shadow: Color.lerp(shadow, other.shadow, t)!,
+      primaryText: Color.lerp(primaryText, other.primaryText, t)!,
+      secondaryText: Color.lerp(secondaryText, other.secondaryText, t)!,
+      mutedText: Color.lerp(mutedText, other.mutedText, t)!,
+      blur: blur + (other.blur - blur) * t,
+      strongBlur: strongBlur + (other.strongBlur - strongBlur) * t,
+    );
+  }
+}
+
 abstract final class SoundRadii {
-  static const control = 12.0;
-  static const menu = 14.0;
-  static const sheet = 22.0;
-  static const dialog = 24.0;
+  static const control = 10.0;
+  static const card = 14.0;
+  static const menu = 12.0;
+  static const sheet = 18.0;
+  static const dialog = 20.0;
   static const pill = 999.0;
 }
 
@@ -44,14 +219,24 @@ abstract final class SoundTheme {
         ? SoundColors.darkElevated
         : SoundColors.lightElevated;
     final overlay = dark ? SoundColors.darkOverlay : SoundColors.lightOverlay;
-    final foreground = dark ? const Color(0xFFF7F3F4) : const Color(0xFF191719);
-    final secondary = dark ? Colors.white60 : Colors.black54;
+    final glass = dark ? SoundGlassTheme.dark : SoundGlassTheme.light;
+    final foreground = glass.primaryText;
+    final secondary = glass.secondaryText;
     final border = dark
-        ? Colors.white.withValues(alpha: 0.11)
-        : Colors.black.withValues(alpha: 0.10);
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.08);
+    final hairline = dark
+        ? Colors.white.withValues(alpha: 0.065)
+        : Colors.black.withValues(alpha: 0.055);
+    final disabledBorder = dark
+        ? Colors.white.withValues(alpha: 0.05)
+        : Colors.black.withValues(alpha: 0.04);
     final subtle = dark
         ? Colors.white.withValues(alpha: 0.055)
         : Colors.black.withValues(alpha: 0.045);
+    final disabledSubtle = dark
+        ? Colors.white.withValues(alpha: 0.028)
+        : Colors.black.withValues(alpha: 0.024);
 
     final scheme =
         ColorScheme.fromSeed(
@@ -65,7 +250,7 @@ abstract final class SoundTheme {
           onSurface: foreground,
           onSurfaceVariant: secondary,
           outline: border,
-          outlineVariant: border.withValues(alpha: 0.7),
+          outlineVariant: hairline,
           surfaceContainerLowest: canvas,
           surfaceContainerLow: surface,
           surfaceContainer: elevated,
@@ -162,10 +347,11 @@ abstract final class SoundTheme {
       highlightColor: Colors.transparent,
       splashColor: Colors.transparent,
       splashFactory: NoSplash.splashFactory,
-      dividerColor: border,
+      dividerColor: hairline,
       disabledColor: secondary.withValues(alpha: 0.38),
       visualDensity: VisualDensity.standard,
       materialTapTargetSize: MaterialTapTargetSize.padded,
+      extensions: <ThemeExtension<dynamic>>[glass],
       appBarTheme: AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -313,7 +499,7 @@ abstract final class SoundTheme {
         border: inputBorder,
         enabledBorder: inputBorder,
         disabledBorder: inputBorder.copyWith(
-          borderSide: BorderSide(color: border.withValues(alpha: 0.5)),
+          borderSide: BorderSide(color: disabledBorder),
         ),
         focusedBorder: inputBorder.copyWith(
           borderSide: const BorderSide(color: SoundColors.accent, width: 2),
@@ -340,7 +526,10 @@ abstract final class SoundTheme {
               return SoundColors.accent.withValues(alpha: 0.30);
             }
             if (states.contains(WidgetState.pressed)) {
-              return const Color(0xFFE51E34);
+              return SoundColors.accentPressed;
+            }
+            if (states.contains(WidgetState.hovered)) {
+              return SoundColors.accentHover;
             }
             return SoundColors.accent;
           }),
@@ -465,7 +654,7 @@ abstract final class SoundTheme {
         pressElevation: 0,
         backgroundColor: subtle,
         selectedColor: SoundColors.accent.withValues(alpha: 0.16),
-        disabledColor: subtle.withValues(alpha: 0.5),
+        disabledColor: disabledSubtle,
         side: BorderSide(color: border),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(SoundRadii.pill),
@@ -477,7 +666,7 @@ abstract final class SoundTheme {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       ),
-      dividerTheme: DividerThemeData(color: border, thickness: 1, space: 1),
+      dividerTheme: DividerThemeData(color: hairline, thickness: 1, space: 1),
       tooltipTheme: TooltipThemeData(
         waitDuration: const Duration(milliseconds: 450),
         showDuration: const Duration(seconds: 3),

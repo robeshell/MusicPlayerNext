@@ -59,6 +59,8 @@ class LocalLibraryScanner {
   final ScannerUtcClock _clock;
   final Map<String, ScanCancellationToken> _activeScans = {};
 
+  bool isScanning(String sourceId) => _activeScans.containsKey(sourceId);
+
   bool cancel(String sourceId) {
     final token = _activeScans[sourceId];
     if (token == null) return false;

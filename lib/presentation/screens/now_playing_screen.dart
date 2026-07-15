@@ -17,6 +17,7 @@ import '../widgets/album_art.dart';
 import '../widgets/playback_status_badge.dart';
 import '../widgets/playback_queue_sheet.dart';
 import '../widgets/progress_scrubber.dart';
+import '../widgets/sound_components.dart';
 
 class NowPlayingScreen extends StatelessWidget {
   const NowPlayingScreen({required this.playback, this.userState, super.key});
@@ -68,9 +69,14 @@ class NowPlayingScreen extends StatelessWidget {
                 ),
                 BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 34, sigmaY: 34),
-                  child: ColoredBox(color: Colors.black.withValues(alpha: 0.2)),
+                  child: ColoredBox(
+                    color: context.soundGlass.canvasHighlight.withValues(
+                      alpha: 0.68,
+                    ),
+                  ),
                 ),
                 SafeArea(
+                  minimum: EdgeInsets.only(top: context.soundTitlebarInset),
                   child: Column(
                     children: [
                       Padding(
@@ -143,6 +149,7 @@ class _NoTrackPlaying extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
+        minimum: EdgeInsets.only(top: context.soundTitlebarInset),
         child: Stack(
           children: [
             Positioned(
@@ -153,10 +160,10 @@ class _NoTrackPlaying extends StatelessWidget {
                 icon: const Icon(Icons.keyboard_arrow_down_rounded),
               ),
             ),
-            const Center(
+            Center(
               child: Text(
                 '当前没有正在播放的歌曲',
-                style: TextStyle(color: Colors.white54),
+                style: TextStyle(color: context.soundSecondaryText),
               ),
             ),
           ],
@@ -183,35 +190,47 @@ class _WideNowPlaying extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        const verticalPadding = 50.0;
+        const playerChromeHeight = 230.0;
+        final playerHeight = math.max(
+          0.0,
+          constraints.maxHeight - verticalPadding,
+        );
         final artSize = math.min(
           340.0,
-          math.max(220.0, constraints.maxHeight - 360),
+          math.max(160.0, playerHeight - playerChromeHeight),
         );
         return Padding(
-          padding: const EdgeInsets.fromLTRB(54, 24, 54, 32),
+          padding: const EdgeInsets.fromLTRB(44, 22, 44, 28),
           child: Row(
             children: [
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 390),
-                    child: _PlayerColumn(
-                      album: album,
-                      track: track,
-                      playback: playback,
-                      userState: userState,
-                      artSize: artSize,
+                    child: SingleChildScrollView(
+                      child: _PlayerColumn(
+                        album: album,
+                        track: track,
+                        playback: playback,
+                        userState: userState,
+                        artSize: artSize,
+                      ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 64),
+              const SizedBox(width: 48),
               Expanded(
-                child: _LyricsPanel(
-                  track: track,
-                  position: playback.displayPosition,
-                  discontinuityRevision: playback.positionDiscontinuityRevision,
-                  onSeek: playback.seek,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 20, 0, 0),
+                  child: _LyricsPanel(
+                    track: track,
+                    position: playback.displayPosition,
+                    discontinuityRevision:
+                        playback.positionDiscontinuityRevision,
+                    onSeek: playback.seek,
+                  ),
                 ),
               ),
             ],
@@ -302,13 +321,11 @@ class _NowPlayingViewSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       label: '正在播放视图',
-      child: Container(
+      child: SoundGlassSurface(
+        blur: false,
+        showShadow: false,
+        borderRadius: BorderRadius.circular(12),
         padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -353,14 +370,16 @@ class _NowPlayingViewChoice extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
           decoration: BoxDecoration(
             color: selected
-                ? Colors.white.withValues(alpha: 0.14)
+                ? SoundColors.accent.withValues(alpha: 0.12)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(9),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? Colors.white : Colors.white54,
+              color: selected
+                  ? context.soundPrimaryText
+                  : context.soundSecondaryText,
               fontSize: 12,
               fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
             ),
@@ -399,6 +418,7 @@ class _PlayerColumn extends StatelessWidget {
         ? '-${formatDuration(remaining.isNegative ? Duration.zero : remaining)}'
         : '0:00';
     return Column(
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -412,7 +432,7 @@ class _PlayerColumn extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 23,
+                  fontSize: 27,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.5,
                 ),
@@ -448,10 +468,7 @@ class _PlayerColumn extends StatelessWidget {
           '${track.artist} — ${track.albumTitle}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.6),
-            fontSize: 14,
-          ),
+          style: TextStyle(color: context.soundSecondaryText, fontSize: 13),
         ),
         const SizedBox(height: 20),
         ProgressScrubber(
@@ -461,9 +478,9 @@ class _PlayerColumn extends StatelessWidget {
         ),
         Row(
           children: [
-            Text(formatDuration(position), style: _timeStyle),
+            Text(formatDuration(position), style: _timeStyle(context)),
             const Spacer(),
-            Text(remainingLabel, style: _timeStyle),
+            Text(remainingLabel, style: _timeStyle(context)),
           ],
         ),
         const SizedBox(height: 18),
@@ -487,19 +504,19 @@ class _PlayerColumn extends StatelessWidget {
               onPressed: visual.primaryEnabled ? playback.toggle : null,
               tooltip: visual.primaryTooltip,
               icon: visual.busy && !visual.primaryEnabled
-                  ? const SizedBox.square(
+                  ? SizedBox.square(
                       dimension: 24,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.2,
-                        color: Colors.black54,
+                        color: context.soundSecondaryText,
                       ),
                     )
                   : Icon(visual.primaryIcon),
               iconSize: 34,
               style: IconButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                fixedSize: const Size.square(62),
+                backgroundColor: context.soundPrimaryText,
+                foregroundColor: context.soundGlass.canvasHighlight,
+                fixedSize: const Size.square(52),
               ),
             ),
             IconButton(
@@ -538,42 +555,49 @@ class _PlaybackErrorBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.32),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+        child: SoundGlassSurface(
+          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: SoundColors.accent.withValues(alpha: 0.52)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline_rounded, color: SoundColors.accent),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
+          borderColor: SoundColors.accent.withValues(alpha: 0.52),
+          blur: false,
+          showShadow: false,
+          child: Row(
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                color: SoundColors.accent,
               ),
-            ),
-            TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('重试'),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.soundSecondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-const _timeStyle = TextStyle(
-  color: Colors.white54,
+TextStyle _timeStyle(BuildContext context) => TextStyle(
+  color: context.soundSecondaryText,
   fontSize: 11,
-  fontFeatures: [FontFeature.tabularFigures()],
+  fontFeatures: const [FontFeature.tabularFigures()],
 );
 
 class _LyricsPanel extends StatefulWidget {
@@ -749,15 +773,15 @@ class _LyricsPanelState extends State<_LyricsPanel> {
       child: AnimatedDefaultTextStyle(
         duration: Duration.zero,
         style: TextStyle(
-          color: Colors.white.withValues(
+          color: context.soundPrimaryText.withValues(
             alpha: isActive
                 ? 1
                 : active != null && index < active
                 ? 0.28
                 : 0.5,
           ),
-          fontSize: isActive ? 23 : 22,
-          height: synchronized ? 2.4 : 1.75,
+          fontSize: isActive ? 22 : 20,
+          height: synchronized ? 2.25 : 1.7,
           fontWeight: isActive ? FontWeight.w900 : FontWeight.w700,
           letterSpacing: -0.4,
         ),
@@ -776,16 +800,16 @@ class _LyricsPanelState extends State<_LyricsPanel> {
           Text(
             '歌词',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.55),
+              color: context.soundSecondaryText,
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Center(
               child: Text(
                 '这首歌曲没有内嵌歌词',
-                style: TextStyle(color: Colors.white54),
+                style: TextStyle(color: context.soundSecondaryText),
               ),
             ),
           ),
@@ -809,7 +833,7 @@ class _LyricsPanelState extends State<_LyricsPanel> {
             Text(
               synchronized && _timeline.hasTimedContent ? '同步歌词' : '歌词',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.55),
+                color: context.soundSecondaryText,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -843,8 +867,8 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                     _offsetLabel,
                     style: TextStyle(
                       color: _offset == Duration.zero
-                          ? Colors.white38
-                          : Colors.white70,
+                          ? context.soundSecondaryText.withValues(alpha: 0.68)
+                          : context.soundSecondaryText,
                       fontSize: 11,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
@@ -915,7 +939,7 @@ class _LyricsOffsetButton extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: context.soundTint(0.06),
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: onTap,
@@ -924,8 +948,8 @@ class _LyricsOffsetButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             child: Text(
               label,
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: context.soundSecondaryText,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),

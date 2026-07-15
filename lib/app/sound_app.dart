@@ -9,9 +9,11 @@ import '../domain/library_models.dart';
 import '../library/library_repository.dart';
 import '../playback/playback_controller.dart';
 import '../playback/playback_engine.dart';
+import '../playback/playback_media_provider.dart';
 import '../playback/playback_session.dart';
 import '../playback/sound_audio_handler.dart';
 import '../presentation/app_shell.dart';
+import '../sources/webdav/webdav_cache.dart';
 
 class SoundApp extends StatefulWidget {
   const SoundApp({
@@ -19,6 +21,7 @@ class SoundApp extends StatefulWidget {
     this.repository,
     this.sessionStore,
     this.audioHandler,
+    this.webDavCache,
     super.key,
   });
 
@@ -26,6 +29,7 @@ class SoundApp extends StatefulWidget {
   final LibraryRepository? repository;
   final PlaybackSessionStore? sessionStore;
   final SoundAudioHandler? audioHandler;
+  final WebDavCache? webDavCache;
 
   @override
   State<SoundApp> createState() => _SoundAppState();
@@ -193,8 +197,15 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
       duration: Duration.zero,
       source: isRemote ? SourceKind.webDav : SourceKind.local,
       mediaUri: validationMedia,
-      httpHeaders: isRemote ? _validationHeaders : const {},
     );
+    if (isRemote) {
+      playback.updatePlaybackMediaAccess([
+        PlaybackMediaAccessRule(
+          baseUri: uri!.replace(path: '/'),
+          headers: _validationHeaders,
+        ),
+      ]);
+    }
     await playback.playTrack(track, queue: [track]);
     if (_validationSeekMs < 0) return;
 
@@ -257,10 +268,14 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       theme: SoundTheme.light,
       darkTheme: SoundTheme.dark,
-      themeMode: ThemeMode.dark,
+      themeMode: ThemeMode.light,
       home: playback == null
           ? const _PlaybackBootstrapScreen()
-          : AppShell(playback: playback, libraryRepository: widget.repository),
+          : AppShell(
+              playback: playback,
+              libraryRepository: widget.repository,
+              webDavCache: widget.webDavCache,
+            ),
     );
   }
 }

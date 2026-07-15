@@ -4,8 +4,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../domain/library_models.dart';
-import 'just_audio_playback_engine.dart';
 import 'playback_engine.dart';
+import 'playback_media_provider.dart';
 import 'playback_mode.dart';
 import 'playback_session.dart';
 
@@ -32,6 +32,7 @@ class SoundPlaybackController extends ChangeNotifier {
   PlaybackSnapshot _snapshot;
   int _sessionGeneration = 0;
   int _queueIndex = 0;
+  int _queueRevision = 0;
   PlaybackMode _playbackMode = PlaybackMode.repeatAll;
   Duration? _resumePosition;
   String? _resumeTrackId;
@@ -76,14 +77,9 @@ class SoundPlaybackController extends ChangeNotifier {
   bool get hasActiveTrack => _snapshot.hasTrack;
   int get positionDiscontinuityRevision => _positionDiscontinuityRevision;
 
-  /// Allows setting engines-specific headers, e.g. WebDAV auth tokens.
-  void setEngineAuthHeaders(
-    Map<String, Map<String, String>> headers, {
-    Set<String> allowBadCertificateUrls = const {},
-  }) {
-    if (_engine case JustAudioPlaybackEngine engine) {
-      engine.webDavAuthHeaders = headers;
-      engine.webDavAllowBadCertificateUrls = allowBadCertificateUrls;
+  void updatePlaybackMediaAccess(List<PlaybackMediaAccessRule> rules) {
+    if (_engine case PlaybackMediaAccessSink sink) {
+      sink.updatePlaybackMediaAccess(rules);
     }
   }
 
@@ -94,6 +90,7 @@ class SoundPlaybackController extends ChangeNotifier {
     queueIndex: _queueIndex,
     positionMs: displayPosition.inMilliseconds,
     playbackMode: _playbackMode,
+    queueRevision: _queueRevision,
   );
 
   Future<void> playTrack(Track track, {List<Track>? queue}) async {
@@ -103,6 +100,7 @@ class SoundPlaybackController extends ChangeNotifier {
     _fallbackTrack = track;
     if (queue != null && queue.isNotEmpty) {
       _queue = List.of(queue);
+      _queueRevision++;
       _queueIndex = _queue.indexWhere((candidate) => candidate.id == track.id);
       if (_queueIndex < 0) {
         _queue = [track];
@@ -114,6 +112,7 @@ class SoundPlaybackController extends ChangeNotifier {
     } else {
       if (!_queue.any((candidate) => candidate.id == track.id)) {
         _queue = [track];
+        _queueRevision++;
       }
       _queueIndex = _queue.indexWhere((candidate) => candidate.id == track.id);
       if (_queueIndex < 0) _queueIndex = 0;
@@ -263,6 +262,7 @@ class SoundPlaybackController extends ChangeNotifier {
         : _queue.indexWhere((candidate) => candidate.id == currentId);
     final insertIndex = currentIndex < 0 ? 0 : currentIndex + 1;
     _queue.insert(insertIndex, track);
+    _queueRevision++;
     if (currentIndex >= 0) {
       _queueIndex = currentIndex;
     } else if (_queue.length == 1) {
@@ -280,6 +280,7 @@ class SoundPlaybackController extends ChangeNotifier {
     final currentId = displayTrack?.id;
     final track = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, track);
+    _queueRevision++;
     if (currentId != null) {
       _queueIndex = _queue.indexWhere((candidate) => candidate.id == currentId);
     }
@@ -294,6 +295,7 @@ class SoundPlaybackController extends ChangeNotifier {
     final removedCurrent = removed.id == currentId;
     final hadLoadedTrack = _snapshot.track != null;
     _queue.removeAt(index);
+    _queueRevision++;
 
     if (_queue.isEmpty) {
       _queueIndex = 0;
@@ -331,6 +333,7 @@ class SoundPlaybackController extends ChangeNotifier {
   Future<void> clearQueue() async {
     if (_queue.isEmpty && displayTrack == null) return;
     _queue = [];
+    _queueRevision++;
     _queueIndex = 0;
     _fallbackTrack = null;
     _completionHandledSession = null;
@@ -346,6 +349,7 @@ class SoundPlaybackController extends ChangeNotifier {
   void _restoreSession(PlaybackSession session) {
     if (session.queue.isEmpty) return;
     _queue = List.of(session.queue);
+    _queueRevision = session.queueRevision;
     _queueIndex = session.queueIndex.clamp(0, _queue.length - 1);
     _playbackMode = session.playbackMode;
     _fallbackTrack = _queue[_queueIndex];
@@ -497,6 +501,7 @@ class SoundPlaybackController extends ChangeNotifier {
     _queue.shuffle(_random);
     if (current != null) _queue.insert(0, current);
     _queueIndex = 0;
+    _queueRevision++;
   }
 
   void _reshuffleForNextCycle() {
@@ -509,6 +514,7 @@ class SoundPlaybackController extends ChangeNotifier {
       _queue[replacement] = first;
     }
     _queueIndex = 0;
+    _queueRevision++;
   }
 
   @override

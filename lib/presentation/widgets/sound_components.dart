@@ -1,8 +1,83 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/sound_theme.dart';
+
+/// Shared translucent surface used by the application shell and overlays.
+///
+/// Backdrop blur is intentionally optional: floating surfaces use it, while
+/// repeated rows and cards can share the same visual language without paying
+/// the cost of dozens of independent blur filters.
+class SoundGlassSurface extends StatelessWidget {
+  const SoundGlassSurface({
+    required this.child,
+    this.padding,
+    this.borderRadius = const BorderRadius.all(
+      Radius.circular(SoundRadii.sheet),
+    ),
+    this.strong = false,
+    this.blur = true,
+    this.showShadow = true,
+    this.shadowOffset = const Offset(0, 10),
+    this.shadowBlur,
+    this.color,
+    this.borderColor,
+    super.key,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+  final BorderRadius borderRadius;
+  final bool strong;
+  final bool blur;
+  final bool showShadow;
+  final Offset shadowOffset;
+  final double? shadowBlur;
+  final Color? color;
+  final Color? borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final glass = context.soundGlass;
+    final surface = DecoratedBox(
+      decoration: BoxDecoration(
+        color: color ?? (strong ? glass.strongSurface : glass.surface),
+        borderRadius: borderRadius,
+        border: Border.all(color: borderColor ?? glass.border),
+      ),
+      child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
+    );
+    final clipped = ClipRRect(
+      borderRadius: borderRadius,
+      child: blur
+          ? BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: strong ? glass.strongBlur : glass.blur,
+                sigmaY: strong ? glass.strongBlur : glass.blur,
+              ),
+              child: surface,
+            )
+          : surface,
+    );
+    if (!showShadow) return clipped;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow: [
+          BoxShadow(
+            color: glass.shadow,
+            blurRadius: shadowBlur ?? (strong ? 34 : 24),
+            offset: shadowOffset,
+          ),
+        ],
+      ),
+      child: clipped,
+    );
+  }
+}
 
 bool get usesDesktopTrackActivation =>
     !kIsWeb &&
@@ -144,26 +219,40 @@ class SoundDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      clipBehavior: Clip.antiAlias,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      titlePadding: titlePadding,
-      contentPadding: contentPadding,
-      actionsPadding: actionsPadding,
-      actionsAlignment: MainAxisAlignment.end,
-      actionsOverflowAlignment: OverflowBarAlignment.end,
-      actionsOverflowButtonSpacing: 10,
-      buttonPadding: EdgeInsets.zero,
-      title: title,
-      content: ConstrainedBox(
-        key: const ValueKey('sound-dialog-content'),
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.64,
+    final glass = context.soundGlass;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(SoundRadii.dialog),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: glass.strongBlur,
+          sigmaY: glass.strongBlur,
         ),
-        child: content,
+        child: AlertDialog(
+          clipBehavior: Clip.antiAlias,
+          backgroundColor: glass.strongSurface,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          titlePadding: titlePadding,
+          contentPadding: contentPadding,
+          actionsPadding: actionsPadding,
+          actionsAlignment: MainAxisAlignment.end,
+          actionsOverflowAlignment: OverflowBarAlignment.end,
+          actionsOverflowButtonSpacing: 10,
+          buttonPadding: EdgeInsets.zero,
+          title: title,
+          content: ConstrainedBox(
+            key: const ValueKey('sound-dialog-content'),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.64,
+            ),
+            child: content,
+          ),
+          actions: actions,
+        ),
       ),
-      actions: actions,
     );
   }
 }
@@ -202,21 +291,12 @@ class SoundBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final borderColor = theme.colorScheme.outlineVariant;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(SoundRadii.sheet),
-        ),
-        border: Border(top: BorderSide(color: borderColor)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.30),
-            blurRadius: 32,
-            offset: const Offset(0, -8),
-          ),
-        ],
+    return SoundGlassSurface(
+      strong: true,
+      shadowOffset: const Offset(0, -8),
+      shadowBlur: 28,
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(SoundRadii.sheet),
       ),
       child: Material(
         color: Colors.transparent,
@@ -283,20 +363,12 @@ class SoundNavigationBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.98),
-        border: Border(
-          top: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 24,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
+    return SoundGlassSurface(
+      strong: true,
+      shadowOffset: const Offset(0, -6),
+      shadowBlur: 18,
+      borderRadius: BorderRadius.zero,
+      borderColor: theme.colorScheme.outlineVariant,
       child: SafeArea(
         top: false,
         minimum: const EdgeInsets.fromLTRB(10, 7, 10, 6),

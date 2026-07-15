@@ -8,6 +8,8 @@ import 'package:sound_player/library/scanning/audio_format_registry.dart';
 import 'package:sound_player/playback/just_audio_playback_engine.dart';
 import 'package:sound_player/playback/playback_controller.dart';
 import 'package:sound_player/playback/playback_engine.dart';
+import 'package:sound_player/playback/playback_media_provider.dart';
+import 'package:sound_player/sources/webdav/webdav_playback_media_provider.dart';
 
 const _validationDirectory = String.fromEnvironment(
   'SOUND_FORMAT_VALIDATION_DIR',
@@ -49,7 +51,12 @@ Future<void> main() async {
 
   var failed = false;
   for (final file in files) {
-    final engine = JustAudioPlaybackEngine();
+    final engine = JustAudioPlaybackEngine(
+      mediaProviders: PlaybackMediaProviderRegistry([
+        WebDavPlaybackMediaProvider(),
+        const DirectPlaybackMediaProvider(),
+      ]),
+    );
     final controller = SoundPlaybackController(engine: engine);
     final errors = <String>[];
     final subscription = engine.snapshots.listen((snapshot) {
@@ -78,8 +85,15 @@ Future<void> main() async {
         duration: Duration.zero,
         source: remote ? SourceKind.webDav : SourceKind.local,
         mediaUri: mediaUri,
-        httpHeaders: headers,
       );
+      if (remote) {
+        controller.updatePlaybackMediaAccess([
+          PlaybackMediaAccessRule(
+            baseUri: Uri.parse(_validationBaseUrl),
+            headers: headers,
+          ),
+        ]);
+      }
       await controller.playTrack(track, queue: <Track>[track]);
       await engine.snapshots
           .firstWhere(

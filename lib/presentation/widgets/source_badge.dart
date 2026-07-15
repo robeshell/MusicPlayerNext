@@ -15,9 +15,9 @@ class SourceBadge extends StatelessWidget {
         : SoundColors.webDav;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: context.soundTint(0.045),
         borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        border: Border.all(color: context.soundDivider),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
@@ -29,9 +29,7 @@ class SourceBadge extends StatelessWidget {
             Text(
               source.label,
               style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.62),
+                color: context.soundMutedText,
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
