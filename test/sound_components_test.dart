@@ -142,12 +142,91 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SoundDialog), findsOneWidget);
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
     expect(find.text('统一弹窗'), findsOneWidget);
+    final dialogSize = tester.getSize(
+      find.byKey(const ValueKey('sound-dialog')),
+    );
+    expect(dialogSize.width, 520);
+    expect(
+      dialogSize.height,
+      lessThan(240),
+      reason: 'Short dialog content must not stretch to the route height.',
+    );
     expect(
       tester.getSize(find.byKey(const ValueKey('sound-dialog-content'))).width,
       lessThan(600),
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Sound dialog clamps and scrolls in a compact window', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(446, 639);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: SoundTheme.light,
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => SoundDialog(
+                    maxWidth: 540,
+                    title: const Text('紧凑窗口弹窗'),
+                    content: Table(
+                      children: [
+                        for (var index = 0; index < 12; index++)
+                          TableRow(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 7,
+                                ),
+                                child: Text('快捷键 $index'),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 7,
+                                ),
+                                child: Text('操作 $index'),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                    actions: [
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('完成'),
+                      ),
+                    ],
+                  ),
+                ),
+                child: const Text('打开'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    final dialogRect = tester.getRect(
+      find.byKey(const ValueKey('sound-dialog')),
+    );
+    expect(dialogRect.width, 406);
+    expect(dialogRect.height, lessThanOrEqualTo(591));
+    expect(find.byKey(const ValueKey('sound-dialog-content-scroll')), findsOne);
     expect(tester.takeException(), isNull);
   });
 

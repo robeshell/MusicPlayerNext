@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -7,6 +8,8 @@ import '../../domain/library_models.dart';
 import '../../playback/playback_controller.dart';
 import '../controllers/library_user_state_controller.dart';
 import 'album_art.dart';
+import 'animated_artwork_background.dart';
+import 'artwork_image_provider.dart';
 import 'playback_status_badge.dart';
 import 'progress_scrubber.dart';
 import 'source_badge.dart';
@@ -45,65 +48,164 @@ class MiniPlayer extends StatelessWidget {
         final position = playback.displayPosition;
         final duration = playback.displayDuration;
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = docked || (!compact && constraints.maxWidth >= 900);
-            final height = docked
-                ? 76.0
-                : (compact ? 72.0 : (wide ? 88.0 : 82.0));
-            return SoundGlassSurface(
-              strong: true,
-              shadowOffset: docked ? const Offset(0, -5) : const Offset(0, 10),
-              shadowBlur: docked ? 18 : null,
-              borderRadius: docked
-                  ? BorderRadius.zero
-                  : BorderRadius.circular(compact ? 16 : 20),
-              borderColor: visual.primaryVisual == PlaybackPrimaryVisual.retry
-                  ? visual.color.withValues(alpha: 0.68)
-                  : null,
-              child: SizedBox(
-                height: height,
-                child: docked
-                    ? _DockedMiniPlayer(
-                        track: track,
-                        album: album,
-                        visual: visual,
-                        playback: playback,
-                        userState: userState,
-                        onOpen: onOpen,
-                        onOpenQueue: onOpenQueue,
-                        position: position,
-                        duration: duration,
-                      )
-                    : wide
-                    ? _WideMiniPlayer(
-                        track: track,
-                        album: album,
-                        visual: visual,
-                        playback: playback,
-                        userState: userState,
-                        onOpen: onOpen,
-                        onOpenQueue: onOpenQueue,
-                        position: position,
-                        duration: duration,
-                      )
-                    : _CondensedMiniPlayer(
-                        track: track,
-                        album: album,
-                        visual: visual,
-                        playback: playback,
-                        onOpen: onOpen,
-                        onOpenQueue: onOpenQueue,
-                        position: position,
-                        duration: duration,
-                        compact: compact,
-                        availableWidth: constraints.maxWidth,
-                      ),
-              ),
-            );
-          },
+        return _NowPlayingArtworkWarmup(
+          album: album,
+          compact: compact,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = docked || (!compact && constraints.maxWidth >= 900);
+              final height = docked
+                  ? 76.0
+                  : (compact ? 72.0 : (wide ? 88.0 : 82.0));
+              return SoundGlassSurface(
+                strong: true,
+                shadowOffset: docked
+                    ? const Offset(0, -5)
+                    : const Offset(0, 10),
+                shadowBlur: docked ? 18 : null,
+                borderRadius: docked
+                    ? BorderRadius.zero
+                    : BorderRadius.circular(compact ? 16 : 20),
+                borderColor: visual.primaryVisual == PlaybackPrimaryVisual.retry
+                    ? visual.color.withValues(alpha: 0.68)
+                    : null,
+                child: SizedBox(
+                  height: height,
+                  child: docked
+                      ? _DockedMiniPlayer(
+                          track: track,
+                          album: album,
+                          visual: visual,
+                          playback: playback,
+                          userState: userState,
+                          onOpen: onOpen,
+                          onOpenQueue: onOpenQueue,
+                          position: position,
+                          duration: duration,
+                        )
+                      : wide
+                      ? _WideMiniPlayer(
+                          track: track,
+                          album: album,
+                          visual: visual,
+                          playback: playback,
+                          userState: userState,
+                          onOpen: onOpen,
+                          onOpenQueue: onOpenQueue,
+                          position: position,
+                          duration: duration,
+                        )
+                      : _CondensedMiniPlayer(
+                          track: track,
+                          album: album,
+                          visual: visual,
+                          playback: playback,
+                          onOpen: onOpen,
+                          onOpenQueue: onOpenQueue,
+                          position: position,
+                          duration: duration,
+                          compact: compact,
+                          availableWidth: constraints.maxWidth,
+                        ),
+                ),
+              );
+            },
+          ),
         );
       },
+    );
+  }
+}
+
+class _NowPlayingArtworkWarmup extends StatefulWidget {
+  const _NowPlayingArtworkWarmup({
+    required this.album,
+    required this.compact,
+    required this.child,
+  });
+
+  final Album album;
+  final bool compact;
+  final Widget child;
+
+  @override
+  State<_NowPlayingArtworkWarmup> createState() =>
+      _NowPlayingArtworkWarmupState();
+}
+
+class _NowPlayingArtworkWarmupState extends State<_NowPlayingArtworkWarmup> {
+  String? _warmupKey;
+  int _generation = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleWarmup();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NowPlayingArtworkWarmup oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleWarmup();
+  }
+
+  void _scheduleWarmup() {
+    final media = MediaQuery.of(context);
+    final brightness = Theme.of(context).brightness;
+    final logicalExtent = widget.compact
+        ? math.min(430.0, math.max(1.0, media.size.width - 56))
+        : 340.0;
+    final cacheExtent = quantizedArtworkCacheExtent(
+      logicalExtent,
+      media.devicePixelRatio,
+    );
+    final key = [
+      widget.album.id,
+      widget.album.artworkUri,
+      brightness.name,
+      cacheExtent,
+    ].join('|');
+    if (_warmupKey == key) return;
+    _warmupKey = key;
+    final generation = ++_generation;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _generation) return;
+      unawaited(
+        _warmArtwork(
+          album: widget.album,
+          brightness: brightness,
+          cacheExtent: cacheExtent,
+        ),
+      );
+    });
+  }
+
+  Future<void> _warmArtwork({
+    required Album album,
+    required Brightness brightness,
+    required int cacheExtent,
+  }) async {
+    final provider = artworkImageProvider(
+      album.artworkUri,
+      cacheWidth: cacheExtent,
+      cacheHeight: cacheExtent,
+    );
+    try {
+      await Future.wait([
+        if (provider != null) precacheImage(provider, context),
+        AnimatedArtworkBackground.prewarm(album: album, brightness: brightness),
+      ]);
+    } catch (_) {
+      // The visible album art and background already have deterministic
+      // fallbacks. Warmup failure must never affect playback or navigation.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: const ValueKey('now-playing-artwork-warmup'),
+      child: widget.child,
     );
   }
 }

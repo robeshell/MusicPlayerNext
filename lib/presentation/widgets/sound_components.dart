@@ -94,6 +94,7 @@ class SoundTrackActivation extends StatefulWidget {
     required this.onActivate,
     required this.child,
     this.semanticLabel,
+    this.showFocusOutline = true,
     this.borderRadius = const BorderRadius.all(
       Radius.circular(SoundRadii.control),
     ),
@@ -103,6 +104,7 @@ class SoundTrackActivation extends StatefulWidget {
   final VoidCallback onActivate;
   final Widget child;
   final String? semanticLabel;
+  final bool showFocusOutline;
   final BorderRadius borderRadius;
 
   @override
@@ -180,7 +182,7 @@ class _SoundTrackActivationState extends State<SoundTrackActivation> {
                     ? SoundColors.accent.withValues(alpha: 0.08)
                     : Colors.transparent,
                 borderRadius: widget.borderRadius,
-                border: desktop && _focused
+                border: desktop && _focused && widget.showFocusOutline
                     ? Border.all(
                         color: theme.colorScheme.primary.withValues(
                           alpha: 0.46,
@@ -219,38 +221,85 @@ class SoundDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final glass = context.soundGlass;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(SoundRadii.dialog),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: glass.strongBlur,
-          sigmaY: glass.strongBlur,
+    final theme = Theme.of(context);
+    final dialogTheme = DialogTheme.of(context);
+    final viewport = MediaQuery.sizeOf(context);
+    const horizontalInset = 20.0;
+    const verticalInset = 24.0;
+
+    // Keep the route child responsible for its own bounds. Wrapping an
+    // AlertDialog with a BackdropFilter makes the wrapper inherit the route's
+    // loose full-height constraints, which can stretch otherwise short dialog
+    // content (tables are especially visible). The surface now shrink-wraps
+    // short content and gives only the content area the remaining height.
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: horizontalInset,
+        vertical: verticalInset,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: maxWidth,
+          maxHeight: viewport.height > verticalInset * 2
+              ? viewport.height - verticalInset * 2
+              : 0,
         ),
-        child: AlertDialog(
-          clipBehavior: Clip.antiAlias,
-          backgroundColor: glass.strongSurface,
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 24,
-          ),
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          titlePadding: titlePadding,
-          contentPadding: contentPadding,
-          actionsPadding: actionsPadding,
-          actionsAlignment: MainAxisAlignment.end,
-          actionsOverflowAlignment: OverflowBarAlignment.end,
-          actionsOverflowButtonSpacing: 10,
-          buttonPadding: EdgeInsets.zero,
-          title: title,
-          content: ConstrainedBox(
-            key: const ValueKey('sound-dialog-content'),
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.64,
+        child: SizedBox(
+          key: const ValueKey('sound-dialog'),
+          width: maxWidth,
+          child: SoundGlassSurface(
+            strong: true,
+            borderRadius: BorderRadius.circular(SoundRadii.dialog),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: titlePadding,
+                    child: DefaultTextStyle(
+                      style:
+                          dialogTheme.titleTextStyle ??
+                          theme.textTheme.headlineSmall!,
+                      child: title,
+                    ),
+                  ),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: SingleChildScrollView(
+                      key: const ValueKey('sound-dialog-content-scroll'),
+                      padding: contentPadding,
+                      child: DefaultTextStyle(
+                        style:
+                            dialogTheme.contentTextStyle ??
+                            theme.textTheme.bodyMedium!,
+                        child: KeyedSubtree(
+                          key: const ValueKey('sound-dialog-content'),
+                          child: content,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (actions.isNotEmpty)
+                    Padding(
+                      padding: actionsPadding,
+                      child: OverflowBar(
+                        alignment: MainAxisAlignment.end,
+                        overflowAlignment: OverflowBarAlignment.end,
+                        spacing: 10,
+                        overflowSpacing: 10,
+                        children: actions,
+                      ),
+                    ),
+                ],
+              ),
             ),
-            child: content,
           ),
-          actions: actions,
         ),
       ),
     );

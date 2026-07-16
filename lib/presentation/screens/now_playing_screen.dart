@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +14,7 @@ import '../../playback/lyrics_timeline.dart';
 import '../controllers/library_user_state_controller.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
+import '../widgets/animated_artwork_background.dart';
 import '../widgets/playback_status_badge.dart';
 import '../widgets/playback_queue_sheet.dart';
 import '../widgets/progress_scrubber.dart';
@@ -47,34 +47,15 @@ class NowPlayingScreen extends StatelessWidget {
           if (track == null) return const _NoTrackPlaying();
           final album = albumForTrack(track);
           final snapshot = playback.snapshot;
-          final visual = PlaybackVisualState.fromSnapshot(
-            snapshot,
-            hasDisplayTrack: true,
-          );
           return Scaffold(
             backgroundColor: album.palette.last,
             body: Stack(
               fit: StackFit.expand,
               children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: const Alignment(-0.7, -0.55),
-                      radius: 1.3,
-                      colors: [
-                        album.palette.first.withValues(alpha: 0.82),
-                        album.palette.last,
-                      ],
-                    ),
-                  ),
-                ),
-                BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 34, sigmaY: 34),
-                  child: ColoredBox(
-                    color: context.soundGlass.canvasHighlight.withValues(
-                      alpha: 0.68,
-                    ),
-                  ),
+                AnimatedArtworkBackground(
+                  album: album,
+                  position: playback.displayPosition,
+                  isPlaying: snapshot.isPlaying,
                 ),
                 SafeArea(
                   minimum: EdgeInsets.only(top: context.soundTitlebarInset),
@@ -93,8 +74,6 @@ class NowPlayingScreen extends StatelessWidget {
                                 Icons.keyboard_arrow_down_rounded,
                               ),
                             ),
-                            const Spacer(),
-                            PlaybackStatusBadge(state: visual),
                             const Spacer(),
                             IconButton.filledTonal(
                               onPressed: () =>
@@ -202,11 +181,14 @@ class _WideNowPlaying extends StatelessWidget {
           math.max(160.0, playerHeight - playerChromeHeight),
         );
         return Padding(
-          padding: const EdgeInsets.fromLTRB(44, 22, 44, 28),
+          padding: const EdgeInsets.fromLTRB(44, 8, 44, 24),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: Center(
+                child: Align(
+                  key: const ValueKey('wide-now-playing-player'),
+                  alignment: Alignment.topCenter,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 390),
                     child: SingleChildScrollView(
@@ -224,7 +206,8 @@ class _WideNowPlaying extends StatelessWidget {
               const SizedBox(width: 48),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 20, 0, 0),
+                  key: const ValueKey('wide-now-playing-lyrics'),
+                  padding: const EdgeInsets.fromLTRB(8, 6, 0, 0),
                   child: _LyricsPanel(
                     track: track,
                     position: playback.displayPosition,
@@ -322,11 +305,12 @@ class _NowPlayingViewSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       label: '正在播放视图',
-      child: SoundGlassSurface(
-        blur: false,
-        showShadow: false,
-        borderRadius: BorderRadius.circular(12),
-        padding: const EdgeInsets.all(3),
+      child: DecoratedBox(
+        key: const ValueKey('now-playing-view-switch'),
+        decoration: BoxDecoration(
+          color: context.soundTint(0.07),
+          borderRadius: BorderRadius.circular(18),
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -367,13 +351,15 @@ class _NowPlayingViewChoice extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: AnimatedContainer(
+          key: ValueKey(
+            'now-playing-view-${label == '封面' ? 'cover' : 'lyrics'}',
+          ),
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+          margin: const EdgeInsets.all(3),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
           decoration: BoxDecoration(
-            color: selected
-                ? SoundColors.accent.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
+            color: selected ? context.soundTint(0.12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(15),
           ),
           child: Text(
             label,

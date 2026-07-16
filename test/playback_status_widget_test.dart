@@ -64,6 +64,10 @@ void main() {
     );
     await tester.pump();
 
+    expect(
+      find.byKey(const ValueKey('now-playing-artwork-warmup')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     playback.dispose();
@@ -139,6 +143,18 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text(_longTrack.title), findsOneWidget);
     expect(find.text('封面'), findsNothing);
+    final playerTop = tester
+        .getRect(find.byKey(const ValueKey('wide-now-playing-player')))
+        .top;
+    final lyricsTop = tester
+        .getRect(find.byKey(const ValueKey('wide-now-playing-lyrics')))
+        .top;
+    expect((playerTop - lyricsTop).abs(), lessThan(12));
+    expect(
+      tester.getTopLeft(find.text(_longTrack.title)).dy,
+      lessThan(430),
+      reason: 'Desktop content should not be vertically centered downward.',
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     playback.dispose();
@@ -152,7 +168,7 @@ void main() {
     (PlaybackPhase.completed, '播放完成'),
     (PlaybackPhase.error, '播放错误'),
   ]) {
-    testWidgets('mini player and now-playing agree for ${testCase.$1.name}', (
+    testWidgets('only mini player labels ${testCase.$1.name} status', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1200, 900);
@@ -189,7 +205,20 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text(testCase.$2), findsNWidgets(2));
+      expect(
+        find.descendant(
+          of: find.byType(MiniPlayer),
+          matching: find.text(testCase.$2),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(NowPlayingScreen),
+          matching: find.text(testCase.$2),
+        ),
+        findsNothing,
+      );
       if (testCase.$1 == PlaybackPhase.error) {
         expect(find.text('操作没有完成'), findsOneWidget);
         expect(find.text('重试'), findsOneWidget);

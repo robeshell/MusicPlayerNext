@@ -37,10 +37,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sound'), findsOneWidget);
+    expect(find.byKey(const ValueKey('desktop-search-action')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('desktop-settings-action')),
+      findsOneWidget,
+    );
+    expect(find.text('快捷键'), findsNothing);
     expect(find.text('资料库'), findsWidgets);
     expect(find.text('Test Album'), findsWidgets);
+    expect(find.text('本地'), findsNothing);
     expect(find.text('Test Track'), findsNothing);
     expect(find.text('范特西'), findsNothing);
+    final desktopGrid = tester.widget<SliverGrid>(find.byType(SliverGrid));
+    final desktopDelegate =
+        desktopGrid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(desktopDelegate.mainAxisExtent, lessThan(250));
+    expect(desktopDelegate.mainAxisSpacing, 16);
 
     await tester.tap(find.text('Test Album').first);
     await tester.pumpAndSettle();
@@ -61,9 +73,78 @@ void main() {
     await _unmountAndFlush(tester);
   });
 
-  testWidgets('browses real artists and genres without debug tools', (
-    tester,
-  ) async {
+  testWidgets(
+    'library navigation is not repeated beside a persistent sidebar',
+    (tester) async {
+      _simulatePlatform(TargetPlatform.iOS);
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repository = await _repositoryWithAlbum();
+      addTearDown(repository.close);
+
+      await tester.pumpWidget(
+        SoundApp(
+          engine: SimulatedPlaybackEngine(),
+          repository: repository,
+          sessionStore: PlaybackSessionStore.memory(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('library-mode-albums')), findsNothing);
+
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('library-mode-albums')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('compact-library-navigation')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile-library-user-menu')),
+        findsOneWidget,
+      );
+      expect(find.byType(ChoiceChip), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('compact-library-toolbar'))),
+        const Size(358, 40),
+      );
+      final compactGrid = tester.widget<SliverGrid>(find.byType(SliverGrid));
+      final compactDelegate =
+          compactGrid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+      expect(compactDelegate.mainAxisExtent, lessThan(220));
+      expect(compactDelegate.mainAxisSpacing, 12);
+
+      await tester.tap(find.byKey(const ValueKey('library-mode-artists')));
+      await tester.pumpAndSettle();
+      final artistGrid = tester.widget<SliverGrid>(find.byType(SliverGrid));
+      final artistDelegate =
+          artistGrid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+      expect(artistDelegate.mainAxisExtent, lessThan(220));
+      expect(artistDelegate.mainAxisSpacing, 12);
+
+      await tester.tap(find.byKey(const ValueKey('library-mode-songs')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('compact-library-play-all')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('library-track-actions-track:test')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('favorite-library-track:test')),
+        findsNothing,
+      );
+
+      await _unmountAndFlush(tester);
+    },
+  );
+
+  testWidgets('browses real artists without debug tools', (tester) async {
     _simulatePlatform(TargetPlatform.iOS);
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
@@ -105,19 +186,30 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('播放全部'));
     await tester.pump();
-    expect(find.text('Test Track'), findsNWidgets(2));
-
-    await tester.tap(find.text('流派').first);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('library-collection-genre:test')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Test'), findsWidgets);
-    expect(find.text('Test Track'), findsNWidgets(2));
+    expect(find.text('Test Track'), findsWidgets);
 
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('collection-detail-artwork')))
+          .width,
+      156,
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('collection-detail-hero')))
+          .height,
+      lessThan(400),
+    );
+    final compactCollectionGrid = tester.widget<SliverGrid>(
+      find.byType(SliverGrid),
+    );
+    final compactCollectionDelegate =
+        compactCollectionGrid.gridDelegate
+            as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(compactCollectionDelegate.mainAxisExtent, lessThan(220));
+    expect(compactCollectionDelegate.mainAxisSpacing, 12);
     expect(tester.takeException(), isNull);
 
     await _unmountAndFlush(tester);
@@ -168,7 +260,7 @@ void main() {
     await _unmountAndFlush(tester);
   });
 
-  testWidgets('favorites and playback history are fully interactive', (
+  testWidgets('favorites and recently played are fully interactive', (
     tester,
   ) async {
     _simulatePlatform(TargetPlatform.iOS);
@@ -211,14 +303,11 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('播放历史').first);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('play-history-1')), findsOneWidget);
     await tester.tap(find.text('清除历史'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '清除'));
     await tester.pumpAndSettle();
-    expect(find.text('播放历史是空的'), findsOneWidget);
+    expect(find.text('还没有最近播放'), findsOneWidget);
     expect(await repository.getPlayHistory(), isEmpty);
     expect((await repository.getFavoriteTracks()).single.trackId, 'track:test');
 
@@ -477,6 +566,61 @@ void main() {
     await repository.close();
   });
 
+  testWidgets('mobile shell keeps content outside system safe areas', (
+    tester,
+  ) async {
+    _simulatePlatform(TargetPlatform.android);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(
+      left: 12,
+      top: 32,
+      right: 8,
+      bottom: 24,
+    );
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    final repository = _repository();
+    final engine = SimulatedPlaybackEngine();
+    final playback = SoundPlaybackController(engine: engine);
+    await playback.playTrack(_testTrack, queue: const [_testTrack]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(playback: playback, libraryRepository: repository),
+      ),
+    );
+    await tester.pump();
+
+    final safeArea = tester.getRect(
+      find.byKey(const ValueKey('mobile-content-safe-area')),
+    );
+    expect(safeArea.top, 0);
+    final contentRect = tester.getRect(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('mobile-content-safe-area')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(contentRect.top, greaterThanOrEqualTo(32));
+
+    final miniPlayer = tester.getRect(find.byType(MiniPlayer));
+    expect(miniPlayer.left, greaterThanOrEqualTo(22));
+    expect(miniPlayer.right, lessThanOrEqualTo(372));
+    final navigation = tester.getRect(find.byType(SoundNavigationBar));
+    expect(navigation.bottom, 844);
+    expect(navigation.height, greaterThanOrEqualTo(87));
+    expect(tester.takeException(), isNull);
+
+    await _unmountAndFlush(tester);
+    playback.dispose();
+    engine.dispose();
+    await repository.close();
+  });
+
   testWidgets('desktop mini player is a full-width bottom dock', (
     tester,
   ) async {
@@ -594,7 +738,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
     expect(find.text('设置'), findsWidgets);
-    expect(find.text('播放'), findsOneWidget);
+    expect(find.text('播放'), findsWidgets);
     expect(find.text('资料库'), findsWidgets);
     expect(find.text('音乐来源'), findsOneWidget);
     expect(find.text('键盘快捷键'), findsOneWidget);
@@ -651,7 +795,7 @@ void main() {
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('歌词'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('这首歌曲没有内嵌歌词'), findsOneWidget);
 
     tester.view.physicalSize = const Size(834, 1194);

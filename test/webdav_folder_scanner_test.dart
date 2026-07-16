@@ -417,6 +417,80 @@ void main() {
     },
   );
 
+  test(
+    'indexes supported hrefs when display names omit extensions and metadata fails',
+    () async {
+      final music = Directory('${root.path}/dav/music');
+      const fileNames = <String>[
+        'tail-metadata.m4a',
+        'large-artwork.flac',
+        'stream.ogg',
+        'voice.opus',
+        'recording.wav',
+      ];
+      for (final fileName in fileNames) {
+        await File('${music.path}/$fileName').writeAsBytes(<int>[1, 2, 3, 4]);
+      }
+
+      final baseUrl = 'http://127.0.0.1:${server.port}/dav/';
+      final connectionId = WebDavConnectionService.stableWebDavConnectionId(
+        baseUrl,
+      );
+      final now = DateTime.utc(2026, 7, 16);
+      await repository.upsertSource(
+        LibrarySourceRecord(
+          id: connectionId,
+          type: LibrarySourceType.webDav,
+          displayName: 'Fixture',
+          rootUri: baseUrl,
+          status: LibrarySourceStatus.available,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      final files = <String, String>{
+        for (var index = 0; index < fileNames.length; index++)
+          'http://127.0.0.1:${server.port}/dav/music/${fileNames[index]}':
+              'Remote track ${index + 1}',
+      };
+      final result =
+          await WebDavFolderScanner(
+            repository: repository,
+            metadataExtractor: const _AlwaysFailingMetadataExtractor(),
+            discovery: _DisplayNameDiscovery(files),
+          ).scan(
+            connectionId: connectionId,
+            folderUrls: const <String>['/dav/music/'],
+            baseUrl: baseUrl,
+            credentials: const WebDavCredentials(
+              username: 'sound',
+              password: 'sound-test',
+            ),
+          );
+
+      final folderId = WebDavConnectionService.stableWebDavFolderSourceId(
+        connectionId,
+        '/dav/music/',
+      );
+      final tracks = await repository.getTracks(sourceId: folderId);
+      expect(result.indexedTracks, fileNames.length);
+      expect(result.skippedFiles, 0);
+      expect(tracks, hasLength(fileNames.length));
+      expect(tracks.map((track) => track.title).toSet(), <String>{
+        for (var index = 1; index <= fileNames.length; index++)
+          'Remote track $index',
+      });
+      expect(tracks.every((track) => track.artistName == '未知艺人'), isTrue);
+      expect(tracks.map((track) => track.contentType).toSet(), <String?>{
+        'audio/mp4',
+        'audio/flac',
+        'audio/ogg',
+        'audio/wav',
+      });
+    },
+  );
+
   test('keeps valid raw AAC discoverable by filename', () async {
     final music = Directory('${root.path}/dav/music');
     await File(
@@ -778,6 +852,32 @@ class _FileListDiscovery extends WebDavDiscoveryService {
             displayName: Uri.parse(fileUrl).pathSegments.last,
             isCollection: false,
             contentLength: 762,
+          ),
+      ],
+    );
+  }
+}
+
+class _DisplayNameDiscovery extends WebDavDiscoveryService {
+  _DisplayNameDiscovery(this.files);
+
+  final Map<String, String> files;
+
+  @override
+  Future<WebDavDiscoveryResult> probe(
+    String url, {
+    required WebDavCredentials credentials,
+  }) async {
+    return WebDavDiscoveryResult(
+      status: DiscoveryStatus.success,
+      capabilities: const <String>['1'],
+      files: [
+        for (final entry in files.entries)
+          WebDavFileEntry(
+            href: entry.key,
+            displayName: entry.value,
+            isCollection: false,
+            contentLength: 4,
           ),
       ],
     );

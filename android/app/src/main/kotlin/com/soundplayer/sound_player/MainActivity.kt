@@ -1,8 +1,11 @@
 package com.soundplayer.sound_player
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
 import java.io.File
 import io.flutter.embedding.engine.FlutterEngine
@@ -15,14 +18,61 @@ class MainActivity : AudioServiceActivity() {
         private const val channelName =
             "com.soundplayer.sound_player/local_directory_access"
         private const val pickDirectoryRequestCode = 9401
+        private const val notificationPermissionRequestCode = 9402
+        private const val systemMediaChannelName =
+            "com.soundplayer.sound_player/system_media"
     }
 
     private var pendingDirectoryResult: MethodChannel.Result? = null
+    private var pendingNotificationPermissionResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler(::handleDirectoryMethod)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            systemMediaChannelName,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "ensureNotificationPermission" -> ensureNotificationPermission(result)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun ensureNotificationPermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(true)
+            return
+        }
+        if (pendingNotificationPermissionResult != null) {
+            result.success(false)
+            return
+        }
+        pendingNotificationPermissionResult = result
+        requestPermissions(
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            notificationPermissionRequestCode,
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != notificationPermissionRequestCode) return
+        val result = pendingNotificationPermissionResult ?: return
+        pendingNotificationPermissionResult = null
+        result.success(
+            grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED,
+        )
     }
 
     private fun handleDirectoryMethod(call: MethodCall, result: MethodChannel.Result) {

@@ -51,6 +51,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
   @override
   Widget build(BuildContext context) {
     final collection = widget.collection;
+    final compact = context.soundIsCompact;
     final gutter = context.soundPageGutter;
     final bottomPadding = context.soundContentBottomPadding;
     final sortedTracks = _sortTracks(collection.tracks);
@@ -78,29 +79,57 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
             ),
             if (collection.albums.isNotEmpty) ...[
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 12),
-                sliver: const SliverToBoxAdapter(
+                padding: EdgeInsets.fromLTRB(
+                  gutter,
+                  compact ? 4 : 8,
+                  gutter,
+                  compact ? 8 : 12,
+                ),
+                sliver: SliverToBoxAdapter(
                   child: Text(
                     '专辑',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: compact ? 17 : 20,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 28),
-                sliver: SliverGrid.builder(
-                  itemCount: collection.albums.length,
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 180,
-                    mainAxisExtent: 238,
-                    crossAxisSpacing: 20,
-                    mainAxisSpacing: 20,
-                  ),
-                  itemBuilder: (context, index) {
-                    final album = collection.albums[index];
-                    return _CollectionAlbumCard(
-                      album: album,
-                      onTap: () => widget.onOpenAlbum(album),
+                padding: EdgeInsets.fromLTRB(
+                  gutter,
+                  0,
+                  gutter,
+                  compact ? 20 : 28,
+                ),
+                sliver: SliverLayoutBuilder(
+                  builder: (context, constraints) {
+                    final spacing = compact ? 12.0 : 16.0;
+                    final maxCardWidth = compact ? 180.0 : 210.0;
+                    final columnCount =
+                        ((constraints.crossAxisExtent + spacing) /
+                                (maxCardWidth + spacing))
+                            .ceil()
+                            .clamp(1, 12);
+                    final cardWidth =
+                        (constraints.crossAxisExtent -
+                            spacing * (columnCount - 1)) /
+                        columnCount;
+                    return SliverGrid.builder(
+                      itemCount: collection.albums.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columnCount,
+                        mainAxisExtent: cardWidth + 46,
+                        crossAxisSpacing: spacing,
+                        mainAxisSpacing: spacing,
+                      ),
+                      itemBuilder: (context, index) {
+                        final album = collection.albums[index];
+                        return _CollectionAlbumCard(
+                          album: album,
+                          onTap: () => widget.onOpenAlbum(album),
+                        );
+                      },
                     );
                   },
                 ),
@@ -210,6 +239,7 @@ class _CollectionTrackHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = context.soundIsCompact;
     return Wrap(
       spacing: 12,
       runSpacing: 10,
@@ -218,7 +248,10 @@ class _CollectionTrackHeader extends StatelessWidget {
       children: [
         Text(
           '$trackCount 首歌曲',
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: compact ? 17 : 20,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         PopupMenuButton<LibraryCollectionTrackSort>(
           key: const ValueKey('library-collection-track-sort-menu'),
@@ -251,7 +284,10 @@ class _CollectionTrackHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 10 : 12,
+                vertical: compact ? 7 : 9,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -296,31 +332,33 @@ class _CollectionHero extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text(
-              collection.kind == LibraryCollectionKind.artist ? '艺人' : '流派',
-              style: TextStyle(
-                color: collection.palette.first,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
+            if (!compact) ...[
+              Text(
+                collection.kind == LibraryCollectionKind.artist ? '艺人' : '流派',
+                style: TextStyle(
+                  color: collection.palette.first,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Text(
               collection.title,
               style: TextStyle(
-                fontSize: compact ? 28 : 34,
+                fontSize: compact ? 24 : 34,
                 height: 1.05,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -1,
               ),
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: compact ? 6 : 10),
             Text(
               '${collection.albums.length} 张专辑 · ${collection.tracks.length} 首歌曲',
               style: TextStyle(fontSize: 12, color: context.soundMutedText),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: compact ? 14 : 20),
             FilledButton.icon(
               onPressed: onPlay,
               icon: const Icon(Icons.play_arrow_rounded),
@@ -328,27 +366,30 @@ class _CollectionHero extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: SoundColors.accent,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 11,
+                minimumSize: Size(0, compact ? 40 : 44),
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 16 : 20,
+                  vertical: compact ? 8 : 11,
                 ),
               ),
             ),
           ],
         );
         final artwork = collection.albums.isEmpty
-            ? const SizedBox.square(dimension: 220)
+            ? SizedBox.square(dimension: compact ? 156 : 220)
             : AlbumArt(
+                key: const ValueKey('collection-detail-artwork'),
                 album: collection.albums.first,
-                size: compact ? 200 : 220,
+                size: compact ? 156 : 220,
               );
 
         return Container(
+          key: const ValueKey('collection-detail-hero'),
           padding: EdgeInsets.fromLTRB(
             context.soundPageGutter,
-            20,
+            compact ? 8 : 20,
             context.soundPageGutter,
-            30,
+            compact ? 18 : 30,
           ),
           decoration: BoxDecoration(
             gradient: RadialGradient(
@@ -366,11 +407,17 @@ class _CollectionHero extends StatelessWidget {
               IconButton(
                 onPressed: onBack,
                 icon: const Icon(Icons.arrow_back_rounded),
+                style: compact
+                    ? IconButton.styleFrom(
+                        minimumSize: const Size.square(40),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      )
+                    : null,
               ),
-              const SizedBox(height: 18),
+              SizedBox(height: compact ? 4 : 18),
               if (compact) ...[
                 Center(child: artwork),
-                const SizedBox(height: 28),
+                const SizedBox(height: 16),
                 details,
               ] else
                 Row(
@@ -404,14 +451,14 @@ class _CollectionAlbumCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AlbumArt(album: album),
-          const SizedBox(height: 9),
+          const SizedBox(height: 7),
           Text(
             album.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             album.artist,
             maxLines: 1,
@@ -447,6 +494,7 @@ class _CollectionTrackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = context.soundIsCompact;
     return SoundTrackActivation(
       onActivate: onTap,
       semanticLabel: track.title,
@@ -455,9 +503,15 @@ class _CollectionTrackRow extends StatelessWidget {
           border: Border(bottom: BorderSide(color: context.soundDivider)),
         ),
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 5),
+          contentPadding: compact
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(vertical: 5),
+          horizontalTitleGap: compact ? 10 : 16,
+          visualDensity: compact
+              ? const VisualDensity(horizontal: -1, vertical: -1)
+              : null,
           leading: SizedBox.square(
-            dimension: 48,
+            dimension: compact ? 44 : 48,
             child: AlbumArt(album: album, borderRadius: 6),
           ),
           title: Text(
@@ -475,7 +529,7 @@ class _CollectionTrackRow extends StatelessWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SourceBadge(track.source),
+              if (!compact) SourceBadge(track.source),
               Text(
                 formatDuration(track.duration),
                 style: TextStyle(

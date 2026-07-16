@@ -50,7 +50,7 @@ extension SoundThemeContext on BuildContext {
   bool get soundIsCompact => soundWindowClass == SoundWindowClass.compact;
 
   double get soundPageGutter => switch (soundWindowClass) {
-    SoundWindowClass.compact => 18,
+    SoundWindowClass.compact => 16,
     SoundWindowClass.medium => 24,
     SoundWindowClass.wide => 32,
   };

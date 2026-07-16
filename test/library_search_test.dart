@@ -242,6 +242,79 @@ void main() {
     engine.dispose();
     await tester.pump(const Duration(milliseconds: 1));
   });
+
+  testWidgets('mobile search uses compact controls and flat result rows', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithSearchFixture();
+    addTearDown(repository.close);
+    final catalog = LibraryCatalogController(repository: repository);
+    await catalog.refresh();
+    final search = LibrarySearchController(
+      catalog: catalog,
+      debounce: Duration.zero,
+      runner: (request) async => searchLibraryDocuments(request),
+    );
+    final engine = SimulatedPlaybackEngine();
+    final playback = SoundPlaybackController(engine: engine);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SearchScreen(
+            catalog: catalog,
+            search: search,
+            playback: playback,
+            onOpenAlbum: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('library-search-field')),
+      'Main Artist',
+    );
+    await tester.pump();
+    await _waitForSearch(tester, search);
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('library-search-field'))).height,
+      44,
+    );
+    expect(find.byKey(const ValueKey('compact-search-sort')), findsOneWidget);
+    expect(find.text('艺人'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('search-result-track-neon')))
+          .height,
+      64,
+    );
+    expect(find.text('Guest Singer — Night Drive'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('search-result-menu-track-neon')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('favorite-search-track-neon')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('add-search-track-neon-to-playlist')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    search.dispose();
+    catalog.dispose();
+    playback.dispose();
+    engine.dispose();
+    await tester.pump(const Duration(milliseconds: 1));
+  });
 }
 
 Future<void> _waitForSearch(

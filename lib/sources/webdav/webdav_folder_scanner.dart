@@ -13,7 +13,6 @@ import '../../library/scanning/album_artist_resolver.dart';
 import '../../library/scanning/album_grouping.dart';
 import '../../library/scanning/artwork_store.dart';
 import '../../library/scanning/audio_format_registry.dart';
-import '../../library/scanning/audio_metadata_fallback.dart';
 import '../../library/scanning/audio_metadata_extractor.dart';
 import 'webdav_connection_service.dart';
 import 'webdav_credentials.dart';
@@ -28,6 +27,7 @@ class WebDavFolderScanResult {
     this.movedTracks = 0,
     this.removedTracks = 0,
     this.unchangedTracks = 0,
+    this.warnings = const <String>[],
   });
 
   final int indexedTracks;
@@ -37,6 +37,7 @@ class WebDavFolderScanResult {
   final int movedTracks;
   final int removedTracks;
   final int unchangedTracks;
+  final List<String> warnings;
 }
 
 class WebDavFolderScanner {
@@ -92,6 +93,7 @@ class WebDavFolderScanner {
     var totalMoved = 0;
     var totalRemoved = 0;
     var totalUnchanged = 0;
+    final warnings = <String>[];
 
     for (final folderUrl in folderUrls) {
       final folderPath = _folderPath(folderUrl);
@@ -154,6 +156,7 @@ class WebDavFolderScanner {
         totalMoved += build.movedTracks;
         totalRemoved += build.removedTracks;
         totalUnchanged += build.unchangedTracks;
+        warnings.addAll(build.warnings);
       } on ScanCancelledException {
         if (existing == null) {
           await repository.deleteSource(sourceId);
@@ -187,6 +190,7 @@ class WebDavFolderScanner {
       movedTracks: totalMoved,
       removedTracks: totalRemoved,
       unchangedTracks: totalUnchanged,
+      warnings: List.unmodifiable(warnings),
     );
   }
 
@@ -226,9 +230,20 @@ class WebDavFolderScanner {
 
         if (entry.isCollection) {
           pending.add(childUrl);
-        } else if (_isAudioFile(entry.displayName)) {
+        } else {
+          // Some WebDAV servers expose a friendly `displayname` without the
+          // original extension. Prefer the canonical href for format
+          // detection, while retaining displayName as a compatibility
+          // fallback for servers that use opaque download URLs.
+          final format =
+              audioFormatForPath(childUrl) ??
+              audioFormatForPath(entry.displayName);
+          if (format == null) continue;
           files[childUrl] = _RemoteAudioFile(
             url: childUrl,
+            displayName: entry.displayName,
+            contentType: format.contentType,
+            extension: format.extension,
             contentLength: entry.contentLength,
             modifiedAt: entry.modifiedAt?.toUtc(),
           );
@@ -329,6 +344,7 @@ class WebDavFolderScanner {
     var modifiedTracks = 0;
     var movedTracks = 0;
     var unchangedTracks = 0;
+    final warnings = <String>[];
 
     try {
       for (final file in files) {
@@ -350,16 +366,15 @@ class WebDavFolderScanner {
         final movedFrom = movedTracksByNewUrl[file.url];
         try {
           final metadata = await _readRemoteMetadata(
-            file.url,
+            file,
             credentials: credentials,
             allowBadCertificate: allowBadCertificate,
           );
           cancellationToken.throwIfCancelled();
-          if (metadata == null) continue;
 
           final title = metadata.title.isNotEmpty
               ? metadata.title
-              : p.basenameWithoutExtension(Uri.parse(file.url).path);
+              : _fallbackTitle(file);
           final artistName = metadata.artist.isNotEmpty
               ? metadata.artist
               : '未知艺人';
@@ -439,7 +454,7 @@ class WebDavFolderScanner {
               discNumber: metadata.discNumber,
               year: metadata.year,
               genre: metadata.genre.isNotEmpty ? metadata.genre : null,
-              contentType: _contentTypeFor(file.url),
+              contentType: file.contentType,
               fileSize: file.contentLength >= 0 ? file.contentLength : null,
               modifiedAt: file.modifiedAt?.toUtc() ?? completedAt,
               artworkKey: artworkKey,
@@ -458,7 +473,7 @@ class WebDavFolderScanner {
           }
         } catch (error) {
           if (error is ScanCancelledException) rethrow;
-          // Skip damaged files.
+          warnings.add('${_fallbackTitle(file)}：${_conciseScanError(error)}');
         }
       }
     } finally {
@@ -466,6 +481,12 @@ class WebDavFolderScanner {
     }
 
     cancellationToken.throwIfCancelled();
+    if (files.isNotEmpty && tracks.isEmpty && warnings.isNotEmpty) {
+      throw StateError(
+        '发现 ${files.length} 个受支持的音频文件，但全部无法建立索引。'
+        '首个错误：${warnings.first}',
+      );
+    }
     final referencedAlbumIds = tracks
         .map((track) => track.albumId)
         .whereType<String>()
@@ -527,15 +548,16 @@ class WebDavFolderScanner {
       movedTracks: movedTracks,
       removedTracks: missingTracks.length - movedTracks,
       unchangedTracks: unchangedTracks,
+      warnings: List.unmodifiable(warnings),
     );
   }
 
-  Future<_RemoteMetadata?> _readRemoteMetadata(
-    String fileUrl, {
+  Future<_RemoteMetadata> _readRemoteMetadata(
+    _RemoteAudioFile file, {
     required WebDavCredentials credentials,
     bool allowBadCertificate = false,
   }) async {
-    final uri = Uri.parse(fileUrl);
+    final uri = Uri.parse(file.url);
 
     final httpClient = HttpClient()
       ..connectionTimeout = const Duration(seconds: 15);
@@ -556,7 +578,7 @@ class WebDavFolderScanner {
           256 * 1024,
           tempFile,
         );
-        if (parsed == null && fileUrl.toLowerCase().endsWith('.flac')) {
+        if (parsed == null && file.extension == '.flac') {
           parsed = await _tryParseHeader(
             httpClient,
             uri,
@@ -565,7 +587,11 @@ class WebDavFolderScanner {
             tempFile,
           );
         }
-        return parsed;
+        // Discovery already established that this is a supported audio path.
+        // Metadata is optional: truncated range reads, large embedded artwork,
+        // or tail-positioned MP4 atoms must not make an otherwise playable
+        // track disappear from the library.
+        return parsed ?? _filenameOnlyRemoteMetadata;
       } finally {
         try {
           await tempFile.delete();
@@ -583,7 +609,6 @@ class WebDavFolderScanner {
     int headerSize,
     File tempFile,
   ) async {
-    Uint8List? downloadedBytes;
     try {
       final request = await client.getUrl(uri);
       request.headers
@@ -615,8 +640,6 @@ class WebDavFolderScanner {
         if (bytesBuilder.length >= headerSize) break;
       }
       final bytes = bytesBuilder.takeBytes();
-      downloadedBytes = bytes;
-
       if (bytes.isEmpty) return null;
 
       await tempFile.writeAsBytes(bytes);
@@ -637,33 +660,8 @@ class WebDavFolderScanner {
         artworkMimeType: metadata.artwork?.mimeType,
       );
     } catch (_) {
-      // A header-only metadata read can fail for a valid MP3 without a VBR
-      // index, or for raw AAC that has no supported tag container. Only use a
-      // filename fallback after validating the audio header.
-      if (downloadedBytes != null &&
-          canUseFilenameMetadataFallback(uri.path, downloadedBytes)) {
-        return const _RemoteMetadata(
-          title: '',
-          artist: '',
-          album: '',
-          albumArtist: null,
-          isCompilation: false,
-          genre: '',
-          year: null,
-          trackNumber: 0,
-          discNumber: 0,
-          duration: Duration.zero,
-          lyrics: '',
-          artworkBytes: null,
-          artworkMimeType: null,
-        );
-      }
       return null;
     }
-  }
-
-  String? _contentTypeFor(String url) {
-    return audioContentTypeForPath(url) ?? 'application/octet-stream';
   }
 
   Future<String?> _storeArtwork(
@@ -684,8 +682,18 @@ class WebDavFolderScanner {
     }
   }
 
-  bool _isAudioFile(String name) {
-    return isSupportedAudioPath(name);
+  String _fallbackTitle(_RemoteAudioFile file) {
+    final displayName = file.displayName.trim();
+    if (displayName.isNotEmpty) {
+      final title = p.basenameWithoutExtension(displayName).trim();
+      if (title.isNotEmpty) return title;
+    }
+
+    final uri = Uri.parse(file.url);
+    final fileName = uri.pathSegments.isEmpty
+        ? uri.path
+        : uri.pathSegments.last;
+    return p.basenameWithoutExtension(fileName);
   }
 
   String _displayNameForFolder(String folderUrl, String baseUrl) {
@@ -813,11 +821,17 @@ _RemoteFileFingerprint? _remoteFingerprint(_RemoteAudioFile file) {
 class _RemoteAudioFile {
   const _RemoteAudioFile({
     required this.url,
+    required this.displayName,
+    required this.contentType,
+    required this.extension,
     required this.contentLength,
     required this.modifiedAt,
   });
 
   final String url;
+  final String displayName;
+  final String contentType;
+  final String extension;
   final int contentLength;
   final DateTime? modifiedAt;
 }
@@ -847,6 +861,7 @@ class _WebDavBatchBuild {
     required this.movedTracks,
     required this.removedTracks,
     required this.unchangedTracks,
+    required this.warnings,
   });
 
   final LibraryScanBatch batch;
@@ -855,6 +870,7 @@ class _WebDavBatchBuild {
   final int movedTracks;
   final int removedTracks;
   final int unchangedTracks;
+  final List<String> warnings;
 }
 
 class _RemoteMetadata {
@@ -889,6 +905,22 @@ class _RemoteMetadata {
   final String? artworkMimeType;
 }
 
+const _filenameOnlyRemoteMetadata = _RemoteMetadata(
+  title: '',
+  artist: '',
+  album: '',
+  albumArtist: null,
+  isCompilation: false,
+  genre: '',
+  year: null,
+  trackNumber: 0,
+  discNumber: 0,
+  duration: Duration.zero,
+  lyrics: '',
+  artworkBytes: null,
+  artworkMimeType: null,
+);
+
 String _stableId(String seed) {
   return sha256.convert(seed.codeUnits).toString();
 }
@@ -899,4 +931,10 @@ String _sortName(String name) {
   if (stripped.startsWith('a ')) return stripped.substring(2);
   if (stripped.startsWith('an ')) return stripped.substring(3);
   return stripped;
+}
+
+String _conciseScanError(Object error) {
+  final text = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (text.length <= 240) return text;
+  return '${text.substring(0, 237)}...';
 }

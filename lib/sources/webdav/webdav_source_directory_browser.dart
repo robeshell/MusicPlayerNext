@@ -63,7 +63,9 @@ class WebDavSourceDirectoryBrowser implements SourceDirectoryBrowser {
         .map((entry) {
           final id = _resourceId(entry.href);
           if (id == null || id == directoryId || id == selfId) return null;
-          if (!entry.isCollection && !isSupportedAudioPath(entry.displayName)) {
+          if (!entry.isCollection &&
+              !isSupportedAudioPath(id) &&
+              !isSupportedAudioPath(entry.displayName)) {
             return null;
           }
           return SourceDirectoryEntry(

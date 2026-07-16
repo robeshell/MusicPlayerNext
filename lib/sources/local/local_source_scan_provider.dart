@@ -36,6 +36,7 @@ class LocalSourceScanProvider implements SourceScanProvider {
       movedTracks: report.movedTracks,
       removedTracks: report.removedTracks,
       unchangedTracks: report.unchangedTracks,
+      warnings: report.warnings,
     );
   }
 }

@@ -1,13 +1,45 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sound_player/domain/library_models.dart';
+import 'package:sound_player/playback/media_notification_permission.dart';
 import 'package:sound_player/playback/playback_controller.dart';
 import 'package:sound_player/playback/playback_engine.dart';
 import 'package:sound_player/playback/sound_audio_handler.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'Android media notification permission is requested only once',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      const channel = MethodChannel(
+        'com.soundplayer.sound_player/system_media',
+      );
+      var calls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls++;
+            expect(call.method, 'ensureNotificationPermission');
+            return true;
+          });
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final permission = PlatformMediaNotificationPermission();
+      expect(await permission.ensureGranted(), isTrue);
+      expect(await permission.ensureGranted(), isTrue);
+      expect(calls, 1);
+    },
+  );
+
   test('system media commands stay synchronized with the controller', () async {
     final engine = _HandlerEngine();
     const first = Track(
@@ -32,7 +64,10 @@ void main() {
       engine: engine,
       initialQueue: const [first, second],
     );
-    final handler = SoundAudioHandler()..attach(controller);
+    final notificationPermission = _RecordingNotificationPermission();
+    final handler = SoundAudioHandler(
+      notificationPermission: notificationPermission,
+    )..attach(controller);
     addTearDown(() {
       handler.detach();
       controller.dispose();
@@ -46,6 +81,7 @@ void main() {
     expect(handler.queue.value.map((item) => item.id), ['first', 'second']);
     expect(handler.playbackState.value.playing, isTrue);
     expect(handler.playbackState.value.controls, contains(MediaControl.pause));
+    expect(notificationPermission.requestCount, 1);
 
     await handler.seek(const Duration(seconds: 75));
     expect(controller.snapshot.position, const Duration(seconds: 75));
@@ -66,7 +102,18 @@ void main() {
     await handler.skipToPrevious();
     expect(controller.currentTrack, first);
     expect(handler.playbackState.value.queueIndex, 0);
+    expect(notificationPermission.requestCount, 1);
   });
+}
+
+class _RecordingNotificationPermission implements MediaNotificationPermission {
+  int requestCount = 0;
+
+  @override
+  Future<bool> ensureGranted() async {
+    requestCount++;
+    return true;
+  }
 }
 
 class _HandlerEngine implements PlaybackEngine {

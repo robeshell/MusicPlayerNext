@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -646,6 +647,7 @@ class _AppShellState extends State<AppShell> {
                 soundUsesDesktopPlatform ||
                 context.soundWindowClass != SoundWindowClass.compact;
             final sidebarWidth = context.soundSidebarWidth;
+            final safePadding = MediaQuery.paddingOf(context);
             final content = _selectedAlbum != null
                 ? AlbumDetailScreen(
                     album: _selectedAlbum!,
@@ -746,11 +748,8 @@ class _AppShellState extends State<AppShell> {
                                   selection: _section,
                                   libraryMode: _libraryBrowseMode,
                                   userMode: _libraryUserMode,
-                                  onSelect: _selectSection,
                                   onSelectLibraryMode: _selectLibraryMode,
                                   onSelectUserMode: _selectLibraryUserMode,
-                                  onShowKeyboardShortcuts:
-                                      _showKeyboardShortcuts,
                                 ),
                               ),
                               Expanded(
@@ -759,19 +758,27 @@ class _AppShellState extends State<AppShell> {
                                   right: false,
                                   bottom: false,
                                   minimum: EdgeInsets.only(
-                                    top: context.soundTitlebarInset,
+                                    top:
+                                        defaultTargetPlatform ==
+                                            TargetPlatform.macOS
+                                        ? context.soundTitlebarInset
+                                        : 50,
                                   ),
                                   child: content,
                                 ),
                               ),
                             ],
                           )
-                        : content,
+                        : SafeArea(
+                            key: const ValueKey('mobile-content-safe-area'),
+                            bottom: false,
+                            child: content,
+                          ),
                   ),
                   if (!desktop)
                     Positioned(
-                      left: 10,
-                      right: 10,
+                      left: safePadding.left + 10,
+                      right: safePadding.right + 10,
                       bottom: _compactMiniPlayerBottomGap,
                       child: MiniPlayer(
                         playback: widget.playback,
@@ -779,6 +786,27 @@ class _AppShellState extends State<AppShell> {
                         compact: true,
                         onOpen: _openNowPlaying,
                         onOpenQueue: _openQueue,
+                      ),
+                    ),
+                  if (desktop)
+                    // macOS paints this inside the full-size titlebar. Windows
+                    // keeps it in Flutter's client area, below the native
+                    // caption buttons, so Snap Layout and native hit testing
+                    // remain untouched.
+                    Positioned(
+                      top: 0,
+                      right: 14,
+                      child: SafeArea(
+                        minimum: EdgeInsets.only(
+                          top: defaultTargetPlatform == TargetPlatform.macOS
+                              ? 1
+                              : 6,
+                        ),
+                        child: _DesktopTopActions(
+                          selection: _section,
+                          onSearch: _openSearchFromKeyboard,
+                          onSettings: () => _selectSection(AppSection.settings),
+                        ),
                       ),
                     ),
                   Positioned.fill(
@@ -995,24 +1023,92 @@ bool _isTextEditingFocusActive() {
       focusContext.findAncestorWidgetOfExactType<EditableText>() != null;
 }
 
+class _DesktopTopActions extends StatelessWidget {
+  const _DesktopTopActions({
+    required this.selection,
+    required this.onSearch,
+    required this.onSettings,
+  });
+
+  final AppSection selection;
+  final VoidCallback onSearch;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _DesktopTopAction(
+            key: const ValueKey('desktop-search-action'),
+            icon: Icons.search_rounded,
+            tooltip: '搜索',
+            active: selection == AppSection.search,
+            onPressed: onSearch,
+          ),
+          const SizedBox(width: 2),
+          _DesktopTopAction(
+            key: const ValueKey('desktop-settings-action'),
+            icon: Icons.settings_outlined,
+            tooltip: '设置',
+            active: selection == AppSection.settings,
+            onPressed: onSettings,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopTopAction extends StatelessWidget {
+  const _DesktopTopAction({
+    required this.icon,
+    required this.tooltip,
+    required this.active,
+    required this.onPressed,
+    super.key,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool active;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+      style: IconButton.styleFrom(
+        foregroundColor: active
+            ? SoundColors.accent
+            : context.soundSecondaryText,
+        backgroundColor: active ? context.soundTint(0.055) : Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      icon: Icon(icon, size: 20),
+    );
+  }
+}
+
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.selection,
     required this.libraryMode,
     required this.userMode,
-    required this.onSelect,
     required this.onSelectLibraryMode,
     required this.onSelectUserMode,
-    required this.onShowKeyboardShortcuts,
   });
 
   final AppSection selection;
   final LibraryBrowseMode libraryMode;
   final LibraryUserBrowseMode? userMode;
-  final ValueChanged<AppSection> onSelect;
   final ValueChanged<LibraryBrowseMode> onSelectLibraryMode;
   final ValueChanged<LibraryUserBrowseMode> onSelectUserMode;
-  final VoidCallback onShowKeyboardShortcuts;
 
   @override
   Widget build(BuildContext context) {
@@ -1026,12 +1122,12 @@ class _Sidebar extends StatelessWidget {
         child: SafeArea(
           minimum: EdgeInsets.only(top: context.soundTitlebarInset),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 18, 10, 18),
+            padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: EdgeInsets.fromLTRB(10, 4, 10, 18),
+                  padding: EdgeInsets.fromLTRB(10, 2, 10, 12),
                   child: Row(
                     children: [
                       const Icon(
@@ -1056,12 +1152,6 @@ class _Sidebar extends StatelessWidget {
                   child: ListView(
                     padding: EdgeInsets.zero,
                     children: [
-                      _SidebarRow(
-                        label: '搜索',
-                        icon: Icons.search_rounded,
-                        active: selection == AppSection.search,
-                        onTap: () => onSelect(AppSection.search),
-                      ),
                       const _SidebarHeading('资料库'),
                       for (final mode in LibraryBrowseMode.values)
                         _SidebarRow(
@@ -1086,17 +1176,6 @@ class _Sidebar extends StatelessWidget {
                     ],
                   ),
                 ),
-                _SidebarRow(
-                  label: '快捷键',
-                  icon: Icons.keyboard_alt_outlined,
-                  onTap: onShowKeyboardShortcuts,
-                ),
-                _SidebarRow(
-                  label: '设置',
-                  icon: Icons.settings_outlined,
-                  active: selection == AppSection.settings,
-                  onTap: () => onSelect(AppSection.settings),
-                ),
               ],
             ),
           ),
@@ -1114,7 +1193,7 @@ class _SidebarHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 20, 10, 5),
+      padding: const EdgeInsets.fromLTRB(10, 13, 10, 3),
       child: Text(
         label,
         style: TextStyle(
@@ -1144,9 +1223,13 @@ class _SidebarRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
+      padding: EdgeInsets.zero,
       child: ListTile(
         dense: true,
+        minTileHeight: 38,
+        minVerticalPadding: 2,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+        visualDensity: const VisualDensity(horizontal: -1, vertical: -3),
         minLeadingWidth: 20,
         horizontalTitleGap: 8,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),

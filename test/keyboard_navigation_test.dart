@@ -93,7 +93,7 @@ void main() {
     expect(find.text('Test Album'), findsWidgets);
 
     await _sendPrimaryShortcut(tester, LogicalKeyboardKey.digit3);
-    expect(find.text('设置'), findsWidgets);
+    expect(find.byKey(const ValueKey('settings-overview')), findsOneWidget);
     expect(find.text('音乐来源'), findsOneWidget);
     await _sendPrimaryShortcut(tester, LogicalKeyboardKey.digit1);
     expect(find.text('Test Album'), findsWidgets);
@@ -107,6 +107,18 @@ void main() {
 
     await _sendPrimaryShortcut(tester, LogicalKeyboardKey.slash);
     expect(find.text('键盘快捷键'), findsOneWidget);
+    final shortcutDialog = tester.getRect(
+      find.byKey(const ValueKey('sound-dialog')),
+    );
+    expect(shortcutDialog.width, 540);
+    expect(shortcutDialog.height, lessThan(752));
+    expect(shortcutDialog.top, greaterThanOrEqualTo(24));
+    expect(
+      tester.getTopLeft(find.text('⌘/Ctrl + ← / →')).dy -
+          tester.getTopLeft(find.text('空格')).dy,
+      lessThan(50),
+      reason: 'Shortcut rows must stay compact instead of filling the dialog.',
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.text('键盘快捷键'), findsNothing);

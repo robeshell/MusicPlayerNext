@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../core/sound_theme.dart';
@@ -271,6 +272,16 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
       theme: SoundTheme.light,
       darkTheme: SoundTheme.dark,
       themeMode: ThemeMode.light,
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.dark.copyWith(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemStatusBarContrastEnforced: false,
+          systemNavigationBarContrastEnforced: false,
+        ),
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: playback == null
           ? const _PlaybackBootstrapScreen()
           : AppShell(

@@ -13,7 +13,7 @@ import '../widgets/source_badge.dart';
 import '../widgets/sound_components.dart';
 import 'library_user_screen.dart';
 
-enum LibraryBrowseMode { albums, artists, genres, songs }
+enum LibraryBrowseMode { albums, artists, songs }
 
 enum LibrarySortOrder {
   titleAscending,
@@ -28,14 +28,12 @@ extension LibraryBrowseModePresentation on LibraryBrowseMode {
   String get label => switch (this) {
     LibraryBrowseMode.albums => '专辑',
     LibraryBrowseMode.artists => '艺人',
-    LibraryBrowseMode.genres => '流派',
     LibraryBrowseMode.songs => '歌曲',
   };
 
   IconData get icon => switch (this) {
     LibraryBrowseMode.albums => Icons.album_outlined,
     LibraryBrowseMode.artists => Icons.person_outline_rounded,
-    LibraryBrowseMode.genres => Icons.grid_view_rounded,
     LibraryBrowseMode.songs => Icons.music_note_outlined,
   };
 }
@@ -93,6 +91,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return AnimatedBuilder(
       animation: Listenable.merge([widget.catalog, ?widget.userState]),
       builder: (context, _) {
+        final compact = context.soundIsCompact;
         final gutter = context.soundPageGutter;
         final bottomPadding = context.soundContentBottomPadding;
         final allAlbums = widget.catalog.albums;
@@ -108,27 +107,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
           allAlbums.map((album) => album.source),
         );
         final artists = _sortCollections(buildArtistCollections(albums));
-        final genres = _sortCollections(buildGenreCollections(albums));
         final resultCount = switch (widget.mode) {
           LibraryBrowseMode.albums => albums.length,
           LibraryBrowseMode.artists => artists.length,
-          LibraryBrowseMode.genres => genres.length,
           LibraryBrowseMode.songs => tracks.length,
         };
         return CustomScrollView(
           slivers: [
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(gutter, 28, gutter, 18),
-              sliver: SliverToBoxAdapter(
-                child: _LibraryHeader(
-                  mode: widget.mode,
-                  onModeChanged: widget.onModeChanged,
-                  albumCount: allAlbums.length,
-                  trackCount: widget.catalog.tracks.length,
-                  onOpenUserMode: widget.onOpenUserMode,
+            if (compact)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 10),
+                sliver: SliverToBoxAdapter(
+                  child: _CompactLibraryNavigation(
+                    mode: widget.mode,
+                    onModeChanged: widget.onModeChanged,
+                    onOpenUserMode: widget.onOpenUserMode,
+                  ),
                 ),
               ),
-            ),
             if (widget.catalog.status == LibraryCatalogStatus.loading)
               const SliverFillRemaining(
                 hasScrollBody: false,
@@ -149,7 +145,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
               )
             else ...[
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
+                padding: EdgeInsets.fromLTRB(
+                  gutter,
+                  compact ? 0 : 24,
+                  gutter,
+                  12,
+                ),
                 sliver: SliverToBoxAdapter(
                   child: _LibraryToolbar(
                     mode: widget.mode,
@@ -162,6 +163,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         setState(() => _sortByMode[widget.mode] = value),
                     onSourceChanged: (value) =>
                         setState(() => _sourceFilter = value),
+                    onPlayAll:
+                        widget.mode == LibraryBrowseMode.songs &&
+                            tracks.isNotEmpty
+                        ? () => widget.onPlayTrack(tracks.first, tracks)
+                        : null,
                   ),
                 ),
               ),
@@ -176,24 +182,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     albums,
                     gutter,
                     bottomPadding,
+                    compact: compact,
                   ),
                   LibraryBrowseMode.artists => _collectionSlivers(
                     artists,
                     gutter: gutter,
                     bottomPadding: bottomPadding,
                     emptyMessage: '资料库中没有可浏览的艺人。',
-                  ),
-                  LibraryBrowseMode.genres => _collectionSlivers(
-                    genres,
-                    gutter: gutter,
-                    bottomPadding: bottomPadding,
-                    emptyMessage: '资料库中没有流派信息。',
+                    compact: compact,
                   ),
                   LibraryBrowseMode.songs => _songSlivers(
                     tracks,
                     albumByTrackId,
                     gutter,
                     bottomPadding,
+                    compact: compact,
                   ),
                 },
             ],
@@ -301,24 +304,46 @@ class _LibraryScreenState extends State<LibraryScreen> {
   List<Widget> _albumSlivers(
     List<Album> albums,
     double gutter,
-    double bottomPadding,
-  ) {
+    double bottomPadding, {
+    required bool compact,
+  }) {
+    final spacing = compact ? 12.0 : 16.0;
+    final maxCardWidth = compact ? 180.0 : 210.0;
     return [
       SliverPadding(
-        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, bottomPadding),
-        sliver: SliverGrid.builder(
-          itemCount: albums.length,
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 210,
-            mainAxisExtent: 272,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 22,
-          ),
-          itemBuilder: (context, index) {
-            final album = albums[index];
-            return _AlbumCard(
-              album: album,
-              onTap: () => widget.onOpenAlbum(album),
+        padding: EdgeInsets.fromLTRB(
+          gutter,
+          compact ? 4 : 6,
+          gutter,
+          bottomPadding,
+        ),
+        sliver: SliverLayoutBuilder(
+          builder: (context, constraints) {
+            final columnCount =
+                ((constraints.crossAxisExtent + spacing) /
+                        (maxCardWidth + spacing))
+                    .ceil()
+                    .clamp(1, 12);
+            final cardWidth =
+                (constraints.crossAxisExtent - spacing * (columnCount - 1)) /
+                columnCount;
+            return SliverGrid.builder(
+              itemCount: albums.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columnCount,
+                // Two single-line labels, their internal gaps, and a small
+                // rounding allowance for platform font metrics.
+                mainAxisExtent: cardWidth + 46,
+                crossAxisSpacing: spacing,
+                mainAxisSpacing: spacing,
+              ),
+              itemBuilder: (context, index) {
+                final album = albums[index];
+                return _AlbumCard(
+                  album: album,
+                  onTap: () => widget.onOpenAlbum(album),
+                );
+              },
             );
           },
         ),
@@ -331,6 +356,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     required double gutter,
     required double bottomPadding,
     required String emptyMessage,
+    required bool compact,
   }) {
     if (collections.isEmpty) {
       return [
@@ -346,20 +372,40 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
     return [
       SliverPadding(
-        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, bottomPadding),
-        sliver: SliverGrid.builder(
-          itemCount: collections.length,
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 240,
-            mainAxisExtent: 300,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 22,
-          ),
-          itemBuilder: (context, index) {
-            final collection = collections[index];
-            return _CollectionCard(
-              collection: collection,
-              onTap: () => widget.onOpenCollection(collection),
+        padding: EdgeInsets.fromLTRB(
+          gutter,
+          compact ? 4 : 6,
+          gutter,
+          bottomPadding,
+        ),
+        sliver: SliverLayoutBuilder(
+          builder: (context, constraints) {
+            final spacing = compact ? 12.0 : 16.0;
+            final maxCardWidth = compact ? 180.0 : 220.0;
+            final columnCount =
+                ((constraints.crossAxisExtent + spacing) /
+                        (maxCardWidth + spacing))
+                    .ceil()
+                    .clamp(1, 12);
+            final cardWidth =
+                (constraints.crossAxisExtent - spacing * (columnCount - 1)) /
+                columnCount;
+            return SliverGrid.builder(
+              itemCount: collections.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columnCount,
+                mainAxisExtent: cardWidth + 46,
+                crossAxisSpacing: spacing,
+                mainAxisSpacing: spacing,
+              ),
+              itemBuilder: (context, index) {
+                final collection = collections[index];
+                return _CollectionCard(
+                  collection: collection,
+                  compact: compact,
+                  onTap: () => widget.onOpenCollection(collection),
+                );
+              },
             );
           },
         ),
@@ -371,18 +417,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
     List<Track> tracks,
     Map<String, Album> albumByTrackId,
     double gutter,
-    double bottomPadding,
-  ) {
+    double bottomPadding, {
+    required bool compact,
+  }) {
     return [
-      SliverPadding(
-        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 12),
-        sliver: SliverToBoxAdapter(
-          child: _SongHeader(
-            trackCount: tracks.length,
-            onPlayAll: () => widget.onPlayTrack(tracks.first, tracks),
+      if (!compact)
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 12),
+          sliver: SliverToBoxAdapter(
+            child: _SongHeader(
+              trackCount: tracks.length,
+              onPlayAll: () => widget.onPlayTrack(tracks.first, tracks),
+            ),
           ),
         ),
-      ),
       SliverPadding(
         padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottomPadding),
         sliver: SliverPrototypeExtentList.builder(
@@ -430,7 +478,7 @@ List<LibrarySortOrder> _sortOptions(LibraryBrowseMode mode) => switch (mode) {
     LibrarySortOrder.artistAscending,
     LibrarySortOrder.yearDescending,
   ],
-  LibraryBrowseMode.artists || LibraryBrowseMode.genres => const [
+  LibraryBrowseMode.artists => const [
     LibrarySortOrder.titleAscending,
     LibrarySortOrder.titleDescending,
     LibrarySortOrder.trackCountDescending,
@@ -478,6 +526,7 @@ class _LibraryTrackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = context.soundIsCompact;
     return SoundTrackActivation(
       onActivate: onTap,
       semanticLabel: track.title,
@@ -486,9 +535,15 @@ class _LibraryTrackRow extends StatelessWidget {
           border: Border(bottom: BorderSide(color: context.soundDivider)),
         ),
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 5),
+          contentPadding: compact
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(vertical: 5),
+          horizontalTitleGap: compact ? 10 : 16,
+          visualDensity: compact
+              ? const VisualDensity(horizontal: -1, vertical: -1)
+              : null,
           leading: SizedBox.square(
-            dimension: 48,
+            dimension: compact ? 44 : 48,
             child: AlbumArt(album: album, borderRadius: 6),
           ),
           title: Text(
@@ -503,109 +558,195 @@ class _LibraryTrackRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
           ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SourceBadge(track.source),
-              if (onToggleFavorite != null)
-                IconButton(
-                  key: ValueKey('favorite-library-${track.id}'),
-                  onPressed: onToggleFavorite,
-                  tooltip: favorite
-                      ? '取消收藏 ${track.title}'
-                      : '收藏 ${track.title}',
-                  color: favorite ? SoundColors.accent : null,
-                  icon: Icon(
-                    favorite
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                  ),
+          trailing: compact
+              ? PopupMenuButton<String>(
+                  key: ValueKey('library-track-actions-${track.id}'),
+                  tooltip: '歌曲操作',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.more_vert_rounded, size: 20),
+                  onSelected: (value) {
+                    if (value == 'favorite') onToggleFavorite?.call();
+                    if (value == 'playlist') onAddToPlaylist?.call();
+                    if (value == 'album') onOpenAlbum();
+                  },
+                  itemBuilder: (_) => [
+                    if (onToggleFavorite != null)
+                      PopupMenuItem(
+                        value: 'favorite',
+                        child: Text(favorite ? '取消收藏' : '收藏歌曲'),
+                      ),
+                    if (onAddToPlaylist != null)
+                      const PopupMenuItem(
+                        value: 'playlist',
+                        child: Text('添加到播放列表'),
+                      ),
+                    const PopupMenuItem(value: 'album', child: Text('打开专辑')),
+                  ],
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SourceBadge(track.source),
+                    if (onToggleFavorite != null)
+                      IconButton(
+                        key: ValueKey('favorite-library-${track.id}'),
+                        onPressed: onToggleFavorite,
+                        tooltip: favorite
+                            ? '取消收藏 ${track.title}'
+                            : '收藏 ${track.title}',
+                        color: favorite ? SoundColors.accent : null,
+                        icon: Icon(
+                          favorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                        ),
+                      ),
+                    if (onAddToPlaylist != null)
+                      IconButton(
+                        key: ValueKey('add-library-${track.id}-to-playlist'),
+                        onPressed: onAddToPlaylist,
+                        tooltip: '将 ${track.title} 添加到播放列表',
+                        icon: const Icon(Icons.playlist_add_rounded),
+                      ),
+                    IconButton(
+                      onPressed: onOpenAlbum,
+                      tooltip: '打开专辑 ${album.title}',
+                      icon: const Icon(Icons.chevron_right_rounded),
+                    ),
+                  ],
                 ),
-              if (onAddToPlaylist != null)
-                IconButton(
-                  key: ValueKey('add-library-${track.id}-to-playlist'),
-                  onPressed: onAddToPlaylist,
-                  tooltip: '将 ${track.title} 添加到播放列表',
-                  icon: const Icon(Icons.playlist_add_rounded),
-                ),
-              IconButton(
-                onPressed: onOpenAlbum,
-                tooltip: '打开专辑 ${album.title}',
-                icon: const Icon(Icons.chevron_right_rounded),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 }
 
-class _LibraryHeader extends StatelessWidget {
-  const _LibraryHeader({
+class _CompactLibraryNavigation extends StatelessWidget {
+  const _CompactLibraryNavigation({
     required this.mode,
     required this.onModeChanged,
-    required this.albumCount,
-    required this.trackCount,
     required this.onOpenUserMode,
   });
 
   final LibraryBrowseMode mode;
   final ValueChanged<LibraryBrowseMode> onModeChanged;
-  final int albumCount;
-  final int trackCount;
   final ValueChanged<LibraryUserBrowseMode>? onOpenUserMode;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      key: const ValueKey('compact-library-navigation'),
       children: [
-        Text(
-          '资料库',
-          style: TextStyle(
-            fontSize: context.soundPageTitleSize,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.8,
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          '$albumCount 张专辑 · $trackCount 首歌曲',
-          style: TextStyle(color: context.soundMutedText, fontSize: 12),
-        ),
-        const SizedBox(height: 20),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final candidate in LibraryBrowseMode.values)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    key: ValueKey('library-mode-${candidate.name}'),
-                    avatar: Icon(candidate.icon, size: 17),
-                    label: Text(candidate.label),
-                    selected: mode == candidate,
-                    onSelected: (_) => onModeChanged(candidate),
-                    selectedColor: SoundColors.accent.withValues(alpha: 0.14),
-                  ),
-                ),
-              if (onOpenUserMode case final openUserMode?)
-                for (final candidate in LibraryUserBrowseMode.values)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ActionChip(
-                      key: ValueKey('open-user-library-${candidate.name}'),
-                      avatar: Icon(candidate.icon, size: 17),
-                      label: Text(candidate.label),
-                      onPressed: () => openUserMode(candidate),
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.soundTint(0.035),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                for (final candidate in LibraryBrowseMode.values)
+                  Expanded(
+                    child: _CompactLibraryModeItem(
+                      mode: candidate,
+                      selected: mode == candidate,
+                      onTap: () => onModeChanged(candidate),
                     ),
                   ),
+              ],
+            ),
+          ),
+        ),
+        if (onOpenUserMode case final openUserMode?) ...[
+          const SizedBox(width: 8),
+          PopupMenuButton<LibraryUserBrowseMode>(
+            key: const ValueKey('mobile-library-user-menu'),
+            tooltip: '我的音乐',
+            onSelected: openUserMode,
+            itemBuilder: (_) => [
+              for (final candidate in LibraryUserBrowseMode.values)
+                PopupMenuItem(
+                  value: candidate,
+                  child: Row(
+                    children: [
+                      Icon(candidate.icon, size: 18),
+                      const SizedBox(width: 10),
+                      Text(candidate.label),
+                    ],
+                  ),
+                ),
+            ],
+            child: Container(
+              width: 42,
+              height: 42,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: context.soundTint(0.035),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.more_horiz_rounded, size: 21),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CompactLibraryModeItem extends StatelessWidget {
+  const _CompactLibraryModeItem({
+    required this.mode,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final LibraryBrowseMode mode;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: InkWell(
+        key: ValueKey('library-mode-${mode.name}'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 42,
+          decoration: BoxDecoration(
+            color: selected
+                ? SoundColors.accent.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                mode.icon,
+                size: 17,
+                color: selected
+                    ? SoundColors.accent
+                    : context.soundSecondaryText,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                mode.label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: selected
+                      ? context.soundPrimaryText
+                      : context.soundSecondaryText,
+                ),
+              ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -620,6 +761,7 @@ class _LibraryToolbar extends StatelessWidget {
     required this.sourceOptions,
     required this.onSortChanged,
     required this.onSourceChanged,
+    required this.onPlayAll,
   });
 
   final LibraryBrowseMode mode;
@@ -630,69 +772,168 @@ class _LibraryToolbar extends StatelessWidget {
   final List<LibrarySourceFilter> sourceOptions;
   final ValueChanged<LibrarySortOrder> onSortChanged;
   final ValueChanged<LibrarySourceFilter> onSourceChanged;
+  final VoidCallback? onPlayAll;
+
+  String get _resultLabel => switch (mode) {
+    LibraryBrowseMode.albums => '$resultCount 张专辑',
+    LibraryBrowseMode.artists => '$resultCount 位艺人',
+    LibraryBrowseMode.songs => '$resultCount 首歌曲',
+  };
 
   @override
   Widget build(BuildContext context) {
+    if (context.soundIsCompact) {
+      return SizedBox(
+        key: const ValueKey('compact-library-toolbar'),
+        height: 40,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _resultLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: context.soundMutedText, fontSize: 12),
+              ),
+            ),
+            if (onPlayAll != null) ...[
+              _CompactPlayAllButton(onPressed: onPlayAll!),
+              const SizedBox(width: 6),
+            ],
+            _sortMenu(
+              child: _CompactToolbarButton(
+                icon: Icons.sort_rounded,
+                tooltip: '排序：${sortOrder.label}',
+              ),
+            ),
+            const SizedBox(width: 6),
+            _sourceMenu(
+              child: _CompactToolbarButton(
+                icon: sourceFilter.icon,
+                tooltip: '来源：${sourceFilter.label}',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text(switch (mode) {
-          LibraryBrowseMode.albums => '$resultCount 张专辑',
-          LibraryBrowseMode.artists => '$resultCount 位艺人',
-          LibraryBrowseMode.genres => '$resultCount 个流派',
-          LibraryBrowseMode.songs => '$resultCount 首歌曲',
-        }, style: TextStyle(color: context.soundMutedText, fontSize: 12)),
-        PopupMenuButton<LibrarySortOrder>(
-          key: const ValueKey('library-sort-menu'),
-          tooltip: '选择排序方式',
-          initialValue: sortOrder,
-          onSelected: onSortChanged,
-          itemBuilder: (context) => [
-            for (final option in sortOptions)
-              PopupMenuItem(
-                value: option,
-                child: _MenuItemLabel(
-                  label: option.label,
-                  selected: option == sortOrder,
-                ),
-              ),
-          ],
+        Text(
+          _resultLabel,
+          style: TextStyle(color: context.soundMutedText, fontSize: 12),
+        ),
+        _sortMenu(
           child: _ToolbarButton(
             icon: Icons.sort_rounded,
             label: sortOrder.label,
           ),
         ),
-        PopupMenuButton<LibrarySourceFilter>(
-          key: const ValueKey('library-source-menu'),
-          tooltip: '筛选音乐来源',
-          initialValue: sourceFilter,
-          onSelected: onSourceChanged,
-          itemBuilder: (context) => [
-            for (final option in sourceOptions)
-              PopupMenuItem(
-                value: option,
-                child: Row(
-                  children: [
-                    Icon(option.icon, size: 18),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MenuItemLabel(
-                        label: option.label,
-                        selected: option == sourceFilter,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
+        _sourceMenu(
           child: _ToolbarButton(
             icon: sourceFilter.icon,
             label: sourceFilter.label,
           ),
         ),
       ],
+    );
+  }
+
+  Widget _sortMenu({required Widget child}) {
+    return PopupMenuButton<LibrarySortOrder>(
+      key: const ValueKey('library-sort-menu'),
+      tooltip: '选择排序方式',
+      initialValue: sortOrder,
+      onSelected: onSortChanged,
+      itemBuilder: (context) => [
+        for (final option in sortOptions)
+          PopupMenuItem(
+            value: option,
+            child: _MenuItemLabel(
+              label: option.label,
+              selected: option == sortOrder,
+            ),
+          ),
+      ],
+      child: child,
+    );
+  }
+
+  Widget _sourceMenu({required Widget child}) {
+    return PopupMenuButton<LibrarySourceFilter>(
+      key: const ValueKey('library-source-menu'),
+      tooltip: '筛选音乐来源',
+      initialValue: sourceFilter,
+      onSelected: onSourceChanged,
+      itemBuilder: (context) => [
+        for (final option in sourceOptions)
+          PopupMenuItem(
+            value: option,
+            child: Row(
+              children: [
+                Icon(option.icon, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _MenuItemLabel(
+                    label: option.label,
+                    selected: option == sourceFilter,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: child,
+    );
+  }
+}
+
+class _CompactToolbarButton extends StatelessWidget {
+  const _CompactToolbarButton({required this.icon, required this.tooltip});
+
+  final IconData icon;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: context.soundTint(0.045),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, size: 19, color: context.soundSecondaryText),
+      ),
+    );
+  }
+}
+
+class _CompactPlayAllButton extends StatelessWidget {
+  const _CompactPlayAllButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      key: const ValueKey('compact-library-play-all'),
+      onPressed: onPressed,
+      icon: const Icon(Icons.play_arrow_rounded, size: 17),
+      label: const Text('播放全部'),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        backgroundColor: SoundColors.accent,
+        foregroundColor: Colors.white,
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+      ),
     );
   }
 }
@@ -908,29 +1149,19 @@ class _AlbumCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AlbumArt(album: album),
-          const SizedBox(height: 10),
+          const SizedBox(height: 7),
           Text(
             album.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 5),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  album.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.soundSecondaryText,
-                  ),
-                ),
-              ),
-              SourceBadge(album.source),
-            ],
+          const SizedBox(height: 2),
+          Text(
+            album.artist,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
           ),
         ],
       ),
@@ -939,9 +1170,14 @@ class _AlbumCard extends StatelessWidget {
 }
 
 class _CollectionCard extends StatelessWidget {
-  const _CollectionCard({required this.collection, required this.onTap});
+  const _CollectionCard({
+    required this.collection,
+    required this.compact,
+    required this.onTap,
+  });
 
   final LibraryCollection collection;
+  final bool compact;
   final VoidCallback onTap;
 
   @override
@@ -957,35 +1193,36 @@ class _CollectionCard extends StatelessWidget {
           Stack(
             children: [
               AlbumArt(album: album),
-              Positioned(
-                right: 10,
-                bottom: 10,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.62),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Icon(
-                      collection.kind == LibraryCollectionKind.artist
-                          ? Icons.person_rounded
-                          : Icons.grid_view_rounded,
-                      size: 18,
+              if (!compact)
+                Positioned(
+                  right: 10,
+                  bottom: 10,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        collection.kind == LibraryCollectionKind.artist
+                            ? Icons.person_rounded
+                            : Icons.grid_view_rounded,
+                        size: 18,
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 7),
           Text(
             collection.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 2),
           Text(
             '${collection.albums.length} 张专辑 · ${collection.tracks.length} 首歌',
             maxLines: 1,

@@ -68,4 +68,19 @@ void main() {
 
     expect(second, first);
   });
+
+  test('accepts raw local paths with CJK and literal percent characters', () {
+    expect(
+      normalizedAlbumReleaseFolder('华语/起风了 100%/买辣椒也用券 - 起风了.mp3'),
+      '华语/起风了 100%',
+    );
+    expect(
+      () => stableGroupedAlbumId(
+        sourceId: 'local:music',
+        albumTitle: '起风了',
+        relativePath: '买辣椒也用券 - 起风了（Cover 高橋優）.mp3',
+      ),
+      returnsNormally,
+    );
+  });
 }

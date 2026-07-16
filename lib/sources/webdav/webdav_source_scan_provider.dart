@@ -80,5 +80,6 @@ SourceScanSummary _summary(WebDavFolderScanResult report) {
     movedTracks: report.movedTracks,
     removedTracks: report.removedTracks,
     unchangedTracks: report.unchangedTracks,
+    warnings: report.warnings,
   );
 }

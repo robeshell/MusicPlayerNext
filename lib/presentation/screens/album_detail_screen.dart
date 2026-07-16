@@ -156,37 +156,27 @@ class _Hero extends StatelessWidget {
             : offline!.pinnedCount(supportedTracks);
         final details = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '专辑',
-              style: TextStyle(
-                color: album.palette.first,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
-              ),
-            ),
-            const SizedBox(height: 8),
             Text(
               album.title,
               style: TextStyle(
-                fontSize: compact ? 28 : 34,
-                height: 1.05,
+                fontSize: compact ? 24 : 32,
+                height: 1.08,
                 fontWeight: FontWeight.w900,
-                letterSpacing: -1,
+                letterSpacing: -0.8,
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: compact ? 5 : 7),
             Text(
               album.artist,
               style: TextStyle(
                 color: context.soundSecondaryText,
-                fontSize: 14,
+                fontSize: compact ? 14 : 15,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: compact ? 7 : 10),
             Wrap(
               spacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -195,12 +185,13 @@ class _Hero extends StatelessWidget {
                   metadata,
                   style: TextStyle(fontSize: 13, color: context.soundMutedText),
                 ),
-                SourceBadge(album.source),
+                if (!compact) SourceBadge(album.source),
               ],
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: compact ? 14 : 18),
             Wrap(
               spacing: 10,
+              runSpacing: 8,
               children: [
                 FilledButton.icon(
                   onPressed: album.tracks.isEmpty
@@ -214,9 +205,10 @@ class _Hero extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: SoundColors.accent,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 11,
+                    minimumSize: Size(0, compact ? 40 : 44),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 16 : 18,
+                      vertical: compact ? 8 : 10,
                     ),
                   ),
                 ),
@@ -248,42 +240,64 @@ class _Hero extends StatelessWidget {
           ],
         );
 
+        final artworkSize = compact
+            ? 156.0
+            : constraints.maxWidth >= 1000
+            ? 196.0
+            : 180.0;
+
         return Container(
+          key: const ValueKey('album-detail-hero'),
           padding: EdgeInsets.fromLTRB(
             context.soundPageGutter,
-            20,
+            compact ? 8 : 14,
             context.soundPageGutter,
-            28,
+            compact ? 16 : 22,
           ),
           decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: const Alignment(-0.65, 0.8),
-              radius: 1.2,
-              colors: [
-                album.palette.first.withValues(alpha: 0.22),
-                Colors.transparent,
-              ],
-            ),
+            border: Border(bottom: BorderSide(color: context.soundDivider)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               IconButton(
                 onPressed: onBack,
+                tooltip: '返回',
                 icon: const Icon(Icons.arrow_back_rounded),
+                style: compact
+                    ? IconButton.styleFrom(
+                        minimumSize: const Size.square(40),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      )
+                    : null,
               ),
-              const SizedBox(height: 18),
+              SizedBox(height: compact ? 4 : 10),
               if (compact) ...[
-                Center(child: AlbumArt(album: album, size: 220)),
-                const SizedBox(height: 28),
+                Center(
+                  child: AlbumArt(
+                    key: const ValueKey('album-detail-artwork'),
+                    album: album,
+                    size: artworkSize,
+                  ),
+                ),
+                const SizedBox(height: 14),
                 details,
               ] else
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    AlbumArt(album: album, size: 220),
-                    const SizedBox(width: 32),
-                    Expanded(child: details),
+                    AlbumArt(
+                      key: const ValueKey('album-detail-artwork'),
+                      album: album,
+                      size: artworkSize,
+                    ),
+                    const SizedBox(width: 28),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: details,
+                      ),
+                    ),
                   ],
                 ),
             ],
@@ -357,12 +371,15 @@ class _TrackRow extends StatelessWidget {
     return SoundTrackActivation(
       onActivate: onTap,
       semanticLabel: track.title,
+      showFocusOutline: false,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        key: ValueKey('album-track-row-${track.id}'),
+        constraints: const BoxConstraints(minHeight: 50),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(
           color: active
-              ? SoundColors.accent.withValues(alpha: 0.06)
+              ? SoundColors.accent.withValues(alpha: 0.075)
               : Colors.transparent,
           border: Border(bottom: BorderSide(color: context.soundDivider)),
         ),
@@ -407,6 +424,13 @@ class _TrackRow extends StatelessWidget {
             PopupMenuButton<String>(
               key: ValueKey('track-actions-${track.id}'),
               tooltip: '歌曲操作',
+              padding: EdgeInsets.zero,
+              iconSize: 20,
+              style: IconButton.styleFrom(
+                minimumSize: const Size.square(32),
+                maximumSize: const Size.square(32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               onSelected: (value) {
                 if (value == 'play-next') onPlayNext();
                 if (value == 'favorite') onToggleFavorite?.call();
@@ -588,50 +612,23 @@ Future<bool> _confirmRemoveOfflineAlbum(
 ) async {
   return await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => Dialog(
-          backgroundColor: Colors.transparent,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: SoundGlassSurface(
-              strong: true,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '移除离线下载？',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '将删除「$albumTitle」已下载的音频，不会影响音乐来源中的原文件。',
-                      style: TextStyle(color: dialogContext.soundMutedText),
-                    ),
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('取消'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: const Text('移除'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+        builder: (dialogContext) => SoundDialog(
+          maxWidth: 400,
+          title: const Text('移除离线下载？'),
+          content: Text(
+            '将删除「$albumTitle」已下载的音频，不会影响音乐来源中的原文件。',
+            style: TextStyle(color: dialogContext.soundMutedText),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('移除'),
+            ),
+          ],
         ),
       ) ??
       false;

@@ -61,6 +61,7 @@ class SourceScanSummary {
     this.movedTracks = 0,
     this.removedTracks = 0,
     this.unchangedTracks = 0,
+    this.warnings = const <String>[],
   });
 
   final int indexedTracks;
@@ -70,6 +71,7 @@ class SourceScanSummary {
   final int movedTracks;
   final int removedTracks;
   final int unchangedTracks;
+  final List<String> warnings;
 }
 
 abstract interface class SourceScanProvider {

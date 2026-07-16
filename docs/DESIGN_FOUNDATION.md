@@ -7,6 +7,10 @@ principles require a deliberate design review.
 
 Reference: [light glass settings concept](screenshots/settings-light-glass-concept.png).
 
+Phone and compact-window behavior is defined separately in
+[MOBILE_DESIGN_SPEC.md](MOBILE_DESIGN_SPEC.md). The mobile document overrides
+desktop spacing and component composition where the two differ.
+
 ## Product character
 
 Sound is an artwork-first personal music player for local and remote libraries.
@@ -116,7 +120,7 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
 
 ## Responsive layout
 
-- Compact mobile/tablet windows (below 820 px or below 600 px tall): 18 px
+- Compact mobile/tablet windows (below 820 px or below 600 px tall): 16 px
   gutter, bottom navigation, stacked album detail, compact player, and
   full-screen now playing.
 - Medium (820-1099 px): 24 px gutter, 216 px sidebar, two-column detail where

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
 
 import '../domain/library_models.dart';
@@ -46,9 +47,7 @@ class JustAudioPlaybackEngine
              // its WinRT implementation does not expose request headers.
              useProxyForRequestHeaders: useProxyForPlaybackRequestHeaders,
            ) {
-    _configuration = _validationMuted
-        ? _player.setVolume(0)
-        : Future<void>.value();
+    _configuration = _configurePlayer(_player);
     _subscriptions.addAll([
       _player
           .createPositionStream(
@@ -107,6 +106,19 @@ class JustAudioPlaybackEngine
     sessionId: sessionId,
     loopMode: PlaybackQueueLoopMode.off,
   );
+
+  static Future<void> _configurePlayer(just_audio.AudioPlayer player) async {
+    final supportsAudioSession =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+    if (supportsAudioSession) {
+      final session = await AudioSession.instance;
+      await session.configure(AudioSessionConfiguration.music());
+    }
+    if (_validationMuted) await player.setVolume(0);
+  }
 
   @override
   Future<void> loadQueue(

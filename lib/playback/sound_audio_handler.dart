@@ -3,12 +3,18 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 
 import '../domain/library_models.dart';
+import 'media_notification_permission.dart';
 import 'playback_controller.dart';
 import 'playback_engine.dart';
 
 /// Bridges Android/iOS system media controls back into the existing playback
 /// controller. The controller remains the only queue and command authority.
 class SoundAudioHandler extends BaseAudioHandler {
+  SoundAudioHandler({MediaNotificationPermission? notificationPermission})
+    : _notificationPermission =
+          notificationPermission ?? PlatformMediaNotificationPermission();
+
+  final MediaNotificationPermission _notificationPermission;
   SoundPlaybackController? _controller;
   String? _lastMediaSignature;
   String? _lastQueueSignature;
@@ -16,6 +22,7 @@ class SoundAudioHandler extends BaseAudioHandler {
   DateTime? _lastStateAt;
   Duration _lastStatePosition = Duration.zero;
   bool _lastStatePlaying = false;
+  bool _notificationPermissionRequested = false;
 
   void attach(SoundPlaybackController controller) {
     if (identical(_controller, controller)) return;
@@ -120,6 +127,14 @@ class SoundAudioHandler extends BaseAudioHandler {
     _lastStateAt = now;
     _lastStatePosition = position;
     _lastStatePlaying = snapshot.isPlaying;
+    if (snapshot.isPlaying && !_notificationPermissionRequested) {
+      _notificationPermissionRequested = true;
+      unawaited(
+        _notificationPermission.ensureGranted().then((_) {
+          if (identical(_controller, controller)) _sync(force: true);
+        }),
+      );
+    }
     playbackState.add(
       PlaybackState(
         controls: [

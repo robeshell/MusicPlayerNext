@@ -75,12 +75,45 @@ void main() {
 
     expect(find.byTooltip('播放队列'), findsOneWidget);
     expect(find.byTooltip('列表循环'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('now-playing-view-switch')))
+          .height,
+      lessThanOrEqualTo(36),
+    );
+    final coverChoice = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('now-playing-view-cover')),
+    );
+    final lyricsChoice = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('now-playing-view-lyrics')),
+    );
+    expect((coverChoice.decoration! as BoxDecoration).color, isNotNull);
+    expect(
+      (lyricsChoice.decoration! as BoxDecoration).color,
+      Colors.transparent,
+    );
+    await tester.tap(find.text('歌词'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(
+      (tester
+                  .widget<AnimatedContainer>(
+                    find.byKey(const ValueKey('now-playing-view-lyrics')),
+                  )
+                  .decoration!
+              as BoxDecoration)
+          .color,
+      isNot(Colors.transparent),
+    );
+    await tester.tap(find.text('封面'));
+    await tester.pump(const Duration(milliseconds: 200));
     await tester.tap(find.byTooltip('随机播放'));
     await tester.pump();
     expect(playback.playbackMode, PlaybackMode.shuffle);
 
     await tester.tap(find.byTooltip('播放队列'));
-    await tester.pumpAndSettle();
+    // The artwork background intentionally animates continuously while music
+    // is playing, so waiting for the whole tree to settle would never finish.
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('播放队列'), findsOneWidget);
     expect(find.textContaining('随机播放'), findsWidgets);
 
@@ -119,6 +152,21 @@ void main() {
     );
     await tester.pump();
 
+    final artworkSize = tester.getSize(
+      find.byKey(const ValueKey('album-detail-artwork')),
+    );
+    expect(artworkSize.width, lessThanOrEqualTo(196));
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('album-track-row-first')))
+          .height,
+      lessThanOrEqualTo(54),
+    );
+    final hero = tester.widget<Container>(
+      find.byKey(const ValueKey('album-detail-hero')),
+    );
+    expect((hero.decoration! as BoxDecoration).gradient, isNull);
+
     await tester.ensureVisible(
       find.byKey(const ValueKey('track-actions-third')),
     );
@@ -134,6 +182,61 @@ void main() {
     playback.dispose();
     engine.dispose();
   });
+
+  testWidgets(
+    'compact album detail keeps the first track in the first screen',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final engine = SimulatedPlaybackEngine();
+      final playback = SoundPlaybackController(engine: engine);
+      final album = Album(
+        id: 'compact-album',
+        title: 'A Long Mobile Album Title',
+        artist: 'Artist',
+        source: SourceKind.local,
+        palette: albumPaletteForId('compact-album'),
+        tracks: const [_first, _second],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AlbumDetailScreen(
+            album: album,
+            playback: playback,
+            onBack: () {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        tester.getSize(find.byKey(const ValueKey('album-detail-artwork'))),
+        const Size.square(156),
+      );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('album-detail-hero'))).height,
+        lessThan(420),
+      );
+      expect(find.text('本地'), findsNothing);
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('album-track-row-first')))
+            .dy,
+        lessThan(844),
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = null;
+      playback.dispose();
+      engine.dispose();
+    },
+  );
 
   testWidgets('album detail separates discs and preserves playback order', (
     tester,

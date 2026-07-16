@@ -37,7 +37,7 @@ void main() {
               ),
               WebDavFileEntry(
                 href: '/dav/music/song.flac',
-                displayName: 'song.flac',
+                displayName: 'Friendly song title',
                 isCollection: false,
                 contentLength: 42,
               ),
@@ -67,7 +67,7 @@ void main() {
             .toList(),
         [
           ('/dav/music/Album/', 'Album', true),
-          ('/dav/music/song.flac', 'song.flac', false),
+          ('/dav/music/song.flac', 'Friendly song title', false),
         ],
       );
     },

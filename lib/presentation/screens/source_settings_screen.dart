@@ -206,7 +206,8 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '已索引 ${report.indexedTracks} 首歌曲$changeSummary$skipped',
+            '已索引 ${report.indexedTracks} 首歌曲$changeSummary$skipped'
+            '${_scanWarningSuffix(report)}',
           ),
         ),
       );
@@ -416,7 +417,13 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
     final skipped = result.skippedFiles == 0
         ? ''
         : '，跳过 ${result.skippedFiles} 个文件';
-    return '已索引 ${result.indexedTracks} 首歌曲$changeSummary$skipped';
+    return '已索引 ${result.indexedTracks} 首歌曲$changeSummary$skipped'
+        '${_scanWarningSuffix(result)}';
+  }
+
+  String _scanWarningSuffix(SourceScanSummary result) {
+    if (result.warnings.isEmpty) return '';
+    return '；首个原因：${result.warnings.first}';
   }
 
   Widget _remoteSection(RemoteSourceSettingsAdapter adapter) {

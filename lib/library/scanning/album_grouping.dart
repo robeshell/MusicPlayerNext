@@ -66,7 +66,10 @@ String normalizedAlbumGroupingText(String value) =>
 String _decodePathSegment(String value) {
   try {
     return Uri.decodeComponent(value);
-  } on FormatException {
+  } on ArgumentError {
+    // Local file-system paths are not URI components. In particular, raw
+    // CJK names and literal percent signs must be preserved instead of making
+    // album grouping reject an otherwise valid audio file.
     return value;
   }
 }

@@ -116,6 +116,7 @@ class LocalLibraryScanner {
       final tracks = <LibraryTrackRecord>[];
       final lyrics = <LibraryLyricRecord>[];
       final warnings = <String>[];
+      StackTrace? firstFailureStack;
       var addedTracks = 0;
       var modifiedTracks = 0;
       var movedTracks = 0;
@@ -250,8 +251,9 @@ class LocalLibraryScanner {
           } else {
             addedTracks++;
           }
-        } catch (error) {
+        } catch (error, stackTrace) {
           if (error is ScanCancelledException) rethrow;
+          firstFailureStack ??= stackTrace;
           warnings.add('${audioFile.relativePath}: $error');
         } finally {
           try {
@@ -263,6 +265,15 @@ class LocalLibraryScanner {
       }
 
       token.throwIfCancelled();
+      if (files.isNotEmpty && tracks.isEmpty && warnings.isNotEmpty) {
+        Error.throwWithStackTrace(
+          StateError(
+            '发现 ${files.length} 个受支持的音频文件，但全部无法建立索引。'
+            '首个错误：${warnings.first}',
+          ),
+          firstFailureStack ?? StackTrace.current,
+        );
+      }
       final completedAt = _clock().toUtc();
       final referencedAlbumIds = tracks
           .map((track) => track.albumId)

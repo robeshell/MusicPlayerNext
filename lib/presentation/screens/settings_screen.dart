@@ -18,6 +18,17 @@ import 'source_settings_screen.dart';
 
 enum SettingsDestination { overview, sources, offline, diagnostics }
 
+enum _SettingsGroup { playback, library, operation, about }
+
+extension on _SettingsGroup {
+  String get label => switch (this) {
+    _SettingsGroup.playback => '播放',
+    _SettingsGroup.library => '资料库',
+    _SettingsGroup.operation => '操作',
+    _SettingsGroup.about => '关于',
+  };
+}
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     required this.playback,
@@ -48,8 +59,20 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late SettingsDestination _destination = widget.initialDestination;
+  final ScrollController _overviewScrollController = ScrollController();
+  final Map<_SettingsGroup, GlobalKey> _groupKeys = {
+    for (final group in _SettingsGroup.values) group: GlobalKey(),
+  };
+  _SettingsGroup _selectedGroup = _SettingsGroup.playback;
+  bool _groupSyncScheduled = false;
   bool _playbackModesExpanded = false;
   bool _sleepTimerExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _overviewScrollController.addListener(_scheduleGroupSync);
+  }
 
   @override
   void didUpdateWidget(SettingsScreen oldWidget) {
@@ -57,6 +80,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (oldWidget.initialDestination != widget.initialDestination) {
       _destination = widget.initialDestination;
     }
+  }
+
+  @override
+  void dispose() {
+    _overviewScrollController
+      ..removeListener(_scheduleGroupSync)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _scheduleGroupSync() {
+    if (_groupSyncScheduled || _destination != SettingsDestination.overview) {
+      return;
+    }
+    _groupSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _groupSyncScheduled = false;
+      if (!mounted || _destination != SettingsDestination.overview) return;
+      var nearest = _selectedGroup;
+      var nearestDistance = double.infinity;
+      for (final group in _SettingsGroup.values) {
+        final sectionContext = _groupKeys[group]?.currentContext;
+        final renderObject = sectionContext?.findRenderObject();
+        if (renderObject is! RenderBox || !renderObject.attached) continue;
+        final distance = (renderObject.localToGlobal(Offset.zero).dy - 74)
+            .abs();
+        if (distance < nearestDistance) {
+          nearest = group;
+          nearestDistance = distance;
+        }
+      }
+      if (nearest != _selectedGroup) setState(() => _selectedGroup = nearest);
+    });
+  }
+
+  Future<void> _scrollToGroup(_SettingsGroup group) async {
+    setState(() => _selectedGroup = group);
+    final sectionContext = _groupKeys[group]?.currentContext;
+    final renderObject = sectionContext?.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !_overviewScrollController.hasClients) {
+      return;
+    }
+    final position = _overviewScrollController.position;
+    final target =
+        (_overviewScrollController.offset +
+                renderObject.localToGlobal(Offset.zero).dy -
+                72)
+            .clamp(position.minScrollExtent, position.maxScrollExtent)
+            .toDouble();
+    await _overviewScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -92,138 +171,255 @@ class _SettingsScreenState extends State<SettingsScreen> {
         widget.diagnostics,
         ?widget.offline,
       ]),
-      builder: (context, _) => ListView(
+      builder: (context, _) => CustomScrollView(
         key: const ValueKey('settings-overview'),
-        padding: EdgeInsets.fromLTRB(
-          context.soundPageGutter,
-          28,
-          context.soundPageGutter,
-          context.soundContentBottomPadding,
-        ),
-        children: [
-          Text(
-            '设置',
-            style: TextStyle(
-              fontSize: context.soundPageTitleSize,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.8,
+        controller: _overviewScrollController,
+        slivers: [
+          SliverPersistentHeader(
+            pinned: false,
+            delegate: _SettingsTabsHeader(
+              selected: _selectedGroup,
+              onSelected: (group) => unawaited(_scrollToGroup(group)),
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            '调整播放、资料库和应用操作。',
-            style: TextStyle(color: context.soundMutedText, fontSize: 12),
-          ),
-          const SizedBox(height: 26),
-          _SettingsSection(
-            title: '播放',
-            children: [
-              _SettingsRow(
-                icon: _playbackModeIcon(widget.playback.playbackMode),
-                iconColor: SoundColors.accent,
-                title: '播放模式',
-                subtitle: '控制队列结束和切歌时的行为',
-                value: widget.playback.playbackMode.label,
-                expanded: _playbackModesExpanded,
-                onTap: () => setState(
-                  () => _playbackModesExpanded = !_playbackModesExpanded,
-                ),
-              ),
-              if (_playbackModesExpanded)
-                _PlaybackModeSelector(
-                  selected: widget.playback.playbackMode,
-                  onSelected: (mode) {
-                    widget.playback.setPlaybackMode(mode);
-                    setState(() => _playbackModesExpanded = false);
-                  },
-                ),
-              _SettingsRow(
-                key: const ValueKey('settings-sleep-timer-row'),
-                icon: Icons.bedtime_outlined,
-                iconColor: SoundColors.webDav,
-                title: '睡眠定时',
-                subtitle: '定时暂停，或在当前歌曲播放结束后停止',
-                value: _sleepTimerLabel(widget.sleepTimer),
-                expanded: _sleepTimerExpanded,
-                onTap: () =>
-                    setState(() => _sleepTimerExpanded = !_sleepTimerExpanded),
-              ),
-              if (_sleepTimerExpanded)
-                _SleepTimerSelector(
-                  timer: widget.sleepTimer,
-                  hasTrack: widget.playback.displayTrack != null,
-                ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          _SettingsSection(
-            title: '资料库',
-            children: [
-              _SettingsRow(
-                key: const ValueKey('settings-sources-row'),
-                icon: Icons.library_music_rounded,
-                iconColor: SoundColors.local,
-                title: '音乐来源',
-                subtitle: '管理本地文件夹、WebDAV 服务器和扫描目录',
-                onTap: () =>
-                    setState(() => _destination = SettingsDestination.sources),
-              ),
-              if (widget.offline != null)
-                _SettingsRow(
-                  key: const ValueKey('settings-offline-row'),
-                  icon: Icons.download_for_offline_outlined,
-                  iconColor: SoundColors.webDav,
-                  title: '离线与缓存',
-                  subtitle: '管理远程来源的离线歌曲、临时缓存和存储空间',
-                  value: _formatBytes(widget.offline!.stats.totalBytes),
-                  onTap: () => setState(
-                    () => _destination = SettingsDestination.offline,
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              context.soundPageGutter,
+              14,
+              context.soundPageGutter,
+              context.soundContentBottomPadding,
+            ),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  _SettingsSection(
+                    key: _groupKeys[_SettingsGroup.playback],
+                    title: '播放',
+                    flat: true,
+                    children: [
+                      _SettingsRow(
+                        flat: true,
+                        icon: _playbackModeIcon(widget.playback.playbackMode),
+                        iconColor: SoundColors.accent,
+                        title: '播放模式',
+                        subtitle: '控制队列结束和切歌时的行为',
+                        value: widget.playback.playbackMode.label,
+                        expanded: _playbackModesExpanded,
+                        onTap: () => setState(
+                          () =>
+                              _playbackModesExpanded = !_playbackModesExpanded,
+                        ),
+                      ),
+                      if (_playbackModesExpanded)
+                        _PlaybackModeSelector(
+                          selected: widget.playback.playbackMode,
+                          onSelected: (mode) {
+                            widget.playback.setPlaybackMode(mode);
+                            setState(() => _playbackModesExpanded = false);
+                          },
+                        ),
+                      _SettingsRow(
+                        key: const ValueKey('settings-sleep-timer-row'),
+                        flat: true,
+                        icon: Icons.bedtime_outlined,
+                        iconColor: SoundColors.webDav,
+                        title: '睡眠定时',
+                        subtitle: '定时暂停，或在当前歌曲播放结束后停止',
+                        value: _sleepTimerLabel(widget.sleepTimer),
+                        expanded: _sleepTimerExpanded,
+                        onTap: () => setState(
+                          () => _sleepTimerExpanded = !_sleepTimerExpanded,
+                        ),
+                      ),
+                      if (_sleepTimerExpanded)
+                        _SleepTimerSelector(
+                          timer: widget.sleepTimer,
+                          hasTrack: widget.playback.displayTrack != null,
+                        ),
+                    ],
                   ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          _SettingsSection(
-            title: '操作',
-            children: [
-              _SettingsRow(
-                icon: Icons.keyboard_alt_outlined,
-                iconColor: context.soundSecondaryText,
-                title: '键盘快捷键',
-                subtitle: '查看播放、导航和搜索快捷键',
-                onTap: widget.onShowKeyboardShortcuts,
+                  const SizedBox(height: 36),
+                  _SettingsSection(
+                    key: _groupKeys[_SettingsGroup.library],
+                    title: '资料库',
+                    flat: true,
+                    children: [
+                      _SettingsRow(
+                        key: const ValueKey('settings-sources-row'),
+                        flat: true,
+                        icon: Icons.library_music_rounded,
+                        iconColor: SoundColors.local,
+                        title: '音乐来源',
+                        subtitle: '管理本地文件夹、WebDAV 服务器和扫描目录',
+                        onTap: () => setState(
+                          () => _destination = SettingsDestination.sources,
+                        ),
+                      ),
+                      if (widget.offline != null)
+                        _SettingsRow(
+                          key: const ValueKey('settings-offline-row'),
+                          flat: true,
+                          icon: Icons.download_for_offline_outlined,
+                          iconColor: SoundColors.webDav,
+                          title: '离线与缓存',
+                          subtitle: '管理远程来源的离线歌曲、临时缓存和存储空间',
+                          value: _formatBytes(widget.offline!.stats.totalBytes),
+                          onTap: () => setState(
+                            () => _destination = SettingsDestination.offline,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 36),
+                  _SettingsSection(
+                    key: _groupKeys[_SettingsGroup.operation],
+                    title: '操作',
+                    flat: true,
+                    children: [
+                      _SettingsRow(
+                        flat: true,
+                        icon: Icons.keyboard_alt_outlined,
+                        iconColor: context.soundSecondaryText,
+                        title: '键盘快捷键',
+                        subtitle: '查看播放、导航和搜索快捷键',
+                        onTap: widget.onShowKeyboardShortcuts,
+                      ),
+                      _SettingsRow(
+                        key: const ValueKey('settings-diagnostics-row'),
+                        flat: true,
+                        icon: Icons.health_and_safety_outlined,
+                        iconColor: widget.diagnostics.problemCount == 0
+                            ? context.soundSecondaryText
+                            : SoundColors.accent,
+                        title: '问题与诊断',
+                        subtitle: '查看播放、来源和资料库的最近错误',
+                        value: widget.diagnostics.problemCount == 0
+                            ? '没有问题'
+                            : '${widget.diagnostics.problemCount} 条',
+                        onTap: () => setState(
+                          () => _destination = SettingsDestination.diagnostics,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 36),
+                  _SettingsSection(
+                    key: _groupKeys[_SettingsGroup.about],
+                    title: '关于',
+                    flat: true,
+                    children: const [
+                      _SettingsRow(
+                        flat: true,
+                        icon: Icons.graphic_eq_rounded,
+                        iconColor: SoundColors.webDav,
+                        title: 'Sound',
+                        subtitle: '跨平台本地与远程音乐播放器',
+                        value: '开发版本',
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              _SettingsRow(
-                key: const ValueKey('settings-diagnostics-row'),
-                icon: Icons.health_and_safety_outlined,
-                iconColor: widget.diagnostics.problemCount == 0
-                    ? context.soundSecondaryText
-                    : SoundColors.accent,
-                title: '问题与诊断',
-                subtitle: '查看播放、来源和资料库的最近错误',
-                value: widget.diagnostics.problemCount == 0
-                    ? '没有问题'
-                    : '${widget.diagnostics.problemCount} 条',
-                onTap: () => setState(
-                  () => _destination = SettingsDestination.diagnostics,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          const _SettingsSection(
-            title: '关于',
-            children: [
-              _SettingsRow(
-                icon: Icons.graphic_eq_rounded,
-                iconColor: SoundColors.webDav,
-                title: 'Sound',
-                subtitle: '跨平台本地与远程音乐播放器',
-                value: '开发版本',
-              ),
-            ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SettingsTabsHeader extends SliverPersistentHeaderDelegate {
+  const _SettingsTabsHeader({required this.selected, required this.onSelected});
+
+  final _SettingsGroup selected;
+  final ValueChanged<_SettingsGroup> onSelected;
+
+  @override
+  double get minExtent => 46;
+
+  @override
+  double get maxExtent => 46;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.symmetric(horizontal: context.soundPageGutter),
+      child: Row(
+        children: [
+          for (final group in _SettingsGroup.values)
+            _SettingsGroupTab(
+              group: group,
+              selected: group == selected,
+              onTap: () => onSelected(group),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_SettingsTabsHeader oldDelegate) {
+    return selected != oldDelegate.selected ||
+        onSelected != oldDelegate.onSelected;
+  }
+}
+
+class _SettingsGroupTab extends StatelessWidget {
+  const _SettingsGroupTab({
+    required this.group,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _SettingsGroup group;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: InkWell(
+        key: ValueKey('settings-group-${group.name}'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          height: 46,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  group.label,
+                  style: TextStyle(
+                    color: selected
+                        ? SoundColors.accent
+                        : context.soundSecondaryText,
+                    fontSize: 12.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  width: selected ? 20 : 0,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    color: SoundColors.accent,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -974,50 +1170,23 @@ class _OfflineStat extends StatelessWidget {
 Future<bool> _confirmRemoveDownload(BuildContext context, String title) async {
   return await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => Dialog(
-          backgroundColor: Colors.transparent,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: SoundGlassSurface(
-              strong: true,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '移除离线下载？',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '将删除「$title」的本地副本，不会影响音乐来源中的原文件。',
-                      style: TextStyle(color: dialogContext.soundMutedText),
-                    ),
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('取消'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: const Text('移除'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+        builder: (dialogContext) => SoundDialog(
+          maxWidth: 400,
+          title: const Text('移除离线下载？'),
+          content: Text(
+            '将删除「$title」的本地副本，不会影响音乐来源中的原文件。',
+            style: TextStyle(color: dialogContext.soundMutedText),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('移除'),
+            ),
+          ],
         ),
       ) ??
       false;
@@ -1026,50 +1195,23 @@ Future<bool> _confirmRemoveDownload(BuildContext context, String title) async {
 Future<bool> _confirmClearAll(BuildContext context) async {
   return await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => Dialog(
-          backgroundColor: Colors.transparent,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: SoundGlassSurface(
-              strong: true,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '删除全部缓存？',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '离线保存的歌曲也会被删除。WebDAV 和本地来源中的原文件不会受到影响。',
-                      style: TextStyle(color: dialogContext.soundMutedText),
-                    ),
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('取消'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: const Text('全部删除'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+        builder: (dialogContext) => SoundDialog(
+          maxWidth: 400,
+          title: const Text('删除全部缓存？'),
+          content: Text(
+            '离线保存的歌曲也会被删除。WebDAV 和本地来源中的原文件不会受到影响。',
+            style: TextStyle(color: dialogContext.soundMutedText),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('全部删除'),
+            ),
+          ],
         ),
       ) ??
       false;
@@ -1099,13 +1241,35 @@ IconData _playbackModeIcon(PlaybackMode mode) => switch (mode) {
 };
 
 class _SettingsSection extends StatelessWidget {
-  const _SettingsSection({required this.title, required this.children});
+  const _SettingsSection({
+    required this.title,
+    required this.children,
+    this.flat = false,
+    super.key,
+  });
 
   final String title;
   final List<Widget> children;
+  final bool flat;
 
   @override
   Widget build(BuildContext context) {
+    final rows = Column(
+      children: [
+        for (var index = 0; index < children.length; index++) ...[
+          children[index],
+          if (index != children.length - 1)
+            Divider(
+              height: 1,
+              indent: flat ? 38 : 66,
+              color: context.soundDivider.withValues(alpha: flat ? 0.48 : 1),
+            ),
+        ],
+      ],
+    );
+    if (flat) {
+      return rows;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1124,15 +1288,7 @@ class _SettingsSection extends StatelessWidget {
           blur: false,
           showShadow: false,
           borderRadius: BorderRadius.circular(SoundRadii.card),
-          child: Column(
-            children: [
-              for (var index = 0; index < children.length; index++) ...[
-                children[index],
-                if (index != children.length - 1)
-                  Divider(height: 1, indent: 66, color: context.soundDivider),
-              ],
-            ],
-          ),
+          child: rows,
         ),
       ],
     );
@@ -1145,6 +1301,7 @@ class _SettingsRow extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.subtitle,
+    this.flat = false,
     this.value,
     this.onTap,
     this.expanded = false,
@@ -1155,6 +1312,7 @@ class _SettingsRow extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
+  final bool flat;
   final String? value;
   final VoidCallback? onTap;
   final bool expanded;
@@ -1166,18 +1324,31 @@ class _SettingsRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: EdgeInsets.symmetric(
+            horizontal: flat ? 0 : 16,
+            vertical: flat ? 13 : 14,
+          ),
           child: Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(8),
+              if (flat)
+                SizedBox(
+                  width: 24,
+                  child: Icon(
+                    icon,
+                    size: 17,
+                    color: context.soundSecondaryText,
+                  ),
+                )
+              else
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 19, color: iconColor),
                 ),
-                child: Icon(icon, size: 19, color: iconColor),
-              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -1186,8 +1357,8 @@ class _SettingsRow extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -1197,7 +1368,7 @@ class _SettingsRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: context.soundMutedText,
-                        fontSize: 12,
+                        fontSize: 11.5,
                       ),
                     ),
                   ],
@@ -1207,7 +1378,10 @@ class _SettingsRow extends StatelessWidget {
                 const SizedBox(width: 12),
                 Text(
                   value!,
-                  style: TextStyle(color: context.soundMutedText, fontSize: 12),
+                  style: TextStyle(
+                    color: context.soundMutedText,
+                    fontSize: 11.5,
+                  ),
                 ),
               ],
               if (onTap != null) ...[
@@ -1216,7 +1390,7 @@ class _SettingsRow extends StatelessWidget {
                   expanded
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.chevron_right_rounded,
-                  size: 20,
+                  size: flat ? 18 : 20,
                   color: context.soundMutedText,
                 ),
               ],

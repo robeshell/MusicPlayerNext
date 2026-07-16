@@ -13,20 +13,18 @@ import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
 import '../widgets/sound_components.dart';
 
-enum LibraryUserBrowseMode { favorites, recent, history, playlists }
+enum LibraryUserBrowseMode { favorites, recent, playlists }
 
 extension LibraryUserBrowseModePresentation on LibraryUserBrowseMode {
   String get label => switch (this) {
     LibraryUserBrowseMode.favorites => '收藏',
     LibraryUserBrowseMode.recent => '最近播放',
-    LibraryUserBrowseMode.history => '播放历史',
     LibraryUserBrowseMode.playlists => '播放列表',
   };
 
   IconData get icon => switch (this) {
     LibraryUserBrowseMode.favorites => Icons.favorite_rounded,
     LibraryUserBrowseMode.recent => Icons.history_toggle_off_rounded,
-    LibraryUserBrowseMode.history => Icons.history_rounded,
     LibraryUserBrowseMode.playlists => Icons.queue_music_rounded,
   };
 }
@@ -80,18 +78,13 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
           final rawTracks = switch (widget.mode) {
             LibraryUserBrowseMode.favorites => widget.userState.favoriteTracks,
             LibraryUserBrowseMode.recent => widget.userState.recentTracks,
-            LibraryUserBrowseMode.history => const <Track>[],
             LibraryUserBrowseMode.playlists => const <Track>[],
           };
           final tracks = _filterTracks(rawTracks);
-          final history = _filterHistory(widget.userState.historyItems);
           final sourceOptions = LibrarySourceFilter.options([
             for (final track in rawTracks) track.source,
-            for (final item in widget.userState.historyItems) item.track.source,
           ]);
-          final resultCount = widget.mode == LibraryUserBrowseMode.history
-              ? history.length
-              : tracks.length;
+          final resultCount = tracks.length;
 
           return CustomScrollView(
             slivers: [
@@ -105,7 +98,6 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
                 sliver: SliverToBoxAdapter(
                   child: _UserLibraryHeader(
                     mode: widget.mode,
-                    resultCount: resultCount,
                     sourceFilter: _sourceFilter,
                     sourceOptions: sourceOptions,
                     onModeChanged: widget.onModeChanged,
@@ -139,8 +131,6 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
                   hasScrollBody: false,
                   child: _emptyMessage(widget.mode),
                 )
-              else if (widget.mode == LibraryUserBrowseMode.history)
-                _historySliver(history, albumByTrackId, favoriteIds)
               else
                 _trackSliver(tracks, albumByTrackId, favoriteIds),
             ],
@@ -166,7 +156,6 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
             ),
             sliver: SliverToBoxAdapter(
               child: _PlaylistOverviewHeader(
-                playlistCount: widget.userState.playlists.length,
                 onModeChanged: widget.onModeChanged,
                 onBack: widget.onBack,
                 onCreate: _createPlaylist,
@@ -408,13 +397,6 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
     ];
   }
 
-  List<LibraryHistoryItem> _filterHistory(List<LibraryHistoryItem> history) {
-    return [
-      for (final item in history)
-        if (_matchesSource(item.track)) item,
-    ];
-  }
-
   bool _matchesSource(Track track) => _sourceFilter.matches(track.source);
 
   Widget _trackSliver(
@@ -463,59 +445,6 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
     );
   }
 
-  Widget _historySliver(
-    List<LibraryHistoryItem> history,
-    Map<String, Album> albumByTrackId,
-    Set<String> favoriteIds,
-  ) {
-    final recentQueue = _filterTracks(widget.userState.recentTracks);
-    return SliverPadding(
-      padding: EdgeInsets.fromLTRB(
-        context.soundPageGutter,
-        0,
-        context.soundPageGutter,
-        context.soundContentBottomPadding,
-      ),
-      sliver: SliverPrototypeExtentList.builder(
-        itemCount: history.length,
-        prototypeItem: _UserTrackRow(
-          track: history.first.track,
-          album: albumByTrackId[history.first.track.id]!,
-          favorite: favoriteIds.contains(history.first.track.id),
-          historyTime: history.first.record.playedAt,
-          onTap: () {},
-          onToggleFavorite: () {},
-          onAddToPlaylist: () {},
-          onOpenAlbum: () {},
-        ),
-        itemBuilder: (context, index) {
-          final item = history[index];
-          final track = item.track;
-          final album = albumByTrackId[track.id]!;
-          return _UserTrackRow(
-            key: ValueKey('play-history-${item.record.id}'),
-            track: track,
-            album: album,
-            favorite: favoriteIds.contains(track.id),
-            historyTime: item.record.playedAt,
-            onTap: () => widget.playback.playTrack(
-              track,
-              queue: recentQueue.isEmpty ? [track] : recentQueue,
-            ),
-            onToggleFavorite: () =>
-                unawaited(widget.userState.toggleFavorite(track)),
-            onAddToPlaylist: () => showAddToPlaylistSheet(
-              context,
-              userState: widget.userState,
-              track: track,
-            ),
-            onOpenAlbum: () => widget.onOpenAlbum(album),
-          );
-        },
-      ),
-    );
-  }
-
   _UserLibraryMessage _emptyMessage(LibraryUserBrowseMode mode) {
     return switch (mode) {
       LibraryUserBrowseMode.favorites => const _UserLibraryMessage(
@@ -527,11 +456,6 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
         icon: Icons.history_toggle_off_rounded,
         title: '还没有最近播放',
         message: '开始播放资料库中的歌曲后，最近播放会自动更新。',
-      ),
-      LibraryUserBrowseMode.history => const _UserLibraryMessage(
-        icon: Icons.history_rounded,
-        title: '播放历史是空的',
-        message: '每次开始播放一首歌曲都会在这里留下记录。',
       ),
       LibraryUserBrowseMode.playlists => const _UserLibraryMessage(
         icon: Icons.queue_music_rounded,
@@ -566,53 +490,30 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
 
 class _PlaylistOverviewHeader extends StatelessWidget {
   const _PlaylistOverviewHeader({
-    required this.playlistCount,
     required this.onModeChanged,
     required this.onBack,
     required this.onCreate,
   });
 
-  final int playlistCount;
   final ValueChanged<LibraryUserBrowseMode> onModeChanged;
   final VoidCallback onBack;
   final VoidCallback onCreate;
 
   @override
   Widget build(BuildContext context) {
+    final compact = context.soundIsCompact;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        IconButton(
-          onPressed: onBack,
-          tooltip: '返回资料库',
-          icon: const Icon(Icons.arrow_back_rounded),
-        ),
-        const SizedBox(height: 10),
         Row(
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '播放列表',
-                    style: TextStyle(
-                      fontSize: context.soundPageTitleSize,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.8,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    '$playlistCount 个列表',
-                    style: TextStyle(
-                      color: context.soundMutedText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+            if (compact)
+              IconButton(
+                onPressed: onBack,
+                tooltip: '返回资料库',
+                icon: const Icon(Icons.arrow_back_rounded),
               ),
-            ),
+            const Spacer(),
             FilledButton.icon(
               key: const ValueKey('create-playlist'),
               onPressed: onCreate,
@@ -621,26 +522,29 @@ class _PlaylistOverviewHeader extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 18),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final candidate in LibraryUserBrowseMode.values)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    key: ValueKey('user-library-mode-${candidate.name}'),
-                    avatar: Icon(candidate.icon, size: 17),
-                    label: Text(candidate.label),
-                    selected: candidate == LibraryUserBrowseMode.playlists,
-                    onSelected: (_) => onModeChanged(candidate),
-                    selectedColor: SoundColors.accent.withValues(alpha: 0.14),
+        if (compact) ...[
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final candidate in LibraryUserBrowseMode.values)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      key: ValueKey('user-library-mode-${candidate.name}'),
+                      avatar: Icon(candidate.icon, size: 17),
+                      label: Text(candidate.label),
+                      selected: candidate == LibraryUserBrowseMode.playlists,
+                      showCheckmark: false,
+                      onSelected: (_) => onModeChanged(candidate),
+                      selectedColor: SoundColors.accent.withValues(alpha: 0.14),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -901,7 +805,6 @@ class _PlaylistTrackRow extends StatelessWidget {
 class _UserLibraryHeader extends StatelessWidget {
   const _UserLibraryHeader({
     required this.mode,
-    required this.resultCount,
     required this.sourceFilter,
     required this.sourceOptions,
     required this.onModeChanged,
@@ -911,7 +814,6 @@ class _UserLibraryHeader extends StatelessWidget {
   });
 
   final LibraryUserBrowseMode mode;
-  final int resultCount;
   final LibrarySourceFilter sourceFilter;
   final List<LibrarySourceFilter> sourceOptions;
   final ValueChanged<LibraryUserBrowseMode> onModeChanged;
@@ -921,69 +823,53 @@ class _UserLibraryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = context.soundIsCompact;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        IconButton(
-          onPressed: onBack,
-          tooltip: '返回资料库',
-          icon: const Icon(Icons.arrow_back_rounded),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    mode.label,
-                    style: TextStyle(
-                      fontSize: context.soundPageTitleSize,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.8,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    '$resultCount ${mode == LibraryUserBrowseMode.favorites ? '首收藏' : '条记录'}',
-                    style: TextStyle(
-                      color: context.soundMutedText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (onClearHistory != null)
-              TextButton.icon(
-                onPressed: onClearHistory,
-                icon: const Icon(Icons.delete_outline_rounded),
-                label: const Text('清除历史'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
+        if (compact || onClearHistory != null)
+          Row(
             children: [
-              for (final candidate in LibraryUserBrowseMode.values)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    key: ValueKey('user-library-mode-${candidate.name}'),
-                    avatar: Icon(candidate.icon, size: 17),
-                    label: Text(candidate.label),
-                    selected: candidate == mode,
-                    onSelected: (_) => onModeChanged(candidate),
-                    selectedColor: SoundColors.accent.withValues(alpha: 0.14),
-                  ),
+              if (compact)
+                IconButton(
+                  onPressed: onBack,
+                  tooltip: '返回资料库',
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+              const Spacer(),
+              if (onClearHistory != null)
+                TextButton.icon(
+                  onPressed: onClearHistory,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('清除历史'),
                 ),
             ],
           ),
-        ),
-        const SizedBox(height: 12),
+        if (compact) ...[
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final candidate in LibraryUserBrowseMode.values)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      key: ValueKey('user-library-mode-${candidate.name}'),
+                      avatar: Icon(candidate.icon, size: 17),
+                      label: Text(candidate.label),
+                      selected: candidate == mode,
+                      showCheckmark: false,
+                      onSelected: (_) => onModeChanged(candidate),
+                      selectedColor: SoundColors.accent.withValues(alpha: 0.14),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        if ((compact || onClearHistory != null) && sourceOptions.isNotEmpty)
+          const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -992,6 +878,7 @@ class _UserLibraryHeader extends StatelessWidget {
               FilterChip(
                 label: Text(filter.label),
                 selected: sourceFilter == filter,
+                showCheckmark: false,
                 onSelected: (_) => onSourceChanged(filter),
               ),
           ],
@@ -1010,14 +897,12 @@ class _UserTrackRow extends StatelessWidget {
     required this.onToggleFavorite,
     required this.onAddToPlaylist,
     required this.onOpenAlbum,
-    this.historyTime,
     super.key,
   });
 
   final Track track;
   final Album album;
   final bool favorite;
-  final DateTime? historyTime;
   final VoidCallback onTap;
   final VoidCallback onToggleFavorite;
   final VoidCallback onAddToPlaylist;
@@ -1042,12 +927,7 @@ class _UserTrackRow extends StatelessWidget {
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
         ),
         subtitle: Text(
-          [
-            track.artist,
-            album.title,
-            track.source.label,
-            if (historyTime != null) _formatHistoryTime(historyTime!),
-          ].join(' · '),
+          [track.artist, album.title, track.source.label].join(' · '),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: 12, color: context.soundMutedText),
@@ -1132,11 +1012,4 @@ class _UserLibraryMessage extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatHistoryTime(DateTime value) {
-  final local = value.toLocal();
-  String two(int number) => number.toString().padLeft(2, '0');
-  return '${local.year}-${two(local.month)}-${two(local.day)} '
-      '${two(local.hour)}:${two(local.minute)}';
 }

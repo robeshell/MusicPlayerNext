@@ -22,7 +22,7 @@ class AlbumArt extends StatelessWidget {
         final logicalExtent = constraints.biggest.shortestSide;
         final hasFiniteExtent = logicalExtent.isFinite && logicalExtent > 0;
         final cacheExtent = hasFiniteExtent
-            ? _quantizedPhysicalExtent(
+            ? quantizedArtworkCacheExtent(
                 logicalExtent,
                 MediaQuery.devicePixelRatioOf(context),
               )
@@ -73,7 +73,7 @@ class AlbumArt extends StatelessWidget {
 
 const _decodeBucket = 64;
 
-int _quantizedPhysicalExtent(double logicalExtent, double devicePixelRatio) {
+int quantizedArtworkCacheExtent(double logicalExtent, double devicePixelRatio) {
   final physicalExtent = (logicalExtent * devicePixelRatio).ceil();
   return ((physicalExtent + _decodeBucket - 1) ~/ _decodeBucket) *
       _decodeBucket;
