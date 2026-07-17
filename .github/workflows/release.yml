@@ -17,7 +17,7 @@ jobs:
           channel: stable
           cache: true
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -34,13 +34,13 @@ jobs:
       - name: Build APK
         run: flutter build apk --release
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-aab
           path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
@@ -98,13 +98,18 @@ jobs:
 
       - name: Build macOS
         run: flutter build macos --release
+        env:
+          FLUTTER_XCODE_CODE_SIGNING_ALLOWED: 'NO'
+          FLUTTER_XCODE_CODE_SIGNING_REQUIRED: 'NO'
+          FLUTTER_XCODE_CODE_SIGN_IDENTITY: '-'
+          FLUTTER_XCODE_DEVELOPMENT_TEAM: ''
 
       - name: Package macOS app
         run: |
           cd build/macos/Build/Products/Release
           zip -r reverie-macos.zip Reverie.app
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-app
           path: build/macos/Build/Products/Release/reverie-macos.zip
@@ -112,7 +117,9 @@ jobs:
 
   # ── Windows ──────────────────────────────────────────────
   build-windows:
-    runs-on: windows-latest
+    # just_audio_windows still relies on the VS 2022 coroutine compatibility
+    # layer. Keep this job stable while windows-latest moves to VS 2026.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
 
@@ -135,7 +142,7 @@ jobs:
         run: |
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath reverie-windows.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-app
           path: reverie-windows.zip
@@ -164,7 +171,7 @@ jobs:
       - name: Package Web build
         run: cd build && zip -r reverie-web.zip web
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-build
           path: build/reverie-web.zip
@@ -182,14 +189,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
       - name: Display artifact structure
         run: find artifacts -type f
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
