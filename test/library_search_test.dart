@@ -143,6 +143,8 @@ void main() {
     test('debounces work and ignores a stale result', () async {
       final requests = <LibrarySearchRequest>[];
       final pending = <Completer<List<String>>>[];
+      final firstRequestStarted = Completer<void>();
+      final secondRequestStarted = Completer<void>();
       final search = LibrarySearchController(
         catalog: catalog,
         debounce: Duration.zero,
@@ -150,6 +152,11 @@ void main() {
           requests.add(request);
           final completer = Completer<List<String>>();
           pending.add(completer);
+          if (requests.length == 1) {
+            firstRequestStarted.complete();
+          } else if (requests.length == 2) {
+            secondRequestStarted.complete();
+          }
           return completer.future;
         },
       );
@@ -158,11 +165,11 @@ void main() {
       search.setQuery('neon');
       expect(requests, isEmpty);
       expect(search.status, LibrarySearchStatus.searching);
-      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await firstRequestStarted.future;
       expect(requests, hasLength(1));
 
       search.setQuery('alpha');
-      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await secondRequestStarted.future;
       expect(requests, hasLength(2));
 
       pending[0].complete(['track-neon']);
