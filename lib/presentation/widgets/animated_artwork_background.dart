@@ -30,16 +30,26 @@ class AnimatedArtworkBackground extends StatefulWidget {
     required Album album,
     required Brightness brightness,
   }) async {
+    await colorSchemeForAlbum(album: album, brightness: brightness);
+  }
+
+  /// Returns the cached Material color scheme extracted from [album]'s cover.
+  /// Album pages and the now-playing background share this path so opening one
+  /// surface also warms the other without decoding the artwork twice.
+  static Future<ColorScheme?> colorSchemeForAlbum({
+    required Album album,
+    required Brightness brightness,
+  }) async {
     final artworkUri = album.artworkUri?.trim();
-    if (artworkUri == null || artworkUri.isEmpty) return;
+    if (artworkUri == null || artworkUri.isEmpty) return null;
     final provider = artworkImageProvider(
       artworkUri,
       cacheWidth: artworkPaletteCacheExtent,
       cacheHeight: artworkPaletteCacheExtent,
     );
-    if (provider == null) return;
+    if (provider == null) return null;
     final requestKey = '$artworkUri|${brightness.name}';
-    await _AnimatedArtworkBackgroundState._cachedScheme(
+    return _AnimatedArtworkBackgroundState._cachedScheme(
       requestKey,
       provider,
       brightness,
@@ -64,12 +74,14 @@ class AnimatedArtworkBackground extends StatefulWidget {
 }
 
 class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static final Map<String, Future<ColorScheme>> _schemeCache = {};
   static const _cacheLimit = 64;
 
-  late List<Color> _colors;
+  late List<Color> _fromColors;
+  late List<Color> _targetColors;
   late final AnimationController _motionController;
+  late final AnimationController _paletteController;
   Brightness? _brightness;
   String? _requestKey;
   bool _reduceMotion = false;
@@ -77,11 +89,20 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
   @override
   void initState() {
     super.initState();
-    _colors = _fallbackColors(widget.album, Brightness.light);
+    _targetColors = artworkFallbackGradientColors(
+      widget.album,
+      Brightness.light,
+    );
+    _fromColors = List<Color>.of(_targetColors);
     _motionController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 14),
       value: _positionPhase(widget.position),
+    );
+    _paletteController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+      value: 1,
     );
   }
 
@@ -90,11 +111,11 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
     super.didChangeDependencies();
     final brightness = Theme.of(context).brightness;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _reduceMotion = reduceMotion;
     if (_brightness != brightness) {
       _brightness = brightness;
       _loadArtworkColors();
     }
-    _reduceMotion = reduceMotion;
     _syncMotion();
   }
 
@@ -134,22 +155,24 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
   Future<void> _loadArtworkColors() async {
     final brightness = _brightness ?? Theme.of(context).brightness;
     final artworkUri = widget.album.artworkUri?.trim();
-    final fallback = _fallbackColors(widget.album, brightness);
+    final fallback = artworkFallbackGradientColors(widget.album, brightness);
     final requestKey = '${artworkUri ?? widget.album.id}|${brightness.name}';
     _requestKey = requestKey;
 
-    if (mounted) _transitionTo(fallback);
-    if (artworkUri == null || artworkUri.isEmpty) return;
-
-    final provider = artworkImageProvider(
-      artworkUri,
-      cacheWidth: artworkPaletteCacheExtent,
-      cacheHeight: artworkPaletteCacheExtent,
-    );
-    if (provider == null) return;
+    if (artworkUri == null || artworkUri.isEmpty) {
+      if (mounted) _transitionTo(fallback);
+      return;
+    }
 
     try {
-      final scheme = await _cachedScheme(requestKey, provider, brightness);
+      final scheme = await AnimatedArtworkBackground.colorSchemeForAlbum(
+        album: widget.album,
+        brightness: brightness,
+      );
+      if (scheme == null) {
+        if (mounted && _requestKey == requestKey) _transitionTo(fallback);
+        return;
+      }
       if (!mounted || _requestKey != requestKey) return;
       _transitionTo(artworkGradientColorsFromScheme(scheme, brightness));
     } catch (error) {
@@ -159,12 +182,35 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
       if (kDebugMode) {
         debugPrint('Artwork palette extraction failed for $artworkUri: $error');
       }
+      if (mounted && _requestKey == requestKey) _transitionTo(fallback);
     }
   }
 
   void _transitionTo(List<Color> colors) {
-    if (listEquals(_colors, colors)) return;
-    setState(() => _colors = colors);
+    if (listEquals(_targetColors, colors)) return;
+    final currentColors = _interpolatedColors;
+    setState(() {
+      _fromColors = currentColors;
+      _targetColors = List<Color>.of(colors);
+    });
+    if (_reduceMotion) {
+      _paletteController.value = 1;
+    } else {
+      _paletteController.forward(from: 0);
+    }
+  }
+
+  List<Color> get _interpolatedColors {
+    final progress = Curves.easeOutCubic.transform(_paletteController.value);
+    return List<Color>.generate(
+      _targetColors.length,
+      (index) => Color.lerp(
+        _fromColors[index.clamp(0, _fromColors.length - 1)],
+        _targetColors[index],
+        progress,
+      )!,
+      growable: false,
+    );
   }
 
   static Future<ColorScheme> _cachedScheme(
@@ -198,13 +244,16 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
 
     return RepaintBoundary(
       key: const ValueKey('now-playing-artwork-background'),
-      child: CustomPaint(
-        key: const ValueKey('now-playing-background-base'),
-        painter: ArtworkGradientPainter(
-          colors: _colors,
-          motion: _motionController,
-          reduceMotion: _reduceMotion,
-          brightness: brightness,
+      child: AnimatedBuilder(
+        animation: _paletteController,
+        builder: (context, _) => CustomPaint(
+          key: const ValueKey('now-playing-background-base'),
+          painter: ArtworkGradientPainter(
+            colors: _interpolatedColors,
+            motion: _motionController,
+            reduceMotion: _reduceMotion,
+            brightness: brightness,
+          ),
         ),
       ),
     );
@@ -213,6 +262,7 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
   @override
   void dispose() {
     _motionController.dispose();
+    _paletteController.dispose();
     super.dispose();
   }
 }
@@ -299,7 +349,6 @@ class ArtworkGradientPainter extends CustomPainter {
   }
 }
 
-@visibleForTesting
 List<Color> artworkGradientColorsFromScheme(
   ColorScheme scheme,
   Brightness brightness,
@@ -329,7 +378,7 @@ Color _shiftHue(Color color, double degrees) {
   return hsl.withHue((hsl.hue + degrees) % 360).toColor();
 }
 
-List<Color> _fallbackColors(Album album, Brightness brightness) {
+List<Color> artworkFallbackGradientColors(Album album, Brightness brightness) {
   final palette = album.palette.isEmpty
       ? const [Color(0xFF5E7774), Color(0xFF25302F)]
       : album.palette;
@@ -348,6 +397,75 @@ List<Color> _fallbackColors(Album album, Brightness brightness) {
     _tone(middle, saturation: 0.22, lightness: 0.10),
     _tone(last, saturation: 0.38, lightness: 0.22),
   ];
+}
+
+/// Contrast-safe colors shared by artwork-led detail pages.
+@immutable
+class ArtworkPagePalette {
+  const ArtworkPagePalette({
+    required this.primaryText,
+    required this.secondaryText,
+    required this.mutedText,
+    required this.divider,
+    required this.controlSurface,
+    required this.useLightText,
+  });
+
+  factory ArtworkPagePalette.fromBackground(List<Color> colors) {
+    final sample = Color.lerp(
+      Color.lerp(colors.first, colors[1], 0.58),
+      colors.last,
+      0.24,
+    )!;
+    final useLightText = sample.computeLuminance() < 0.34;
+    final primary = useLightText
+        ? Colors.white.withValues(alpha: 0.94)
+        : const Color(0xEC17171C);
+    final secondary = useLightText
+        ? Colors.white.withValues(alpha: 0.76)
+        : Colors.black.withValues(alpha: 0.64);
+    final muted = useLightText
+        ? Colors.white.withValues(alpha: 0.60)
+        : Colors.black.withValues(alpha: 0.49);
+    return ArtworkPagePalette(
+      primaryText: primary,
+      secondaryText: secondary,
+      mutedText: muted,
+      divider: primary.withValues(alpha: useLightText ? 0.15 : 0.10),
+      controlSurface: primary.withValues(alpha: useLightText ? 0.13 : 0.075),
+      useLightText: useLightText,
+    );
+  }
+
+  final Color primaryText;
+  final Color secondaryText;
+  final Color mutedText;
+  final Color divider;
+  final Color controlSurface;
+  final bool useLightText;
+}
+
+/// Softens extracted artwork colors into a restrained page background.
+List<Color> artworkPageBackgroundColors(
+  List<Color> source,
+  Brightness brightness,
+) {
+  final safeSource = source.isEmpty
+      ? const [Color(0xFF5E7774), Color(0xFF42514F), Color(0xFF25302F)]
+      : source;
+  final targetLightness = brightness == Brightness.light
+      ? const [0.78, 0.83, 0.74]
+      : const [0.18, 0.13, 0.23];
+  return List<Color>.generate(3, (index) {
+    final hsl = HSLColor.fromColor(safeSource[index % safeSource.length]);
+    final saturation = brightness == Brightness.light
+        ? (hsl.saturation * 0.52).clamp(0.12, 0.34).toDouble()
+        : (hsl.saturation * 0.62).clamp(0.14, 0.42).toDouble();
+    return hsl
+        .withSaturation(saturation)
+        .withLightness(targetLightness[index])
+        .toColor();
+  });
 }
 
 Color _tone(

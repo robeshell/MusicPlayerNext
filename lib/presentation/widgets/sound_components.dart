@@ -210,6 +210,7 @@ class SoundCompactMediaRow extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.titleColor,
+    this.subtitleColor,
     this.height = 64,
     super.key,
   });
@@ -219,6 +220,7 @@ class SoundCompactMediaRow extends StatelessWidget {
   final String? subtitle;
   final Widget? trailing;
   final Color? titleColor;
+  final Color? subtitleColor;
   final double height;
 
   @override
@@ -251,7 +253,7 @@ class SoundCompactMediaRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: context.soundMutedText,
+                      color: subtitleColor ?? context.soundMutedText,
                       fontSize: 12,
                     ),
                   ),

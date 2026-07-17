@@ -98,6 +98,7 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
           final resultCount = tracks.length;
 
           return CustomScrollView(
+            key: PageStorageKey<String>('user-library-${widget.mode.name}'),
             slivers: [
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
@@ -158,6 +159,7 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
         : widget.userState.playlistById(widget.selectedPlaylistId!);
     if (selectedPlaylist == null) {
       return CustomScrollView(
+        key: const PageStorageKey<String>('user-library-playlists'),
         slivers: [
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
@@ -250,6 +252,7 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
       selectedPlaylist.id,
     );
     return CustomScrollView(
+      key: PageStorageKey<String>('user-playlist-${selectedPlaylist.id}'),
       slivers: [
         SliverPadding(
           padding: EdgeInsets.fromLTRB(

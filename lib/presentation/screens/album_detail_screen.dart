@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
@@ -11,10 +13,11 @@ import '../controllers/library_user_state_controller.dart';
 import '../controllers/offline_download_controller.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
+import '../widgets/animated_artwork_background.dart';
 import '../widgets/progress_scrubber.dart';
 import '../widgets/sound_components.dart';
 
-class AlbumDetailScreen extends StatelessWidget {
+class AlbumDetailScreen extends StatefulWidget {
   const AlbumDetailScreen({
     required this.album,
     required this.playback,
@@ -31,17 +34,114 @@ class AlbumDetailScreen extends StatelessWidget {
   final VoidCallback onBack;
 
   @override
+  State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
+}
+
+class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
+  late List<Color> _backgroundColors = artworkPageBackgroundColors(
+    artworkFallbackGradientColors(widget.album, Brightness.light),
+    Brightness.light,
+  );
+  Brightness? _paletteBrightness;
+  bool? _paletteCompact;
+  String? _paletteRequest;
+  Timer? _paletteLoadTimer;
+
+  Album get album => widget.album;
+  SoundPlaybackController get playback => widget.playback;
+  LibraryUserStateController? get userState => widget.userState;
+  OfflineDownloadController? get offline => widget.offline;
+  VoidCallback get onBack => widget.onBack;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    final compact = context.soundIsCompact;
+    if (_paletteBrightness != brightness || _paletteCompact != compact) {
+      _paletteBrightness = brightness;
+      _paletteCompact = compact;
+      _refreshPalette(brightness: brightness, extractArtwork: compact);
+    }
+  }
+
+  @override
+  void didUpdateWidget(AlbumDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.album.id != widget.album.id ||
+        oldWidget.album.artworkUri != widget.album.artworkUri) {
+      _refreshPalette(
+        brightness: _paletteBrightness ?? Theme.of(context).brightness,
+        extractArtwork: _paletteCompact ?? context.soundIsCompact,
+      );
+    }
+  }
+
+  void _refreshPalette({
+    required Brightness brightness,
+    required bool extractArtwork,
+  }) {
+    final request = '${album.id}|${album.artworkUri}|${brightness.name}';
+    _paletteRequest = request;
+    _backgroundColors = artworkPageBackgroundColors(
+      artworkFallbackGradientColors(album, brightness),
+      brightness,
+    );
+    _paletteLoadTimer?.cancel();
+    final artworkUri = album.artworkUri?.trim();
+    if (extractArtwork && artworkUri != null && artworkUri.isNotEmpty) {
+      _paletteLoadTimer = Timer(const Duration(milliseconds: 320), () {
+        if (!mounted || _paletteRequest != request) return;
+        unawaited(_loadArtworkPalette(request, brightness));
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _paletteLoadTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadArtworkPalette(
+    String request,
+    Brightness brightness,
+  ) async {
+    try {
+      final scheme = await AnimatedArtworkBackground.colorSchemeForAlbum(
+        album: album,
+        brightness: brightness,
+      );
+      if (scheme == null || !mounted || _paletteRequest != request) return;
+      final colors = artworkPageBackgroundColors(
+        artworkGradientColorsFromScheme(scheme, brightness),
+        brightness,
+      );
+      if (listEquals(colors, _backgroundColors)) return;
+      setState(() => _backgroundColors = colors);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Album artwork palette extraction failed: $error');
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: AnimatedBuilder(
         animation: Listenable.merge([playback, ?userState, ?offline]),
         builder: (context, _) {
+          final compact = context.soundIsCompact;
+          final pagePalette = compact
+              ? ArtworkPagePalette.fromBackground(_backgroundColors)
+              : null;
           final discNumbers = {
             for (final track in album.tracks) _effectiveDiscNumber(track),
           };
           final showDiscSections = discNumbers.length > 1;
-          return CustomScrollView(
+          final scrollView = CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
                 child: _Hero(
@@ -49,6 +149,7 @@ class AlbumDetailScreen extends StatelessWidget {
                   playback: playback,
                   offline: offline,
                   onBack: onBack,
+                  pagePalette: pagePalette,
                 ),
               ),
               SliverPadding(
@@ -72,7 +173,11 @@ class AlbumDetailScreen extends StatelessWidget {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (startsDisc) _DiscHeader(number: discNumber),
+                        if (startsDisc)
+                          _DiscHeader(
+                            number: discNumber,
+                            pagePalette: pagePalette,
+                          ),
                         _TrackRow(
                           track: track,
                           active: active,
@@ -92,6 +197,7 @@ class AlbumDetailScreen extends StatelessWidget {
                                   track: track,
                                 ),
                           offline: offline,
+                          pagePalette: pagePalette,
                           onToggleOffline:
                               offline == null || !offline!.supports(track)
                               ? null
@@ -106,6 +212,39 @@ class AlbumDetailScreen extends StatelessWidget {
               ),
             ],
           );
+          if (!compact || pagePalette == null) return scrollView;
+
+          final overlayStyle =
+              (pagePalette.useLightText
+                      ? SystemUiOverlayStyle.light
+                      : SystemUiOverlayStyle.dark)
+                  .copyWith(
+                    statusBarColor: Colors.transparent,
+                    systemStatusBarContrastEnforced: false,
+                  );
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: overlayStyle,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: AnimatedContainer(
+                    key: const ValueKey('album-detail-background'),
+                    duration: const Duration(milliseconds: 420),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: _backgroundColors,
+                        stops: const [0, 0.56, 1],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(child: scrollView),
+              ],
+            ),
+          );
         },
       ),
     );
@@ -118,12 +257,14 @@ class _Hero extends StatelessWidget {
     required this.playback,
     required this.offline,
     required this.onBack,
+    required this.pagePalette,
   });
 
   final Album album;
   final SoundPlaybackController playback;
   final OfflineDownloadController? offline;
   final VoidCallback onBack;
+  final ArtworkPagePalette? pagePalette;
 
   @override
   Widget build(BuildContext context) {
@@ -163,89 +304,48 @@ class _Hero extends StatelessWidget {
             : '离线保存';
 
         if (compact) {
+          final palette = pagePalette!;
+          final artworkSize = (constraints.maxWidth * 0.59)
+              .clamp(204.0, 244.0)
+              .toDouble();
+          final artworkCacheExtent = quantizedArtworkCacheExtent(
+            (constraints.maxWidth - context.soundPageGutter * 2 - 12) / 2,
+            MediaQuery.devicePixelRatioOf(context),
+          );
           return Container(
             key: const ValueKey('album-detail-hero'),
             padding: EdgeInsets.fromLTRB(
               context.soundPageGutter,
-              8,
+              MediaQuery.paddingOf(context).top + 4,
               context.soundPageGutter,
-              16,
+              22,
             ),
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: context.soundDivider)),
+              border: Border(bottom: BorderSide(color: palette.divider)),
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                IconButton(
-                  onPressed: onBack,
-                  tooltip: '返回',
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size.square(40),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Center(
-                  child: AlbumArt(
-                    key: const ValueKey('album-detail-artwork'),
-                    album: album,
-                    size: 156,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  album.title,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    height: 1.08,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.8,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  album.artist,
-                  style: TextStyle(
-                    color: context.soundSecondaryText,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  metadata,
-                  style: TextStyle(fontSize: 13, color: context.soundMutedText),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
+                Row(
                   children: [
-                    FilledButton.icon(
-                      onPressed: album.tracks.isEmpty
-                          ? null
-                          : () => playback.playTrack(
-                              album.tracks.first,
-                              queue: album.tracks,
-                            ),
-                      icon: const Icon(Icons.play_arrow_rounded),
-                      label: const Text('播放'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(0, 40),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
+                    IconButton(
+                      onPressed: onBack,
+                      tooltip: '返回',
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      style: IconButton.styleFrom(
+                        foregroundColor: palette.primaryText,
+                        minimumSize: const Size.square(40),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                     ),
+                    const Spacer(),
                     if (supportedTracks.isNotEmpty)
-                      OutlinedButton.icon(
+                      IconButton(
                         key: const ValueKey('album-offline-action'),
                         onPressed: () => unawaited(
                           _toggleAlbumOffline(context, offline!, album),
                         ),
+                        tooltip: offlineLabel,
                         icon: downloading
                             ? const Icon(Icons.close_rounded)
                             : Icon(
@@ -253,8 +353,111 @@ class _Hero extends StatelessWidget {
                                     ? Icons.cloud_done_rounded
                                     : Icons.download_for_offline_outlined,
                               ),
-                        label: Text(offlineLabel),
+                        style: IconButton.styleFrom(
+                          foregroundColor: palette.primaryText,
+                          backgroundColor: palette.controlSurface,
+                          minimumSize: const Size.square(40),
+                        ),
                       ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Center(
+                  child: AlbumArt(
+                    key: const ValueKey('album-detail-artwork'),
+                    album: album,
+                    size: artworkSize,
+                    borderRadius: 14,
+                    cacheExtent: artworkCacheExtent,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  key: const ValueKey('album-detail-title'),
+                  album.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: palette.primaryText,
+                    fontSize: 25,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.75,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  album.artist,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: 15,
+                    height: 1.22,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  metadata,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: palette.mutedText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 19),
+                Row(
+                  children: [
+                    _ImmersiveAlbumAction(
+                      tooltip: '随机播放',
+                      icon: Icons.shuffle_rounded,
+                      onPressed: album.tracks.isEmpty
+                          ? null
+                          : () {
+                              playback.setPlaybackMode(PlaybackMode.shuffle);
+                              unawaited(
+                                playback.playTrack(
+                                  album.tracks.first,
+                                  queue: album.tracks,
+                                ),
+                              );
+                            },
+                      palette: palette,
+                    ),
+                    const Spacer(),
+                    _ImmersiveAlbumAction(
+                      key: const ValueKey('album-detail-play'),
+                      tooltip: '播放整张专辑',
+                      icon: Icons.play_arrow_rounded,
+                      onPressed: album.tracks.isEmpty
+                          ? null
+                          : () => playback.playTrack(
+                              album.tracks.first,
+                              queue: album.tracks,
+                            ),
+                      palette: palette,
+                      dimension: 60,
+                      iconSize: 30,
+                      emphasized: true,
+                    ),
+                    const Spacer(),
+                    _ImmersiveAlbumAction(
+                      tooltip: '接下来播放整张专辑',
+                      icon: Icons.queue_music_rounded,
+                      onPressed: album.tracks.isEmpty
+                          ? null
+                          : () {
+                              for (final track in album.tracks.reversed) {
+                                playback.playNext(track);
+                              }
+                              _showAlbumMessage(context, '已添加到接下来播放');
+                            },
+                      palette: palette,
+                    ),
                   ],
                 ),
               ],
@@ -463,6 +666,52 @@ class _Hero extends StatelessWidget {
   }
 }
 
+class _ImmersiveAlbumAction extends StatelessWidget {
+  const _ImmersiveAlbumAction({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    required this.palette,
+    this.dimension = 52,
+    this.iconSize = 24,
+    this.emphasized = false,
+    super.key,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final ArtworkPagePalette palette;
+  final double dimension;
+  final double iconSize;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: dimension,
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: Icon(icon, size: iconSize),
+        style: IconButton.styleFrom(
+          foregroundColor: palette.primaryText,
+          backgroundColor: emphasized
+              ? palette.primaryText.withValues(
+                  alpha: palette.useLightText ? 0.20 : 0.14,
+                )
+              : palette.controlSurface,
+          disabledForegroundColor: palette.primaryText.withValues(alpha: 0.3),
+          disabledBackgroundColor: palette.controlSurface.withValues(
+            alpha: 0.45,
+          ),
+          shape: const CircleBorder(),
+        ),
+      ),
+    );
+  }
+}
+
 class _DesktopAlbumActionButton extends StatelessWidget {
   const _DesktopAlbumActionButton({
     required this.label,
@@ -500,9 +749,10 @@ class _DesktopAlbumActionButton extends StatelessWidget {
 }
 
 class _DiscHeader extends StatelessWidget {
-  const _DiscHeader({required this.number});
+  const _DiscHeader({required this.number, required this.pagePalette});
 
   final int number;
+  final ArtworkPagePalette? pagePalette;
 
   @override
   Widget build(BuildContext context) {
@@ -520,7 +770,9 @@ class _DiscHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Expanded(child: Divider(color: context.soundDivider)),
+          Expanded(
+            child: Divider(color: pagePalette?.divider ?? context.soundDivider),
+          ),
         ],
       ),
     );
@@ -541,6 +793,7 @@ class _TrackRow extends StatelessWidget {
     required this.onAddToPlaylist,
     required this.offline,
     required this.onToggleOffline,
+    required this.pagePalette,
   });
 
   final Track track;
@@ -552,6 +805,7 @@ class _TrackRow extends StatelessWidget {
   final VoidCallback? onAddToPlaylist;
   final OfflineDownloadController? offline;
   final VoidCallback? onToggleOffline;
+  final ArtworkPagePalette? pagePalette;
 
   @override
   Widget build(BuildContext context) {
@@ -571,9 +825,15 @@ class _TrackRow extends StatelessWidget {
         padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 18),
         decoration: BoxDecoration(
           color: active
-              ? SoundColors.accent.withValues(alpha: 0.075)
+              ? compact && pagePalette != null
+                    ? pagePalette!.controlSurface
+                    : SoundColors.accent.withValues(alpha: 0.075)
               : Colors.transparent,
-          border: Border(bottom: BorderSide(color: context.soundDivider)),
+          border: Border(
+            bottom: BorderSide(
+              color: pagePalette?.divider ?? context.soundDivider,
+            ),
+          ),
         ),
         child: compact
             ? SoundCompactMediaRow(
@@ -585,11 +845,18 @@ class _TrackRow extends StatelessWidget {
                       )
                     : Text(
                         track.trackNumber > 0 ? '${track.trackNumber}' : '–',
-                        style: TextStyle(color: context.soundSecondaryText),
+                        style: TextStyle(
+                          color:
+                              pagePalette?.secondaryText ??
+                              context.soundSecondaryText,
+                        ),
                       ),
                 title: track.title,
-                titleColor: active ? SoundColors.accent : null,
+                titleColor: active
+                    ? SoundColors.accent
+                    : pagePalette?.primaryText,
                 subtitle: '${track.artist} — ${formatDuration(track.duration)}',
+                subtitleColor: pagePalette?.mutedText,
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -599,6 +866,7 @@ class _TrackRow extends StatelessWidget {
                       compact: true,
                       downloading: downloading,
                       failed: failed,
+                      iconColor: pagePalette?.primaryText,
                     ),
                   ],
                 ),
@@ -628,7 +896,8 @@ class _TrackRow extends StatelessWidget {
                       style: TextStyle(
                         color: active
                             ? SoundColors.accent
-                            : context.soundPrimaryText,
+                            : pagePalette?.primaryText ??
+                                  context.soundPrimaryText,
                         fontSize: 15.5,
                         fontWeight: FontWeight.w600,
                       ),
@@ -643,7 +912,9 @@ class _TrackRow extends StatelessWidget {
                     formatDuration(track.duration),
                     style: TextStyle(
                       fontSize: 14,
-                      color: context.soundSecondaryText,
+                      color:
+                          pagePalette?.secondaryText ??
+                          context.soundSecondaryText,
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -651,6 +922,7 @@ class _TrackRow extends StatelessWidget {
                     compact: false,
                     downloading: downloading,
                     failed: failed,
+                    iconColor: pagePalette?.primaryText,
                   ),
                 ],
               ),
@@ -662,12 +934,13 @@ class _TrackRow extends StatelessWidget {
     required bool compact,
     required bool downloading,
     required bool failed,
+    required Color? iconColor,
   }) {
     return PopupMenuButton<String>(
       key: ValueKey('track-actions-${track.id}'),
       tooltip: '更多操作 ${track.title}',
       padding: EdgeInsets.zero,
-      icon: Icon(Icons.more_horiz_rounded, size: 21),
+      icon: Icon(Icons.more_horiz_rounded, size: 21, color: iconColor),
       onSelected: (value) {
         if (value == 'play-next') onPlayNext();
         if (value == 'favorite') onToggleFavorite?.call();
@@ -748,17 +1021,17 @@ Future<void> _toggleTrackOffline(
     if (offline.isDownloading(track)) {
       offline.cancelTrack(track);
       if (context.mounted) {
-        _showOfflineMessage(context, '已取消「${track.title}」的下载');
+        _showAlbumMessage(context, '已取消「${track.title}」的下载');
       }
     } else if (offline.isPinned(track)) {
       await offline.removeTrack(track);
       if (context.mounted) {
-        _showOfflineMessage(context, '已移除「${track.title}」的离线下载');
+        _showAlbumMessage(context, '已移除「${track.title}」的离线下载');
       }
     } else {
       await offline.pinTrack(track);
       if (context.mounted) {
-        _showOfflineMessage(context, '「${track.title}」已可离线播放');
+        _showAlbumMessage(context, '「${track.title}」已可离线播放');
       }
     }
   } on OfflineDownloadCancelledException {
@@ -766,7 +1039,7 @@ Future<void> _toggleTrackOffline(
   } catch (_) {
     if (!context.mounted) return;
     final message = offline.taskFor(track)?.error ?? '下载失败，请检查网络与来源设置';
-    _showOfflineMessage(context, message);
+    _showAlbumMessage(context, message);
   }
 }
 
@@ -777,7 +1050,7 @@ Future<void> _toggleAlbumOffline(
 ) async {
   if (offline.isDownloadingAny(album.tracks)) {
     offline.cancelTracks(album.tracks);
-    _showOfflineMessage(context, '已取消「${album.title}」的剩余下载');
+    _showAlbumMessage(context, '已取消「${album.title}」的剩余下载');
     return;
   }
   if (offline.areAllPinned(album.tracks)) {
@@ -785,7 +1058,7 @@ Future<void> _toggleAlbumOffline(
     if (!confirmed || !context.mounted) return;
     await offline.removeTracks(album.tracks);
     if (context.mounted) {
-      _showOfflineMessage(context, '已移除「${album.title}」的离线下载');
+      _showAlbumMessage(context, '已移除「${album.title}」的离线下载');
     }
     return;
   }
@@ -795,12 +1068,12 @@ Future<void> _toggleAlbumOffline(
   if (result.wasCancelled) {
     return;
   } else if (result.hasFailures) {
-    _showOfflineMessage(
+    _showAlbumMessage(
       context,
       '已下载 ${result.completed} 首，${result.failed} 首失败，可稍后继续',
     );
   } else {
-    _showOfflineMessage(context, '「${album.title}」已可离线播放');
+    _showAlbumMessage(context, '「${album.title}」已可离线播放');
   }
 }
 
@@ -833,7 +1106,7 @@ Future<bool> _confirmRemoveOfflineAlbum(
       false;
 }
 
-void _showOfflineMessage(BuildContext context, String message) {
+void _showAlbumMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(message)));

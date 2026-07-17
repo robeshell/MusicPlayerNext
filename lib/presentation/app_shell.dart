@@ -15,6 +15,7 @@ import '../library/scanning/local_media_catalog_factory.dart';
 import '../playback/playback_controller.dart';
 import '../playback/playback_media_provider.dart';
 import '../playback/sleep_timer_controller.dart';
+import '../playback/sound_audio_handler.dart';
 import '../sources/local/local_directory_access_factory.dart';
 import '../sources/local/local_source_service.dart';
 import '../sources/webdav/webdav_connection_service.dart';
@@ -43,6 +44,7 @@ enum AppSection { library, search, settings }
 class AppShell extends StatefulWidget {
   const AppShell({
     required this.playback,
+    this.audioHandler,
     this.libraryRepository,
     this.initialCatalog,
     this.webDavCache,
@@ -51,6 +53,7 @@ class AppShell extends StatefulWidget {
   });
 
   final SoundPlaybackController playback;
+  final SoundAudioHandler? audioHandler;
   final LibraryRepository? libraryRepository;
   final LibraryCatalogSnapshot? initialCatalog;
   final WebDavCache? webDavCache;
@@ -126,6 +129,7 @@ class _AppShellState extends State<AppShell>
       repository: _libraryRepository,
       catalog: _libraryCatalog,
     );
+    widget.audioHandler?.attachFavoriteController(_libraryUserState);
     _trackStartedSubscription = widget.playback.trackStarted.listen(
       (track) => unawaited(_libraryUserState.recordTrackStarted(track)),
     );
@@ -623,11 +627,11 @@ class _AppShellState extends State<AppShell>
           _librarySearch.clear();
         } else {
           FocusManager.instance.primaryFocus?.unfocus();
-          _navigateBackWithKeyboard();
+          _navigateBackWithinApp();
         }
         return KeyEventResult.handled;
       }
-      return _navigateBackWithKeyboard()
+      return _navigateBackWithinApp()
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
     }
@@ -653,7 +657,7 @@ class _AppShellState extends State<AppShell>
       _librarySearch.clear();
     } else {
       node.unfocus();
-      _navigateBackWithKeyboard();
+      _navigateBackWithinApp();
     }
     return KeyEventResult.handled;
   }
@@ -673,7 +677,7 @@ class _AppShellState extends State<AppShell>
     });
   }
 
-  bool _navigateBackWithKeyboard() {
+  bool _navigateBackWithinApp() {
     if (_mobileNowPlayingPresented) {
       unawaited(_collapseMobileNowPlaying());
       return true;
@@ -734,6 +738,15 @@ class _AppShellState extends State<AppShell>
                 soundUsesDesktopPlatform ||
                 context.soundWindowClass != SoundWindowClass.compact;
             final sidebarWidth = context.soundSidebarWidth;
+            final mobileContentIdentity = _selectedAlbum != null
+                ? 'album:${_selectedAlbum!.id}'
+                : _selectedCollection != null
+                ? 'collection:${_selectedCollection!.kind.name}:'
+                      '${_selectedCollection!.id}'
+                : 'root';
+            final immersiveMobileContent =
+                _selectedAlbum != null ||
+                _selectedCollection?.kind == LibraryCollectionKind.artist;
             final content = _selectedAlbum != null
                 ? AlbumDetailScreen(
                     album: _selectedAlbum!,
@@ -856,10 +869,48 @@ class _AppShellState extends State<AppShell>
                               ),
                             ],
                           )
-                        : SafeArea(
+                        : KeyedSubtree(
                             key: const ValueKey('mobile-content-safe-area'),
-                            bottom: false,
-                            child: content,
+                            child: AnimatedSwitcher(
+                              key: const ValueKey(
+                                'mobile-detail-page-transition',
+                              ),
+                              duration: const Duration(milliseconds: 300),
+                              reverseDuration: const Duration(
+                                milliseconds: 220,
+                              ),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              layoutBuilder: (currentChild, previousChildren) {
+                                return Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    ...previousChildren,
+                                    ?currentChild,
+                                  ],
+                                );
+                              },
+                              transitionBuilder: (child, animation) {
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, 0.022),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: SafeArea(
+                                key: ValueKey(
+                                  'mobile-content-$mobileContentIdentity',
+                                ),
+                                top: !immersiveMobileContent,
+                                bottom: false,
+                                child: content,
+                              ),
+                            ),
                           ),
                   ),
                   if (desktop)
@@ -939,11 +990,17 @@ class _AppShellState extends State<AppShell>
                     ),
             );
             if (desktop) return shell;
+            final handlesInternalBack =
+                _mobileNowPlayingPresented ||
+                _selectedAlbum != null ||
+                _selectedCollection != null ||
+                _selectedPlaylistId != null ||
+                _libraryUserMode != null;
             return PopScope<void>(
-              canPop: !_mobileNowPlayingPresented,
+              canPop: !handlesInternalBack,
               onPopInvokedWithResult: (didPop, result) {
-                if (!didPop && _mobileNowPlayingPresented) {
-                  unawaited(_collapseMobileNowPlaying());
+                if (!didPop && handlesInternalBack) {
+                  _navigateBackWithinApp();
                 }
               },
               child: Stack(
@@ -980,6 +1037,7 @@ class _AppShellState extends State<AppShell>
     _librarySearch.dispose();
     _keyboardFocusNode.dispose();
     _searchFocusNode.dispose();
+    widget.audioHandler?.detachFavoriteController(_libraryUserState);
     _libraryUserState.dispose();
     _offline?.removeListener(_observeOfflineFailures);
     _offline?.dispose();
@@ -993,7 +1051,7 @@ class _AppShellState extends State<AppShell>
   }
 }
 
-class _MobileNowPlayingOverlay extends StatelessWidget {
+class _MobileNowPlayingOverlay extends StatefulWidget {
   const _MobileNowPlayingOverlay({
     required this.animation,
     required this.playback,
@@ -1015,11 +1073,47 @@ class _MobileNowPlayingOverlay extends StatelessWidget {
   final GestureDragCancelCallback onVerticalDragCancel;
 
   @override
+  State<_MobileNowPlayingOverlay> createState() =>
+      _MobileNowPlayingOverlayState();
+}
+
+class _MobileNowPlayingOverlayState extends State<_MobileNowPlayingOverlay> {
+  late bool _contentActive;
+
+  @override
+  void initState() {
+    super.initState();
+    _contentActive = widget.animation.status == AnimationStatus.completed;
+    widget.animation.addStatusListener(_handleAnimationStatus);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileNowPlayingOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation == widget.animation) return;
+    oldWidget.animation.removeStatusListener(_handleAnimationStatus);
+    _contentActive = widget.animation.status == AnimationStatus.completed;
+    widget.animation.addStatusListener(_handleAnimationStatus);
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    final active = status == AnimationStatus.completed;
+    if (_contentActive == active || !mounted) return;
+    setState(() => _contentActive = active);
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeStatusListener(_handleAnimationStatus);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: animation,
+      animation: widget.animation,
       builder: (context, child) {
-        final progress = animation.value;
+        final progress = widget.animation.value;
         final height = MediaQuery.sizeOf(context).height;
         return IgnorePointer(
           ignoring: progress <= 0,
@@ -1030,13 +1124,14 @@ class _MobileNowPlayingOverlay extends StatelessWidget {
         );
       },
       child: NowPlayingScreen(
-        playback: playback,
-        userState: userState,
-        onClose: onClose,
-        onVerticalDragStart: onVerticalDragStart,
-        onVerticalDragUpdate: onVerticalDragUpdate,
-        onVerticalDragEnd: onVerticalDragEnd,
-        onVerticalDragCancel: onVerticalDragCancel,
+        playback: widget.playback,
+        userState: widget.userState,
+        isActive: _contentActive,
+        onClose: widget.onClose,
+        onVerticalDragStart: widget.onVerticalDragStart,
+        onVerticalDragUpdate: widget.onVerticalDragUpdate,
+        onVerticalDragEnd: widget.onVerticalDragEnd,
+        onVerticalDragCancel: widget.onVerticalDragCancel,
       ),
     );
   }
@@ -1254,8 +1349,8 @@ class _Sidebar extends StatelessWidget {
       strong: true,
       color: context.soundChromeSurface,
       borderRadius: BorderRadius.zero,
-      shadowOffset: const Offset(4, 0),
-      shadowBlur: 16,
+      shadowOffset: const Offset(1, 0),
+      shadowBlur: 6,
       child: Material(
         color: Colors.transparent,
         child: SafeArea(
@@ -1269,10 +1364,12 @@ class _Sidebar extends StatelessWidget {
                   padding: EdgeInsets.fromLTRB(10, 2, 10, 12),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.graphic_eq_rounded,
-                        size: 20,
-                        color: SoundColors.accent,
+                      Image.asset(
+                        'assets/branding/app_icon_master-v6.png',
+                        width: 28,
+                        height: 28,
+                        filterQuality: FilterQuality.high,
+                        semanticLabel: 'Reverie',
                       ),
                       const SizedBox(width: 8),
                       Text(

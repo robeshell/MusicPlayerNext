@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sound_player/domain/library_models.dart';
+import 'package:sound_player/playback/media_favorite_controller.dart';
 import 'package:sound_player/playback/media_notification_permission.dart';
 import 'package:sound_player/playback/playback_controller.dart';
 import 'package:sound_player/playback/playback_engine.dart';
+import 'package:sound_player/playback/playback_mode.dart';
 import 'package:sound_player/playback/sound_audio_handler.dart';
 
 void main() {
@@ -65,11 +67,15 @@ void main() {
       initialQueue: const [first, second],
     );
     final notificationPermission = _RecordingNotificationPermission();
-    final handler = SoundAudioHandler(
-      notificationPermission: notificationPermission,
-    )..attach(controller);
+    final favorites = _HandlerFavoriteController();
+    final handler =
+        SoundAudioHandler(notificationPermission: notificationPermission)
+          ..attach(controller)
+          ..attachFavoriteController(favorites);
     addTearDown(() {
+      handler.detachFavoriteController(favorites);
       handler.detach();
+      favorites.dispose();
       controller.dispose();
       engine.dispose();
     });
@@ -80,8 +86,27 @@ void main() {
     expect(handler.mediaItem.value?.title, 'First');
     expect(handler.queue.value.map((item) => item.id), ['first', 'second']);
     expect(handler.playbackState.value.playing, isTrue);
-    expect(handler.playbackState.value.controls, contains(MediaControl.pause));
-    expect(handler.playbackState.value.androidCompactActionIndices, [0, 1, 2]);
+    expect(
+      handler.playbackState.value.controls.any(
+        (control) => control.action == MediaAction.pause,
+      ),
+      isTrue,
+    );
+    expect(handler.playbackState.value.controls, hasLength(5));
+    expect(
+      handler.playbackState.value.controls.first.customAction?.name,
+      SoundAudioHandler.toggleShuffleAction,
+    );
+    expect(
+      handler.playbackState.value.controls.last.customAction?.name,
+      SoundAudioHandler.toggleFavoriteAction,
+    );
+    expect(handler.playbackState.value.androidCompactActionIndices, [1, 2, 3]);
+    expect(handler.playbackState.value.repeatMode, AudioServiceRepeatMode.all);
+    expect(
+      handler.playbackState.value.shuffleMode,
+      AudioServiceShuffleMode.none,
+    );
     expect(notificationPermission.requestCount, 1);
 
     await handler.seek(const Duration(seconds: 75));
@@ -98,7 +123,12 @@ void main() {
 
     await handler.pause();
     expect(controller.isPlaying, isFalse);
-    expect(handler.playbackState.value.controls, contains(MediaControl.play));
+    expect(
+      handler.playbackState.value.controls.any(
+        (control) => control.action == MediaAction.play,
+      ),
+      isTrue,
+    );
     expect(engine.pauseCount, 1);
 
     await handler.play();
@@ -119,12 +149,40 @@ void main() {
 
     await controller.playTrack(first, queue: const [first]);
     await handler.pause();
-    expect(handler.playbackState.value.controls, [
-      MediaControl.skipToPrevious,
-      MediaControl.play,
-      MediaControl.skipToNext,
-    ]);
-    expect(handler.playbackState.value.androidCompactActionIndices, [0, 1, 2]);
+    final controls = handler.playbackState.value.controls;
+    expect(controls, hasLength(5));
+    expect(controls[1].action, MediaAction.skipToPrevious);
+    expect(controls[1].androidIcon, 'drawable/ic_notification_previous');
+    expect(controls[2].action, MediaAction.play);
+    expect(controls[2].androidIcon, 'drawable/ic_notification_play');
+    expect(controls[3].action, MediaAction.skipToNext);
+    expect(controls[3].androidIcon, 'drawable/ic_notification_next');
+    expect(handler.playbackState.value.androidCompactActionIndices, [1, 2, 3]);
+
+    await handler.customAction(SoundAudioHandler.toggleShuffleAction);
+    expect(controller.playbackMode, PlaybackMode.shuffle);
+    expect(
+      handler.playbackState.value.shuffleMode,
+      AudioServiceShuffleMode.all,
+    );
+    expect(
+      handler.playbackState.value.controls.first.androidIcon,
+      'drawable/ic_notification_shuffle_on',
+    );
+
+    expect(favorites.isFavorite(first.id), isFalse);
+    expect(
+      handler.playbackState.value.controls.last.androidIcon,
+      'drawable/ic_notification_favorite_border',
+    );
+    await handler.customAction(SoundAudioHandler.toggleFavoriteAction);
+    expect(favorites.isFavorite(first.id), isTrue);
+    expect(
+      handler.playbackState.value.controls.last.androidIcon,
+      'drawable/ic_notification_favorite',
+    );
+    await handler.customAction(SoundAudioHandler.toggleFavoriteAction);
+    expect(favorites.isFavorite(first.id), isFalse);
   });
 }
 
@@ -135,6 +193,20 @@ class _RecordingNotificationPermission implements MediaNotificationPermission {
   Future<bool> ensureGranted() async {
     requestCount++;
     return true;
+  }
+}
+
+class _HandlerFavoriteController extends ChangeNotifier
+    implements MediaFavoriteController {
+  final Set<String> _favoriteIds = {};
+
+  @override
+  bool isFavorite(String trackId) => _favoriteIds.contains(trackId);
+
+  @override
+  Future<void> toggleFavorite(Track track) async {
+    if (!_favoriteIds.add(track.id)) _favoriteIds.remove(track.id);
+    notifyListeners();
   }
 }
 

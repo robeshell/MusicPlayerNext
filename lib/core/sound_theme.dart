@@ -106,10 +106,10 @@ abstract final class SoundColors {
   static const darkSurface = Color(0xFF17171A);
   static const darkElevated = Color(0xFF202024);
   static const darkOverlay = Color(0xFF29292E);
-  static const lightCanvas = Color(0xFFFAF5EE);
-  static const lightSurface = Color(0xFFFCFAF6);
-  static const lightElevated = Color(0xFFFFFDFC);
-  static const lightOverlay = Color(0xFFF6EFE7);
+  static const lightCanvas = Color(0xFFF7F7F8);
+  static const lightSurface = Color(0xFFFAFAFB);
+  static const lightElevated = Color(0xFFFFFFFF);
+  static const lightOverlay = Color(0xFFF1F2F4);
   static const webDav = Color(0xFF5E8BFF);
   static const local = Color(0xFF55B889);
 }
@@ -131,7 +131,7 @@ class SoundGlassTheme extends ThemeExtension<SoundGlassTheme> {
   });
 
   static const light = SoundGlassTheme(
-    canvasHighlight: Color(0xFFFFFAF4),
+    canvasHighlight: Color(0xFFFBFBFC),
     surface: Color(0xB8FFFFFF),
     strongSurface: Color(0xDEFFFFFF),
     border: Color(0x12000000),

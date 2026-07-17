@@ -4,7 +4,6 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -24,6 +23,7 @@ import android.support.v4.media.RatingCompat;
 import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
+import android.util.Log;
 import android.util.LruCache;
 import android.util.Size;
 import android.view.KeyEvent;
@@ -49,6 +49,7 @@ import java.util.Map;
 import io.flutter.embedding.engine.FlutterEngine;
 
 public class AudioService extends MediaBrowserServiceCompat {
+    private static final String TAG = "AudioService";
     public static final String CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED";
     public static final String CONTENT_STYLE_PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT";
     public static final String CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT";
@@ -59,8 +60,9 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     private static final String SHARED_PREFERENCES_NAME = "audio_service_preferences";
 
-    private static final int NOTIFICATION_ID = 1124;
-    private static final int REQUEST_CONTENT_INTENT = 1000;
+    // Do not reuse the original audio_service notification row: some OEM
+    // SystemUI builds cache its old application badge across APK upgrades.
+    private static final int NOTIFICATION_ID = 1125;
     public static final String NOTIFICATION_CLICK_ACTION = "com.ryanheise.audioservice.NOTIFICATION_CLICK";
     public static final String CUSTOM_ACTION_STOP = "com.ryanheise.audioservice.action.STOP";
     public static final String CUSTOM_ACTION_FAST_FORWARD = "com.ryanheise.audioservice.action.FAST_FORWARD";
@@ -101,7 +103,6 @@ public class AudioService extends MediaBrowserServiceCompat {
             | PlaybackStateCompat.ACTION_SET_CAPTIONING_ENABLED;
 
     static AudioService instance;
-    private static PendingIntent contentIntent;
     private static ServiceListener listener;
     private static List<MediaSessionCompat.QueueItem> queue = new ArrayList<>();
     private static final Map<String, MediaMetadataCompat> mediaMetadataCache = new HashMap<>();
@@ -385,6 +386,13 @@ public class AudioService extends MediaBrowserServiceCompat {
         MediaButtonReceiver.handleIntent(mediaSession, intent);
     }
 
+    void handleNotificationCustomAction(String action, Bundle extras) {
+        if (action == null || mediaSessionCallback == null) {
+            return;
+        }
+        mediaSessionCallback.onCustomAction(action, extras);
+    }
+
     public void stop() {
         deactivateMediaSession();
         stopSelf();
@@ -426,20 +434,6 @@ public class AudioService extends MediaBrowserServiceCompat {
             ? config.androidNotificationChannelId
             : getApplication().getPackageName() + ".channel";
 
-        if (config.activityClassName != null) {
-            Context context = getApplicationContext();
-            Intent intent = new Intent((String)null);
-            intent.setComponent(new ComponentName(context, config.activityClassName));
-            //Intent intent = new Intent(context, config.activityClassName);
-            intent.setAction(NOTIFICATION_CLICK_ACTION);
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (Build.VERSION.SDK_INT >= 23) {
-                flags |= PendingIntent.FLAG_IMMUTABLE;
-            }
-            contentIntent = PendingIntent.getActivity(context, REQUEST_CONTENT_INTENT, intent, flags);
-        } else {
-            contentIntent = null;
-        }
         if (!config.androidResumeOnClick) {
             mediaSession.setMediaButtonReceiver(null);
         }
@@ -447,15 +441,78 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     int getResourceId(String resource) {
         String[] parts = resource.split("/");
-        String resourceType = parts[0];
-        String resourceName = parts[1];
-        return getResources().getIdentifier(resourceName, resourceType, getApplicationContext().getPackageName());
+        if (parts.length == 2) {
+            String resourceType = parts[0];
+            String resourceName = parts[1];
+            return getResources().getIdentifier(
+                    resourceName,
+                    resourceType,
+                    getApplicationContext().getPackageName());
+        }
+        return 0;
+    }
+
+    int getNotificationIconResourceId(String resource) {
+        int resourceId = getResourceId(resource);
+        if (resourceId != 0) {
+            return resourceId;
+        }
+        // A missing small-icon resource makes NotificationManager throw on the
+        // main thread. This fallback keeps the media service alive even if an
+        // OEM build tool or a future resource-shrinker rule removes the icon.
+        Log.w(TAG, "Notification resource not found: " + resource
+                + "; falling back to the application icon.");
+        return getApplicationInfo().icon;
+    }
+
+    int getMediaActionIconResourceId(String resource, long actionCode) {
+        int resourceId = getResourceId(resource);
+        if (resourceId != 0) {
+            return resourceId;
+        }
+        Log.w(TAG, "Media action resource not found: " + resource
+                + "; falling back to an Android system icon.");
+        if (actionCode == PlaybackStateCompat.ACTION_PLAY) {
+            return android.R.drawable.ic_media_play;
+        } else if (actionCode == PlaybackStateCompat.ACTION_PAUSE) {
+            return android.R.drawable.ic_media_pause;
+        } else if (actionCode == PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS) {
+            return android.R.drawable.ic_media_previous;
+        } else if (actionCode == PlaybackStateCompat.ACTION_SKIP_TO_NEXT) {
+            return android.R.drawable.ic_media_next;
+        } else if (actionCode == PlaybackStateCompat.ACTION_REWIND) {
+            return android.R.drawable.ic_media_rew;
+        } else if (actionCode == PlaybackStateCompat.ACTION_FAST_FORWARD) {
+            return android.R.drawable.ic_media_ff;
+        }
+        return getApplicationInfo().icon;
     }
 
     NotificationCompat.Action createAction(String resource, String label, long actionCode) {
-        int iconId = getResourceId(resource);
+        int iconId = getMediaActionIconResourceId(resource, actionCode);
         return new NotificationCompat.Action(iconId, label,
                 buildMediaButtonPendingIntent(actionCode));
+    }
+
+    NotificationCompat.Action createCustomNotificationAction(
+            PlaybackStateCompat.CustomAction action) {
+        Intent intent = new Intent(this, MediaButtonReceiver.class);
+        intent.setAction(MediaButtonReceiver.ACTION_NOTIFICATION_CUSTOM);
+        intent.putExtra(MediaButtonReceiver.EXTRA_CUSTOM_ACTION, action.getAction());
+        intent.putExtra(MediaButtonReceiver.EXTRA_CUSTOM_EXTRAS, action.getExtras());
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                this,
+                action.getAction().hashCode(),
+                intent,
+                flags);
+        return new NotificationCompat.Action(
+                action.getIcon(),
+                action.getName(),
+                pendingIntent);
     }
 
     private boolean needCustomMediaControl(MediaControl control) {
@@ -482,7 +539,9 @@ public class AudioService extends MediaBrowserServiceCompat {
     }
 
     PlaybackStateCompat.CustomAction createCustomAction(MediaControl control) {
-        int iconId = getResourceId(control.icon);
+        int iconId = getMediaActionIconResourceId(
+                control.icon,
+                control.actionCode);
         if (control.customAction != null) {
             return new PlaybackStateCompat.CustomAction.Builder(control.customAction.name, control.label, iconId)
                 .setExtras(mapToBundle(control.customAction.extras))
@@ -533,6 +592,16 @@ public class AudioService extends MediaBrowserServiceCompat {
         return PendingIntent.getBroadcast(this, 0, intent, flags);
     }
 
+    PendingIntent buildNotificationBodyPendingIntent() {
+        Intent intent = new Intent(this, MediaButtonReceiver.class);
+        intent.setAction(MediaButtonReceiver.ACTION_NOTIFICATION_NO_OP);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return PendingIntent.getBroadcast(this, NOTIFICATION_ID + 1, intent, flags);
+    }
+
     void setState(List<MediaControl> controls, long actionBits, int[] compactActionIndices, AudioProcessingState processingState, boolean playing, long position, long bufferedPosition, float speed, long updateTime, Integer errorCode, String errorMessage, int repeatMode, int shuffleMode, boolean captioningEnabled, Long queueIndex) {
         boolean notificationChanged = false;
         if (!Arrays.equals(compactActionIndices, this.compactActionIndices)) {
@@ -548,6 +617,10 @@ public class AudioService extends MediaBrowserServiceCompat {
             final PlaybackStateCompat.CustomAction customAction = createCustomAction(control);
             if (customAction != null) {
                 customActions.add(customAction);
+                // Android 13+ normally derives custom media slots from the
+                // PlaybackState. Some OEM panels still render only the
+                // Notification actions, so publish the same action there too.
+                nativeActions.add(createCustomNotificationAction(customAction));
             } else {
                 nativeActions.add(createAction(control.icon, control.label, control.actionCode));
             }
@@ -663,8 +736,10 @@ public class AudioService extends MediaBrowserServiceCompat {
                     builder.setLargeIcon(artBitmap);
             }
         }
-        if (config.androidNotificationClickStartsActivity)
-            builder.setContentIntent(mediaSession.getController().getSessionActivity());
+        // A null content intent is not enough on OriginOS: SystemUI may insert
+        // the launcher activity again. An explicit no-op broadcast absorbs
+        // imprecise taps around the action row without opening the app.
+        builder.setContentIntent(buildNotificationBodyPendingIntent());
         // TODO: Look at setColorized
         if (config.notificationColor != -1)
             builder.setColor(config.notificationColor);
@@ -705,7 +780,7 @@ public class AudioService extends MediaBrowserServiceCompat {
                     .setDeleteIntent(buildDeletePendingIntent())
             ;
         }
-        int iconId = getResourceId(config.androidNotificationIcon);
+        int iconId = getNotificationIconResourceId(config.androidNotificationIcon);
         notificationBuilder.setSmallIcon(iconId);
         return notificationBuilder;
     }
@@ -741,7 +816,7 @@ public class AudioService extends MediaBrowserServiceCompat {
             mediaSession.setActive(true);
 
         acquireWakeLock();
-        mediaSession.setSessionActivity(contentIntent);
+        mediaSession.setSessionActivity(null);
         internalStartForeground();
     }
 

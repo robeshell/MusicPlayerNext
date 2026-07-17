@@ -809,7 +809,11 @@ class _SourceGroup extends StatelessWidget {
         for (var index = 0; index < children.length; index++) ...[
           children[index],
           if (index != children.length - 1)
-            Divider(height: 1, indent: 42, color: _sourceHairline(context)),
+            Divider(
+              height: 1,
+              indent: context.soundIsCompact ? 4 : 42,
+              color: _sourceHairline(context),
+            ),
         ],
       ],
     );
@@ -847,20 +851,22 @@ class _SourceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 560;
+        final compact = context.soundIsCompact || constraints.maxWidth < 560;
         return Padding(
           padding: const EdgeInsets.fromLTRB(4, 10, 0, 10),
           child: Row(
             children: [
-              SizedBox(
-                width: 28,
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: iconColor.withValues(alpha: iconColor.a * 0.78),
+              if (!compact) ...[
+                SizedBox(
+                  width: 28,
+                  child: Icon(
+                    icon,
+                    size: 18,
+                    color: iconColor.withValues(alpha: iconColor.a * 0.78),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

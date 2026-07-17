@@ -262,7 +262,7 @@ void main() {
     engine.dispose();
   });
 
-  testWidgets('mobile artist and desktop genre retain the compact hero', (
+  testWidgets('mobile artist is immersive while desktop genre stays compact', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -315,10 +315,15 @@ void main() {
     );
     expect(find.byKey(const ValueKey('desktop-artist-play')), findsNothing);
     expect(
+      find.byKey(const ValueKey('artist-detail-background')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('mobile-artist-play')), findsOneWidget);
+    expect(
       tester
           .getSize(find.byKey(const ValueKey('collection-detail-artwork')))
           .width,
-      156,
+      inInclusiveRange(204, 244),
     );
 
     tester.view.physicalSize = const Size(1000, 800);
@@ -332,6 +337,10 @@ void main() {
       ),
     );
     expect(find.byKey(const ValueKey('desktop-artist-play')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('artist-detail-background')),
+      findsNothing,
+    );
     expect(
       tester
           .getSize(find.byKey(const ValueKey('collection-detail-artwork')))

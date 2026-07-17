@@ -24,17 +24,21 @@ class SoundApp extends StatefulWidget {
     this.initialCatalog,
     this.ownsRepository = false,
     this.sessionStore,
+    this.initialSession,
+    this.sessionIsPreloaded = false,
     this.audioHandler,
     this.webDavCache,
     this.enableFirstRunGuide,
     super.key,
-  });
+  }) : assert(!sessionIsPreloaded || sessionStore != null);
 
   final PlaybackEngine engine;
   final LibraryRepository? repository;
   final LibraryCatalogSnapshot? initialCatalog;
   final bool ownsRepository;
   final PlaybackSessionStore? sessionStore;
+  final PlaybackSession? initialSession;
+  final bool sessionIsPreloaded;
   final SoundAudioHandler? audioHandler;
   final WebDavCache? webDavCache;
   final bool? enableFirstRunGuide;
@@ -76,7 +80,11 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _engine = widget.engine;
-    unawaited(_bootstrapPlayback());
+    if (widget.sessionIsPreloaded) {
+      _attachPlayback(widget.sessionStore!, widget.initialSession);
+    } else {
+      unawaited(_bootstrapPlayback());
+    }
   }
 
   Future<void> _bootstrapPlayback() async {
@@ -97,6 +105,14 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
     final session = await store.load();
     if (!mounted) return;
 
+    _attachPlayback(store, session, rebuild: true);
+  }
+
+  void _attachPlayback(
+    PlaybackSessionStore store,
+    PlaybackSession? session, {
+    bool rebuild = false,
+  }) {
     final playback = SoundPlaybackController(
       engine: _engine,
       initialSession: session,
@@ -104,7 +120,11 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
     playback.addListener(_scheduleSessionSave);
     widget.audioHandler?.attach(playback);
     _sessionStore = store;
-    setState(() => _playback = playback);
+    if (rebuild) {
+      setState(() => _playback = playback);
+    } else {
+      _playback = playback;
+    }
 
     if (_validationMedia.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -292,6 +312,7 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
           ? const _PlaybackBootstrapScreen()
           : AppShell(
               playback: playback,
+              audioHandler: widget.audioHandler,
               libraryRepository: widget.repository,
               initialCatalog: widget.initialCatalog,
               webDavCache: widget.webDavCache,
@@ -307,6 +328,44 @@ class _PlaybackBootstrapScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAF5EE),
+      body: Center(
+        child: Semantics(
+          label: 'Reverie 正在启动',
+          child: SizedBox(
+            width: 220,
+            height: 220,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Transform.translate(
+                  offset: const Offset(0, -24),
+                  child: Image.asset(
+                    'assets/branding/launch_mark.png',
+                    width: 180,
+                    height: 180,
+                    filterQuality: FilterQuality.high,
+                    excludeFromSemantics: true,
+                  ),
+                ),
+                Transform.translate(
+                  offset: const Offset(0, 58),
+                  child: const Text(
+                    'Reverie',
+                    style: TextStyle(
+                      color: Color(0xFF1C1C22),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

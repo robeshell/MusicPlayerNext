@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../domain/library_models.dart';
 import '../../library/library_records.dart';
 import '../../library/library_repository.dart';
+import '../../playback/media_favorite_controller.dart';
 import 'library_catalog_controller.dart';
 
 class LibraryHistoryItem {
@@ -14,7 +15,8 @@ class LibraryHistoryItem {
   final Track track;
 }
 
-class LibraryUserStateController extends ChangeNotifier {
+class LibraryUserStateController extends ChangeNotifier
+    implements MediaFavoriteController {
   LibraryUserStateController({
     required this.repository,
     required this.catalog,
@@ -147,9 +149,11 @@ class LibraryUserStateController extends ChangeNotifier {
     for (final track in catalog.tracks) track.id: track,
   };
 
+  @override
   bool isFavorite(String trackId) =>
       _favorites.any((record) => record.trackId == trackId);
 
+  @override
   Future<void> toggleFavorite(Track track) async {
     final favorite = !isFavorite(track.id);
     try {

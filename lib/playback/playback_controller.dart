@@ -396,12 +396,24 @@ class SoundPlaybackController extends ChangeNotifier {
 
   void _acceptEngineSnapshot(PlaybackSnapshot next) {
     if (next.sessionId != 0 && next.sessionId != _sessionGeneration) return;
-    final nextTrack = next.track;
+    var acceptedSnapshot = next;
+    var nextTrack = next.track;
     if (nextTrack != null && _queue.isNotEmpty) {
-      final index = _queue.indexWhere((track) => track.id == nextTrack.id);
+      final emittedTrack = nextTrack;
+      final index = _queue.indexWhere((track) => track.id == emittedTrack.id);
       if (index < 0) return;
       _queueIndex = index;
-      _fallbackTrack = nextTrack;
+      final queuedTrack = _queue[index];
+      final libraryTrack =
+          queuedTrack.lyrics.isEmpty && emittedTrack.lyrics.isNotEmpty
+          ? emittedTrack
+          : queuedTrack;
+      if (!identical(queuedTrack, libraryTrack)) _queue[index] = libraryTrack;
+      nextTrack = libraryTrack;
+      _fallbackTrack = libraryTrack;
+      if (!identical(next.track, libraryTrack)) {
+        acceptedSnapshot = next.copyWith(track: libraryTrack);
+      }
     }
     final pendingTarget = _pendingSeekPosition;
     if (_pendingSeekTrackId != null &&
@@ -413,7 +425,7 @@ class SoundPlaybackController extends ChangeNotifier {
       _pendingSeekPosition = null;
       _pendingSeekTrackId = null;
     }
-    _snapshot = next;
+    _snapshot = acceptedSnapshot;
     if (nextTrack != null &&
         next.isPlaying &&
         (_lastStartedSession != next.sessionId ||
@@ -427,10 +439,10 @@ class SoundPlaybackController extends ChangeNotifier {
     if (next.phase == PlaybackPhase.completed &&
         _queue.isNotEmpty &&
         _queueIndex < _queue.length &&
-        _queue[_queueIndex].id == next.track?.id &&
+        _queue[_queueIndex].id == nextTrack?.id &&
         _completionHandledSession != next.sessionId) {
       _completionHandledSession = next.sessionId;
-      unawaited(_advanceAfterCompletion(next.sessionId, next.track!.id));
+      unawaited(_advanceAfterCompletion(next.sessionId, nextTrack!.id));
     }
   }
 

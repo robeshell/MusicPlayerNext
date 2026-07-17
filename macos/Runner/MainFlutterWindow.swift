@@ -3,24 +3,132 @@ import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
   private var localDirectoryAccessPlugin: LocalDirectoryAccessPlugin?
+  private var launchScreenBridge: LaunchScreenBridge?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
-    let windowFrame = self.frame
     self.contentViewController = flutterViewController
-    self.setFrame(windowFrame, display: true)
+    self.backgroundColor = LaunchScreenView.backgroundColor
     self.contentMinSize = NSSize(width: 900, height: 600)
+    var initialContentSize = NSSize(width: 1120, height: 780)
+    if let visibleFrame = (self.screen ?? NSScreen.main)?.visibleFrame {
+      initialContentSize.width = min(
+        initialContentSize.width,
+        max(self.contentMinSize.width, visibleFrame.width - 80))
+      initialContentSize.height = min(
+        initialContentSize.height,
+        max(self.contentMinSize.height, visibleFrame.height - 80))
+    }
+    self.setContentSize(initialContentSize)
+    self.center()
     self.titleVisibility = .hidden
     self.titlebarAppearsTransparent = true
     self.styleMask.insert(.fullSizeContentView)
     self.isMovableByWindowBackground = true
 
+    // Flutter debug launches and LaunchServices can retain the framework's
+    // default Dock icon. Always load the icon shipped in this app bundle so
+    // debug and release builds present the same Reverie identity.
+    if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+       let appIcon = NSImage(contentsOf: iconURL) {
+      NSApplication.shared.applicationIconImage = appIcon
+    }
+
     RegisterGeneratedPlugins(registry: flutterViewController)
+    launchScreenBridge = LaunchScreenBridge(
+      messenger: flutterViewController.engine.binaryMessenger,
+      containerView: flutterViewController.view)
     localDirectoryAccessPlugin = LocalDirectoryAccessPlugin(
       messenger: flutterViewController.engine.binaryMessenger,
       window: self)
 
     super.awakeFromNib()
+  }
+}
+
+private final class LaunchScreenBridge {
+  private let channel: FlutterMethodChannel
+  private weak var launchView: LaunchScreenView?
+
+  init(messenger: FlutterBinaryMessenger, containerView: NSView) {
+    channel = FlutterMethodChannel(
+      name: "com.soundplayer.sound_player/launch_screen",
+      binaryMessenger: messenger)
+
+    let launchView = LaunchScreenView(frame: containerView.bounds)
+    launchView.translatesAutoresizingMaskIntoConstraints = false
+    containerView.addSubview(launchView)
+    NSLayoutConstraint.activate([
+      launchView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+      launchView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+      launchView.topAnchor.constraint(equalTo: containerView.topAnchor),
+      launchView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+    ])
+    self.launchView = launchView
+
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "hide" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      self?.hide()
+      result(nil)
+    }
+  }
+
+  private func hide() {
+    guard let launchView else { return }
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0.18
+      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      launchView.animator().alphaValue = 0
+    } completionHandler: {
+      launchView.removeFromSuperview()
+    }
+  }
+}
+
+private final class LaunchScreenView: NSView {
+  static let backgroundColor = NSColor(
+    srgbRed: 250 / 255,
+    green: 245 / 255,
+    blue: 238 / 255,
+    alpha: 1)
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layer?.backgroundColor = Self.backgroundColor.cgColor
+
+    let imageView = NSImageView()
+    imageView.image = NSImage(named: "LaunchImage")
+    imageView.imageScaling = .scaleProportionallyUpOrDown
+    imageView.translatesAutoresizingMaskIntoConstraints = false
+
+    let title = NSTextField(labelWithString: "Reverie")
+    title.font = .systemFont(ofSize: 20, weight: .semibold)
+    title.textColor = NSColor(
+      srgbRed: 28 / 255,
+      green: 28 / 255,
+      blue: 34 / 255,
+      alpha: 1)
+    title.alignment = .center
+    title.translatesAutoresizingMaskIntoConstraints = false
+
+    addSubview(imageView)
+    addSubview(title)
+    NSLayoutConstraint.activate([
+      imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+      imageView.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -24),
+      imageView.widthAnchor.constraint(equalToConstant: 180),
+      imageView.heightAnchor.constraint(equalToConstant: 180),
+      title.centerXAnchor.constraint(equalTo: centerXAnchor),
+      title.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 58),
+    ])
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
   }
 }
 

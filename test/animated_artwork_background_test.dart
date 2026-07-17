@@ -128,6 +128,54 @@ void main() {
     );
   });
 
+  testWidgets('track changes blend from the current background palette', (
+    tester,
+  ) async {
+    final firstAlbum = Album(
+      id: 'first-transition-album',
+      title: 'First Album',
+      artist: 'Artist',
+      source: SourceKind.local,
+      palette: const [Color(0xFF8B4D32), Color(0xFF3D2018)],
+      tracks: const [],
+    );
+    final secondAlbum = Album(
+      id: 'second-transition-album',
+      title: 'Second Album',
+      artist: 'Artist',
+      source: SourceKind.local,
+      palette: const [Color(0xFF285E89), Color(0xFF162D4A)],
+      tracks: const [],
+    );
+
+    Widget player(Album album) => MaterialApp(
+      theme: SoundTheme.light,
+      home: Scaffold(
+        body: AnimatedArtworkBackground(
+          album: album,
+          position: Duration.zero,
+          isPlaying: false,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(player(firstAlbum));
+    final initial = _backgroundPainter(tester).colors;
+
+    await tester.pumpWidget(player(secondAlbum));
+    await tester.pump();
+    expect(_backgroundPainter(tester).colors, orderedEquals(initial));
+
+    await tester.pump(const Duration(milliseconds: 210));
+    final midway = _backgroundPainter(tester).colors;
+    final target = artworkFallbackGradientColors(secondAlbum, Brightness.light);
+    expect(midway, isNot(orderedEquals(initial)));
+    expect(midway, isNot(orderedEquals(target)));
+
+    await tester.pump(const Duration(milliseconds: 240));
+    expect(_backgroundPainter(tester).colors, orderedEquals(target));
+  });
+
   testWidgets('now-playing background honors reduced motion', (tester) async {
     final album = Album(
       id: 'fallback-album',

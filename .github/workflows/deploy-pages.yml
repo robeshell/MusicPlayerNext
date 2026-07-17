@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -26,11 +30,14 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Build Web
-        run: flutter build web --release --base-href /MusicPlayerNext/
+        run: flutter build web --release --base-href /MusicPlayerNext/app/
+
+      - name: Assemble website and Web app
+        run: bash tool/build_pages.sh
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: build/web
-          commit_message: 'deploy: publish web build [skip ci]'
+          publish_dir: build/pages
+          commit_message: 'deploy: publish website and web app [skip ci]'

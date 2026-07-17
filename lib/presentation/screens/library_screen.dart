@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:pinyin/pinyin.dart';
 
 import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
@@ -77,6 +80,11 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
+  final Map<LibraryBrowseMode, ScrollController> _scrollControllers = {
+    for (final mode in LibraryBrowseMode.values) mode: ScrollController(),
+  };
+  final GlobalKey _songListKey = GlobalKey();
+  final Map<String, String> _sortKeyCache = {};
   final Map<LibraryBrowseMode, LibrarySortOrder> _sortByMode = {
     for (final mode in LibraryBrowseMode.values)
       mode: LibrarySortOrder.titleAscending,
@@ -84,6 +92,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
   LibrarySourceFilter _sourceFilter = LibrarySourceFilter.all;
 
   LibrarySortOrder get _sortOrder => _sortByMode[widget.mode]!;
+  ScrollController get _scrollController => _scrollControllers[widget.mode]!;
+
+  @override
+  void dispose() {
+    for (final controller in _scrollControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +128,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
           LibraryBrowseMode.artists => artists.length,
           LibraryBrowseMode.songs => tracks.length,
         };
-        return CustomScrollView(
+        final songIndexEntries = widget.mode == LibraryBrowseMode.songs
+            ? _songIndexEntries(tracks)
+            : const <_SongIndexEntry>[];
+        final showSongIndex =
+            songIndexEntries.length > 1 && tracks.length >= (compact ? 8 : 12);
+        final scrollView = CustomScrollView(
+          key: PageStorageKey<String>('library-${widget.mode.name}'),
+          controller: _scrollController,
           slivers: [
             if (compact)
               SliverPadding(
@@ -158,10 +182,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     sortOptions: _sortOptions(widget.mode),
                     sourceFilter: _sourceFilter,
                     sourceOptions: sourceOptions,
-                    onSortChanged: (value) =>
-                        setState(() => _sortByMode[widget.mode] = value),
-                    onSourceChanged: (value) =>
-                        setState(() => _sourceFilter = value),
+                    onSortChanged: _changeSortOrder,
+                    onSourceChanged: _changeSourceFilter,
                     onPlayAll:
                         widget.mode == LibraryBrowseMode.songs &&
                             tracks.isNotEmpty
@@ -196,13 +218,148 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     gutter,
                     bottomPadding,
                     compact: compact,
+                    reserveFastIndex: showSongIndex,
                   ),
                 },
             ],
           ],
         );
+        if (!showSongIndex) return scrollView;
+        return Stack(
+          children: [
+            Positioned.fill(child: scrollView),
+            Positioned(
+              top: compact ? 104 : 70,
+              right: compact ? 0 : 6,
+              bottom: compact ? 12 : 20,
+              child: _SongFastIndex(
+                entries: songIndexEntries,
+                onSelected: (entry) => _jumpToSongIndex(entry, compact),
+              ),
+            ),
+          ],
+        );
       },
     );
+  }
+
+  void _changeSortOrder(LibrarySortOrder value) {
+    setState(() => _sortByMode[widget.mode] = value);
+    _resetScrollPosition();
+  }
+
+  void _changeSourceFilter(LibrarySourceFilter value) {
+    setState(() => _sourceFilter = value);
+    _resetScrollPosition();
+  }
+
+  void _resetScrollPosition() {
+    final controller = _scrollController;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !controller.hasClients) return;
+      controller.jumpTo(controller.position.minScrollExtent);
+    });
+  }
+
+  void _jumpToSongIndex(_SongIndexEntry entry, bool compact) {
+    if (!_scrollController.hasClients) return;
+    final renderObject = _songListKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderSliver) return;
+    final rowExtent = compact ? 64.0 : 68.0;
+    final target =
+        renderObject.constraints.precedingScrollExtent +
+        entry.itemIndex * rowExtent;
+    final position = _scrollController.position;
+    _scrollController.jumpTo(
+      target
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble(),
+    );
+  }
+
+  List<_SongIndexEntry> _songIndexEntries(List<Track> tracks) {
+    if (tracks.isEmpty) return const [];
+    if (_sortOrder == LibrarySortOrder.yearDescending) {
+      final entries = <_SongIndexEntry>[];
+      String? previous;
+      for (var index = 0; index < tracks.length; index++) {
+        final label = tracks[index].year?.toString() ?? '未知';
+        if (label == previous) continue;
+        entries.add(_SongIndexEntry(label: label, itemIndex: index));
+        previous = label;
+      }
+      return entries;
+    }
+
+    final firstIndexByLetter = <String, int>{};
+    for (var index = 0; index < tracks.length; index++) {
+      final label = _alphabetIndexLabel(_trackSortText(tracks[index]));
+      firstIndexByLetter.putIfAbsent(label, () => index);
+    }
+    final letters = _sortOrder == LibrarySortOrder.titleDescending
+        ? _alphabet.reversed.toList(growable: false)
+        : _alphabet;
+    final labels = [...letters, '#'];
+    final targets = List<int?>.filled(labels.length, null);
+    int? nextIndex;
+    for (var index = labels.length - 1; index >= 0; index--) {
+      nextIndex = firstIndexByLetter[labels[index]] ?? nextIndex;
+      targets[index] = nextIndex;
+    }
+    final entries = <_SongIndexEntry>[];
+    var previousIndex = firstIndexByLetter[labels.first] ?? 0;
+    for (var index = 0; index < labels.length; index++) {
+      previousIndex = targets[index] ?? previousIndex;
+      entries.add(
+        _SongIndexEntry(label: labels[index], itemIndex: previousIndex),
+      );
+    }
+    return entries;
+  }
+
+  String _trackSortText(Track track) => switch (_sortOrder) {
+    LibrarySortOrder.artistAscending => track.artist,
+    LibrarySortOrder.albumAscending => track.albumTitle,
+    LibrarySortOrder.titleAscending ||
+    LibrarySortOrder.titleDescending ||
+    LibrarySortOrder.trackCountDescending => track.title,
+    LibrarySortOrder.yearDescending => track.year?.toString() ?? '',
+  };
+
+  String _sortKey(String value) => _sortKeyCache.putIfAbsent(
+    value,
+    () => PinyinHelper.getPinyinE(
+      value.trim(),
+      separator: '',
+      defPinyin: '#',
+    ).toLowerCase(),
+  );
+
+  String _alphabetIndexLabel(String value) {
+    final normalized = _sortKey(value).toUpperCase();
+    for (final rune in normalized.runes) {
+      if (rune >= 65 && rune <= 90) return String.fromCharCode(rune);
+      if (rune >= 48 && rune <= 57) return '#';
+    }
+    return '#';
+  }
+
+  int _compareText(String left, String right) {
+    final leftLabel = _alphabetIndexLabel(left);
+    final rightLabel = _alphabetIndexLabel(right);
+    if (leftLabel == '#' && rightLabel != '#') return 1;
+    if (leftLabel != '#' && rightLabel == '#') return -1;
+    if (leftLabel != rightLabel) return leftLabel.compareTo(rightLabel);
+    return _sortKey(left).compareTo(_sortKey(right));
+  }
+
+  int _compareTextDescending(String left, String right) {
+    final leftLabel = _alphabetIndexLabel(left);
+    final rightLabel = _alphabetIndexLabel(right);
+    if (leftLabel == '#' && rightLabel != '#') return 1;
+    if (leftLabel != '#' && rightLabel == '#') return -1;
+    if (leftLabel != rightLabel) return rightLabel.compareTo(leftLabel);
+    return _sortKey(right).compareTo(_sortKey(left));
   }
 
   List<Album> _filterAlbums(List<Album> albums) {
@@ -221,10 +378,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         left.title,
         right.title,
       ),
-      LibrarySortOrder.titleDescending => (left, right) => _compareText(
-        right.title,
-        left.title,
-      ),
+      LibrarySortOrder.titleDescending =>
+        (left, right) => _compareTextDescending(left.title, right.title),
       LibrarySortOrder.artistAscending => (left, right) => _compareThen(
         _compareText(left.artist, right.artist),
         () => _compareText(left.title, right.title),
@@ -249,10 +404,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         left.title,
         right.title,
       ),
-      LibrarySortOrder.titleDescending => (left, right) => _compareText(
-        right.title,
-        left.title,
-      ),
+      LibrarySortOrder.titleDescending =>
+        (left, right) => _compareTextDescending(left.title, right.title),
       LibrarySortOrder.artistAscending => (left, right) => _compareThen(
         _compareText(left.artist, right.artist),
         () => _compareText(left.title, right.title),
@@ -418,6 +571,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     double gutter,
     double bottomPadding, {
     required bool compact,
+    required bool reserveFastIndex,
   }) {
     return [
       if (!compact)
@@ -431,8 +585,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       SliverPadding(
-        padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottomPadding),
+        padding: EdgeInsets.fromLTRB(
+          gutter,
+          0,
+          gutter + (reserveFastIndex ? (compact ? 32 : 20) : 0),
+          bottomPadding,
+        ),
         sliver: SliverPrototypeExtentList.builder(
+          key: _songListKey,
           itemCount: tracks.length,
           prototypeItem: _LibraryTrackRow(
             track: tracks.first,
@@ -470,6 +630,232 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 }
 
+const _alphabet = [
+  'A',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+  'G',
+  'H',
+  'I',
+  'J',
+  'K',
+  'L',
+  'M',
+  'N',
+  'O',
+  'P',
+  'Q',
+  'R',
+  'S',
+  'T',
+  'U',
+  'V',
+  'W',
+  'X',
+  'Y',
+  'Z',
+];
+
+class _SongIndexEntry {
+  const _SongIndexEntry({required this.label, required this.itemIndex});
+
+  final String label;
+  final int itemIndex;
+}
+
+class _SongFastIndex extends StatefulWidget {
+  const _SongFastIndex({required this.entries, required this.onSelected});
+
+  final List<_SongIndexEntry> entries;
+  final ValueChanged<_SongIndexEntry> onSelected;
+
+  @override
+  State<_SongFastIndex> createState() => _SongFastIndexState();
+}
+
+class _SongFastIndexState extends State<_SongFastIndex> {
+  int? _activeIndex;
+  bool _interacting = false;
+  double _pointerY = 0;
+
+  @override
+  void didUpdateWidget(_SongFastIndex oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((_activeIndex ?? 0) >= widget.entries.length) {
+      _activeIndex = null;
+    }
+  }
+
+  void _selectAt(double y, double height) {
+    if (height <= 0 || widget.entries.isEmpty) return;
+    final normalized = (y / height).clamp(0.0, 0.999999);
+    final index = (normalized * widget.entries.length).floor();
+    _selectIndex(index, pointerY: y.clamp(0.0, height).toDouble());
+  }
+
+  void _selectIndex(int index, {double? pointerY}) {
+    if (widget.entries.isEmpty) return;
+    final bounded = index.clamp(0, widget.entries.length - 1);
+    final changed = bounded != _activeIndex;
+    setState(() {
+      _activeIndex = bounded;
+      if (pointerY != null) _pointerY = pointerY;
+    });
+    if (!changed) return;
+    unawaited(HapticFeedback.selectionClick());
+    widget.onSelected(widget.entries[bounded]);
+  }
+
+  void _endInteraction() {
+    if (_interacting) setState(() => _interacting = false);
+  }
+
+  List<int> _visibleEntryIndices(double height) {
+    if (widget.entries.length <= 2) {
+      return List<int>.generate(widget.entries.length, (index) => index);
+    }
+    final maxVisible = (height / 12).floor().clamp(2, widget.entries.length);
+    if (maxVisible == widget.entries.length) {
+      return List<int>.generate(widget.entries.length, (index) => index);
+    }
+    final indices = <int>[];
+    for (var index = 0; index < maxVisible; index++) {
+      final sampled = (index * (widget.entries.length - 1) / (maxVisible - 1))
+          .round();
+      if (indices.isEmpty || indices.last != sampled) indices.add(sampled);
+    }
+    return indices;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('library-song-fast-index'),
+      width: 44,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final height = constraints.maxHeight;
+          final visibleIndices = _visibleEntryIndices(height);
+          final activeIndex = _activeIndex;
+          final activeLabel = activeIndex == null
+              ? null
+              : widget.entries[activeIndex].label;
+          final maxBubbleTop = (height - 44).clamp(0.0, double.infinity);
+          final bubbleTop = (_pointerY - 22)
+              .clamp(0.0, maxBubbleTop)
+              .toDouble();
+          return Semantics(
+            label: '歌曲快速滚动索引',
+            value: activeLabel ?? widget.entries.first.label,
+            increasedValue: activeIndex == null
+                ? widget.entries.first.label
+                : widget
+                      .entries[(activeIndex + 1).clamp(
+                        0,
+                        widget.entries.length - 1,
+                      )]
+                      .label,
+            decreasedValue: activeIndex == null
+                ? widget.entries.first.label
+                : widget.entries[(activeIndex - 1).clamp(0, activeIndex)].label,
+            onIncrease: () => _selectIndex((activeIndex ?? -1) + 1),
+            onDecrease: () => _selectIndex((activeIndex ?? 1) - 1),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (details) {
+                      setState(() => _interacting = true);
+                      _selectAt(details.localPosition.dy, height);
+                    },
+                    onTapUp: (_) => _endInteraction(),
+                    onTapCancel: _endInteraction,
+                    onVerticalDragStart: (details) {
+                      setState(() => _interacting = true);
+                      _selectAt(details.localPosition.dy, height);
+                    },
+                    onVerticalDragUpdate: (details) =>
+                        _selectAt(details.localPosition.dy, height),
+                    onVerticalDragEnd: (_) => _endInteraction(),
+                    onVerticalDragCancel: _endInteraction,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          for (final index in visibleIndices)
+                            Text(
+                              widget.entries[index].label,
+                              key: ValueKey(
+                                'library-song-fast-index-${widget.entries[index].label}',
+                              ),
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: index == activeIndex
+                                    ? SoundColors.accent
+                                    : context.soundMutedText,
+                                fontSize: widget.entries[index].label.length > 2
+                                    ? 8
+                                    : index == activeIndex
+                                    ? 10.5
+                                    : 9.5,
+                                height: 1,
+                                fontWeight: index == activeIndex
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (_interacting && activeLabel != null)
+                  Positioned(
+                    right: 48,
+                    top: bubbleTop,
+                    child: IgnorePointer(
+                      child: Container(
+                        key: const ValueKey('library-song-fast-index-overlay'),
+                        constraints: const BoxConstraints(minWidth: 48),
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: context.soundChromeSurface,
+                          borderRadius: BorderRadius.circular(
+                            SoundRadii.control,
+                          ),
+                          border: Border.all(
+                            color: SoundColors.accent.withValues(alpha: 0.18),
+                          ),
+                        ),
+                        child: Text(
+                          activeLabel,
+                          style: const TextStyle(
+                            color: SoundColors.accent,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 List<LibrarySortOrder> _sortOptions(LibraryBrowseMode mode) => switch (mode) {
   LibraryBrowseMode.albums => const [
     LibrarySortOrder.titleAscending,
@@ -490,9 +876,6 @@ List<LibrarySortOrder> _sortOptions(LibraryBrowseMode mode) => switch (mode) {
     LibrarySortOrder.yearDescending,
   ],
 };
-
-int _compareText(String left, String right) =>
-    left.toLowerCase().compareTo(right.toLowerCase());
 
 int _compareThen(int comparison, int Function() next) =>
     comparison == 0 ? next() : comparison;

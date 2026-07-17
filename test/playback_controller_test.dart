@@ -696,6 +696,54 @@ void main() {
       expect(started, [_firstTrack, _secondTrack]);
     });
 
+    test('native track changes retain queued lyrics metadata', () async {
+      const trackWithLyrics = Track(
+        id: 'lyrics-track',
+        title: 'Lyrics Track',
+        artist: 'Test Artist',
+        albumTitle: 'Test Album',
+        duration: Duration(minutes: 4),
+        source: SourceKind.local,
+        mediaUri: 'file:///lyrics.flac',
+        lyrics: [
+          LyricLine(Duration(seconds: 1), 'First lyric'),
+          LyricLine(Duration(seconds: 4), 'Second lyric'),
+        ],
+      );
+      const strippedEngineTrack = Track(
+        id: 'lyrics-track',
+        title: 'Lyrics Track',
+        artist: 'Test Artist',
+        albumTitle: 'Test Album',
+        duration: Duration(minutes: 4),
+        source: SourceKind.local,
+        mediaUri: 'file:///lyrics.flac',
+      );
+      final engine = ManualPlaylistPlaybackEngine();
+      final controller = SoundPlaybackController(engine: engine);
+      addTearDown(controller.dispose);
+      addTearDown(engine.dispose);
+
+      await controller.playTrack(
+        _firstTrack,
+        queue: const [_firstTrack, trackWithLyrics],
+      );
+      engine.emit(
+        PlaybackSnapshot(
+          sessionId: controller.snapshot.sessionId,
+          phase: PlaybackPhase.playing,
+          position: Duration.zero,
+          duration: strippedEngineTrack.duration,
+          track: strippedEngineTrack,
+          playWhenReady: true,
+        ),
+      );
+
+      expect(controller.currentTrack, same(trackWithLyrics));
+      expect(controller.currentTrack!.lyrics, hasLength(2));
+      expect(controller.currentTrack!.lyrics.first.text, 'First lyric');
+    });
+
     test('queue edits stay synchronized with the native playlist', () async {
       final engine = ManualPlaylistPlaybackEngine();
       final controller = SoundPlaybackController(engine: engine);

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -9,6 +11,7 @@ import 'app/sound_app.dart';
 import 'library/persistence/drift_library_repository.dart';
 import 'playback/just_audio_playback_engine.dart';
 import 'playback/playback_media_provider.dart';
+import 'playback/playback_session.dart';
 import 'playback/sound_audio_handler.dart';
 import 'presentation/controllers/library_catalog_controller.dart';
 import 'sources/webdav/webdav_cache.dart';
@@ -41,6 +44,10 @@ Future<void> main() async {
       androidNotificationIcon: 'drawable/ic_stat_sound',
       notificationColor: Color(0xFFFF5B55),
       androidNotificationOngoing: false,
+      // OriginOS occasionally treats taps near a media action as a tap on the
+      // notification body. Keep the card passive so a slightly imprecise tap
+      // can never pull the app to the foreground.
+      androidNotificationClickStartsActivity: false,
       // Keep the media foreground service alive while paused. Android 12+
       // may reject restarting it from a notification action once the app is
       // backgrounded, which makes the system play button appear unresponsive.
@@ -60,6 +67,8 @@ Future<void> main() async {
     await cache.init();
   }
   final initialCatalog = await initialCatalogFuture;
+  final playbackSessionStore = await _createPlaybackSessionStore();
+  final initialPlaybackSession = await playbackSessionStore.load();
 
   runApp(
     SoundApp(
@@ -72,8 +81,54 @@ Future<void> main() async {
       repository: libraryRepository,
       initialCatalog: initialCatalog,
       ownsRepository: true,
+      sessionStore: playbackSessionStore,
+      initialSession: initialPlaybackSession,
+      sessionIsPreloaded: true,
       audioHandler: audioHandler,
       webDavCache: cache,
     ),
   );
+
+  if (!kIsWeb && Platform.isMacOS) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_dismissMacOSLaunchScreen());
+    });
+  }
+}
+
+Future<PlaybackSessionStore> _createPlaybackSessionStore() async {
+  try {
+    return await PlaybackSessionStore.create();
+  } catch (error, stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'sound playback session',
+        context: ErrorDescription('while creating the session store'),
+      ),
+    );
+    return PlaybackSessionStore.memory();
+  }
+}
+
+const _macOSLaunchScreenChannel = MethodChannel(
+  'com.soundplayer.sound_player/launch_screen',
+);
+
+Future<void> _dismissMacOSLaunchScreen() async {
+  try {
+    await _macOSLaunchScreenChannel.invokeMethod<void>('hide');
+  } on MissingPluginException {
+    // A custom embedder is allowed to omit the native launch overlay.
+  } on PlatformException catch (error, stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'native launch screen',
+        context: ErrorDescription('while dismissing the macOS launch screen'),
+      ),
+    );
+  }
 }

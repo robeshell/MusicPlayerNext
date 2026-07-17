@@ -102,6 +102,25 @@ matching Apple developer account in Xcode before running the normal macOS build.
 An unsigned Xcode build can check compilation, but it cannot validate Keychain
 behavior.
 
+## Website and GitHub Pages
+
+The project website lives in [`website/`](website/). GitHub Pages serves the
+marketing and download site at
+<https://robeshell.github.io/MusicPlayerNext/>, while the Flutter Web experience
+is available under `/MusicPlayerNext/app/`.
+
+To assemble the same Pages artifact locally after building Flutter Web:
+
+```sh
+flutter build web --release --base-href /MusicPlayerNext/app/
+bash tool/build_pages.sh
+```
+
+The Pages workflow deploys `build/pages` to the existing `gh-pages` branch.
+Download buttons resolve matching assets from the latest GitHub Release at
+runtime and fall back to the repository release page before the first release
+is published.
+
 ## Documentation
 
 - [Development kanban](docs/KANBAN.md)

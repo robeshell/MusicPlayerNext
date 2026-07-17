@@ -9,6 +9,8 @@ class AlbumArt extends StatelessWidget {
     this.size,
     this.borderRadius = 10,
     this.showShadow = true,
+    this.cacheExtent,
+    this.gaplessPlayback = false,
     super.key,
   });
 
@@ -16,6 +18,8 @@ class AlbumArt extends StatelessWidget {
   final double? size;
   final double borderRadius;
   final bool showShadow;
+  final int? cacheExtent;
+  final bool gaplessPlayback;
 
   @override
   Widget build(BuildContext context) {
@@ -23,16 +27,18 @@ class AlbumArt extends StatelessWidget {
       builder: (context, constraints) {
         final logicalExtent = constraints.biggest.shortestSide;
         final hasFiniteExtent = logicalExtent.isFinite && logicalExtent > 0;
-        final cacheExtent = hasFiniteExtent
-            ? quantizedArtworkCacheExtent(
-                logicalExtent,
-                MediaQuery.devicePixelRatioOf(context),
-              )
-            : null;
+        final resolvedCacheExtent =
+            cacheExtent ??
+            (hasFiniteExtent
+                ? quantizedArtworkCacheExtent(
+                    logicalExtent,
+                    MediaQuery.devicePixelRatioOf(context),
+                  )
+                : null);
         final imageProvider = artworkImageProvider(
           album.artworkUri,
-          cacheWidth: cacheExtent,
-          cacheHeight: cacheExtent,
+          cacheWidth: resolvedCacheExtent,
+          cacheHeight: resolvedCacheExtent,
         );
         return Container(
           decoration: BoxDecoration(
@@ -63,6 +69,7 @@ class AlbumArt extends StatelessWidget {
                       image: imageProvider,
                       fit: BoxFit.cover,
                       filterQuality: FilterQuality.medium,
+                      gaplessPlayback: gaplessPlayback,
                       errorBuilder: (_, _, _) =>
                           _ArtworkPlaceholder(album: album),
                     ),

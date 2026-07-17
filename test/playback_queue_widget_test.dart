@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sound_player/core/sound_theme.dart';
 import 'package:sound_player/domain/library_models.dart';
 import 'package:sound_player/playback/playback_controller.dart';
 import 'package:sound_player/playback/playback_mode.dart';
@@ -9,6 +10,7 @@ import 'package:sound_player/presentation/screens/album_detail_screen.dart';
 import 'package:sound_player/presentation/screens/now_playing_screen.dart';
 import 'package:sound_player/presentation/controllers/offline_download_controller.dart';
 import 'package:sound_player/presentation/widgets/playback_queue_sheet.dart';
+import 'package:sound_player/presentation/widgets/album_art.dart';
 
 void main() {
   testWidgets('queue sheet changes mode, removes tracks, and clears queue', (
@@ -85,6 +87,23 @@ void main() {
     expect(find.byTooltip('列表循环'), findsOneWidget);
     expect(find.byKey(const ValueKey('now-playing-view-switch')), findsNothing);
     expect(find.byKey(const ValueKey('compact-player')), findsOneWidget);
+    expect(
+      tester
+          .widget<AlbumArt>(
+            find.byKey(const ValueKey('compact-now-playing-artwork')),
+          )
+          .gaplessPlayback,
+      isTrue,
+    );
+
+    await playback.next();
+    await tester.pump();
+    expect(find.text('First'), findsOneWidget);
+    expect(find.text('Second'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(find.text('First'), findsNothing);
+    expect(find.text('Second'), findsOneWidget);
+
     await tester.tap(find.byKey(const ValueKey('show-now-playing-lyrics')));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('compact-lyrics')), findsOneWidget);
@@ -97,10 +116,15 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.byKey(const ValueKey('compact-lyrics-secondary-actions')),
+      findsOneWidget,
+    );
+    expect(find.text('Second lyric'), findsOneWidget);
+    expect(
       tester
           .getSize(find.byKey(const ValueKey('compact-lyrics-region')))
           .height,
-      lessThanOrEqualTo(360),
+      lessThanOrEqualTo(392),
     );
     await tester.tap(find.byKey(const ValueKey('return-now-playing-cover')));
     await tester.pump(const Duration(milliseconds: 300));
@@ -194,6 +218,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final engine = SimulatedPlaybackEngine();
       final playback = SoundPlaybackController(engine: engine);
+      await playback.playTrack(_first, queue: const [_first, _second]);
       final album = Album(
         id: 'compact-album',
         title: 'A Long Mobile Album Title',
@@ -215,19 +240,33 @@ void main() {
       await tester.pump();
 
       expect(
-        tester.getSize(find.byKey(const ValueKey('album-detail-artwork'))),
-        const Size.square(156),
+        tester
+            .getSize(find.byKey(const ValueKey('album-detail-artwork')))
+            .width,
+        inInclusiveRange(204, 244),
       );
       expect(
         tester.getSize(find.byKey(const ValueKey('album-detail-hero'))).height,
-        lessThan(420),
+        lessThan(560),
       );
+      expect(
+        find.byKey(const ValueKey('album-detail-background')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('album-detail-play')), findsOneWidget);
       expect(find.text('本地'), findsNothing);
       expect(
         tester
             .getSize(find.byKey(const ValueKey('album-track-row-first')))
             .height,
         64,
+      );
+      final activeRow = tester.widget<Container>(
+        find.byKey(const ValueKey('album-track-row-first')),
+      );
+      expect(
+        (activeRow.decoration! as BoxDecoration).color,
+        isNot(SoundColors.accent.withValues(alpha: 0.075)),
       );
       expect(
         tester
@@ -467,6 +506,7 @@ const _second = Track(
   albumTitle: 'Album',
   duration: Duration(minutes: 4),
   source: SourceKind.local,
+  lyrics: [LyricLine(Duration(seconds: 1), 'Second lyric')],
 );
 
 const _third = Track(

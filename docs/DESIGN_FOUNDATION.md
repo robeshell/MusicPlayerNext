@@ -43,6 +43,8 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
    - Album cards use large square art with compact title and artist. Source is
      available through filters, details and diagnostics rather than repeated
      badges on every card.
+   - Long song lists expose a sort-aware fast index: alphabetical fields use
+     A-Z with pinyin initials for Chinese, while year sorting uses real years.
 2. Album detail
    - Large cover on the left, title and metadata on the right.
    - Red primary play action and quiet secondary shuffle action.
@@ -53,6 +55,9 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
    - Synchronized lyrics keep the active line near the visual center.
 4. Settings and music sources
    - Settings begins with real Playback, Library, Operations and About groups.
+   - Desktop uses category anchors and inline selectors. Compact mobile uses a
+     grouped settings index and bottom-sheet selectors; desktop-only keyboard
+     and window controls never appear there.
    - Music sources are a Library subpage rather than the whole settings area.
    - Connections and indexed folders are separate concepts.
    - Local folder and WebDAV are first-release source types.
@@ -62,6 +67,23 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
      edge, cover and title stay left, transport stays centered on the same row,
      and contextual actions stay right.
    - Compact platforms retain cover, title, play/pause, and next.
+
+## Launch experience
+
+- Startup uses a native launch surface so audio, cache and library
+  initialization never exposes an empty white or black window.
+- The launch surface is deliberately quiet: `#FAF5EE` canvas and the rounded
+  coral Reverie music icon. macOS and web pair it with a 20 px semibold
+  wordmark; Android and iOS follow the platform's icon-only convention. It
+  contains no artwork card, slogan, progress percentage or decorative gradient.
+- Playback-session loading completes before the production app renders its
+  first Flutter frame. Native Android, iOS and macOS surfaces therefore
+  transition directly into the app shell instead of showing a second branded
+  bootstrap page. macOS and web dismiss their overlay only when that first
+  ready frame arrives; fixed-duration splash delays are not allowed.
+- The launch screen follows the light-first product identity even when the
+  operating system is in dark mode, avoiding a dark flash before Reverie's
+  light canvas appears.
 
 ## Design tokens
 

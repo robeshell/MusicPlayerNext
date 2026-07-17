@@ -14,10 +14,39 @@ import 'package:sound_player/playback/simulated_playback_engine.dart';
 import 'package:sound_player/presentation/app_shell.dart';
 import 'package:sound_player/presentation/controllers/library_catalog_controller.dart';
 import 'package:sound_player/presentation/screens/now_playing_screen.dart';
+import 'package:sound_player/presentation/widgets/animated_artwork_background.dart';
 import 'package:sound_player/presentation/widgets/mini_player.dart';
 import 'package:sound_player/presentation/widgets/sound_components.dart';
 
 void main() {
+  testWidgets('preloaded playback session skips the Flutter launch screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithAlbum();
+    addTearDown(repository.close);
+
+    await tester.pumpWidget(
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: PlaybackSessionStore.memory(),
+        sessionIsPreloaded: true,
+      ),
+    );
+
+    expect(
+      find.image(const AssetImage('assets/branding/launch_mark.png')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('desktop-search-action')), findsOneWidget);
+
+    await _unmountAndFlush(tester);
+  });
+
   testWidgets('preloaded catalog renders on the first app-shell frame', (
     tester,
   ) async {
@@ -71,6 +100,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Reverie'), findsOneWidget);
+    expect(
+      find.image(const AssetImage('assets/branding/app_icon_master-v6.png')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('desktop-search-action')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('desktop-settings-action')),
@@ -290,16 +323,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('desktop-artist-play')), findsNothing);
     expect(
+      find.byKey(const ValueKey('artist-detail-background')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('mobile-artist-play')), findsOneWidget);
+    expect(
       tester
           .getSize(find.byKey(const ValueKey('collection-detail-artwork')))
           .width,
-      156,
+      inInclusiveRange(204, 244),
     );
     expect(
       tester
           .getSize(find.byKey(const ValueKey('collection-detail-hero')))
           .height,
-      lessThan(400),
+      lessThan(560),
     );
     final compactCollectionGrid = tester.widget<SliverGrid>(
       find.byType(SliverGrid),
@@ -377,6 +415,116 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('library-sort-menu')));
     await tester.pumpAndSettle();
     expect(find.text('专辑 A–Z'), findsOneWidget);
+
+    await _unmountAndFlush(tester);
+  });
+
+  testWidgets('mobile song fast index follows alphabet and year sorting', (
+    tester,
+  ) async {
+    _simulatePlatform(TargetPlatform.iOS);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithFastIndexTracks();
+    addTearDown(repository.close);
+
+    await tester.pumpWidget(
+      SoundApp(
+        engine: SimulatedPlaybackEngine(),
+        repository: repository,
+        sessionStore: PlaybackSessionStore.memory(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('歌曲').first);
+    await tester.pumpAndSettle();
+
+    final fastIndex = find.byKey(const ValueKey('library-song-fast-index'));
+    expect(fastIndex, findsOneWidget);
+    expect(tester.getSize(fastIndex).width, 44);
+    expect(
+      find.byKey(const ValueKey('library-song-fast-index-T')),
+      findsOneWidget,
+    );
+
+    final indexRect = tester.getRect(fastIndex);
+    final gesture = await tester.startGesture(
+      Offset(
+        indexRect.center.dx,
+        indexRect.top + indexRect.height * (19.5 / 27),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    final overlay = find.byKey(
+      const ValueKey('library-song-fast-index-overlay'),
+    );
+    expect(overlay, findsOneWidget);
+    expect(
+      find.descendant(of: overlay, matching: find.text('T')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-track-row-track:index:10')),
+      findsOneWidget,
+    );
+
+    await gesture.moveTo(
+      Offset(
+        indexRect.center.dx,
+        indexRect.top + indexRect.height * (25.5 / 27),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.descendant(of: overlay, matching: find.text('Z')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-track-row-track:index:20')),
+      findsOneWidget,
+    );
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    await tester.fling(
+      find.byType(CustomScrollView).first,
+      const Offset(0, 2000),
+      5000,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('library-sort-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('年份（新到旧）').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('library-song-fast-index-A')),
+      findsNothing,
+    );
+    for (final year in ['2026', '2018', '2010']) {
+      expect(
+        find.byKey(ValueKey('library-song-fast-index-$year')),
+        findsOneWidget,
+      );
+    }
+    final yearRect = tester.getRect(fastIndex);
+    final yearGesture = await tester.startGesture(
+      Offset(yearRect.center.dx, yearRect.top + yearRect.height * 0.84),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(
+      find.descendant(of: overlay, matching: find.text('2010')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-track-row-track:index:20')),
+      findsOneWidget,
+    );
+    await yearGesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
     await _unmountAndFlush(tester);
   });
@@ -748,8 +896,19 @@ void main() {
 
     await tester.tap(find.byType(MiniPlayer));
     await tester.pump();
+    expect(
+      tester.widget<NowPlayingScreen>(find.byType(NowPlayingScreen)).isActive,
+      isFalse,
+    );
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(NowPlayingScreen), findsOneWidget);
+    expect(
+      tester.widget<NowPlayingScreen>(find.byType(NowPlayingScreen)).isActive,
+      isTrue,
+    );
+    final backgroundState = tester.state(
+      find.byType(AnimatedArtworkBackground),
+    );
     expect(
       tester.getTopLeft(find.byType(NowPlayingScreen)).dy,
       closeTo(0, 0.1),
@@ -762,14 +921,62 @@ void main() {
       ValueKey('add-now-playing-${_testTrack.id}-to-playlist'),
     );
     final lyrics = find.byKey(const ValueKey('show-now-playing-lyrics'));
+    final title = find.byKey(const ValueKey('now-playing-track-title'));
+    final playbackControls = find.byKey(
+      const ValueKey('compact-cover-playback-controls'),
+    );
+    final secondaryActions = find.byKey(
+      const ValueKey('compact-now-playing-secondary-actions'),
+    );
+    final topActions = find.byKey(const ValueKey('now-playing-drag-handle'));
+    final artwork = find.byKey(const ValueKey('compact-now-playing-artwork'));
+    expect(tester.getSize(topActions).height, lessThan(72));
     expect(
-      tester.getCenter(favorite).dx,
+      tester.getTopLeft(artwork).dy - tester.getBottomLeft(topActions).dy,
+      lessThanOrEqualTo(10),
+    );
+    expect(tester.getSize(title).width, greaterThan(300));
+    expect(
+      tester.getTopLeft(secondaryActions).dy,
+      greaterThan(tester.getBottomLeft(playbackControls).dy),
+    );
+    expect(
+      tester.getCenter(lyrics).dx,
       lessThan(tester.getCenter(addToPlaylist).dx),
     );
     expect(
       tester.getCenter(addToPlaylist).dx,
-      lessThan(tester.getCenter(lyrics).dx),
+      lessThan(tester.getCenter(favorite).dx),
     );
+    expect(
+      tester.getCenter(favorite).dx - tester.getCenter(lyrics).dx,
+      greaterThan(250),
+    );
+
+    final coverLyricsCenter = tester.getCenter(lyrics);
+    final coverFavoriteCenter = tester.getCenter(favorite);
+    await tester.tap(lyrics);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final returnToCover = find.byKey(
+      const ValueKey('return-now-playing-cover'),
+    );
+    expect(
+      find.byKey(const ValueKey('compact-lyrics-secondary-actions')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getCenter(returnToCover).dx,
+      closeTo(coverLyricsCenter.dx, 1),
+    );
+    expect(tester.getCenter(favorite).dx, closeTo(coverFavoriteCenter.dx, 1));
+    expect(
+      (tester.getCenter(returnToCover).dy - coverLyricsCenter.dy).abs(),
+      lessThan(80),
+    );
+    await tester.tap(returnToCover);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     final collapseGesture = await tester.startGesture(
       tester.getCenter(find.byKey(const ValueKey('compact-player'))),
@@ -777,6 +984,14 @@ void main() {
     await collapseGesture.moveBy(const Offset(0, 320));
     await collapseGesture.moveBy(const Offset(0, 40));
     await tester.pump();
+    expect(
+      tester.widget<NowPlayingScreen>(find.byType(NowPlayingScreen)).isActive,
+      isFalse,
+    );
+    expect(
+      tester.state(find.byType(AnimatedArtworkBackground)),
+      same(backgroundState),
+    );
     expect(tester.getTopLeft(find.byType(NowPlayingScreen)).dy, greaterThan(0));
     await collapseGesture.moveBy(const Offset(0, 380));
     await collapseGesture.up();
@@ -840,6 +1055,155 @@ void main() {
     expect(navigation.bottom, 844);
     expect(navigation.height, greaterThanOrEqualTo(70));
     expect(tester.takeException(), isNull);
+
+    await _unmountAndFlush(tester);
+    playback.dispose();
+    engine.dispose();
+    await repository.close();
+  });
+
+  testWidgets('mobile system back closes detail pages before the app route', (
+    tester,
+  ) async {
+    _simulatePlatform(TargetPlatform.android);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithAlbum();
+    final snapshot = await loadLibraryCatalogSnapshot(repository);
+    final engine = SimulatedPlaybackEngine();
+    final playback = SoundPlaybackController(engine: engine);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          playback: playback,
+          libraryRepository: repository,
+          initialCatalog: snapshot,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Test Album').first);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile-detail-page-transition')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('album-detail-background')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-album-art-album:test')),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('album-detail-background')),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('album-detail-background')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('library-album-art-album:test')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('艺人').first);
+    await tester.pump();
+    await tester.tap(find.text('Test Artist').first);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('artist-detail-background')),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('artist-detail-background')),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('artist-detail-background')),
+      findsNothing,
+    );
+    expect(find.text('Test Artist'), findsOneWidget);
+
+    await _unmountAndFlush(tester);
+    playback.dispose();
+    engine.dispose();
+    await repository.close();
+  });
+
+  testWidgets('mobile detail pages restore the originating list position', (
+    tester,
+  ) async {
+    _simulatePlatform(TargetPlatform.android);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = await _repositoryWithAlbum(extraAlbumCount: 12);
+    final snapshot = await loadLibraryCatalogSnapshot(repository);
+    final engine = SimulatedPlaybackEngine();
+    final playback = SoundPlaybackController(engine: engine);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          playback: playback,
+          libraryRepository: repository,
+          initialCatalog: snapshot,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final albumList = find.byKey(
+      const PageStorageKey<String>('library-albums'),
+    );
+    final albumScrollable = find
+        .descendant(of: albumList, matching: find.byType(Scrollable))
+        .first;
+    await tester.drag(albumList, const Offset(0, -520));
+    await tester.pumpAndSettle();
+    final positionBeforeOpen = tester
+        .state<ScrollableState>(albumScrollable)
+        .position
+        .pixels;
+    expect(positionBeforeOpen, greaterThan(0));
+
+    final visibleAlbum = find.byKey(
+      const ValueKey('library-album-art-album:extra:5'),
+    );
+    await tester.ensureVisible(visibleAlbum);
+    await tester.pumpAndSettle();
+    final expectedPosition = tester
+        .state<ScrollableState>(albumScrollable)
+        .position
+        .pixels;
+    await tester.tap(visibleAlbum);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('album-detail-background')),
+      findsOneWidget,
+    );
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      tester.state<ScrollableState>(albumScrollable).position.pixels,
+      closeTo(expectedPosition, 0.5),
+    );
 
     await _unmountAndFlush(tester);
     playback.dispose();
@@ -967,17 +1331,46 @@ void main() {
     expect(find.text('播放'), findsWidgets);
     expect(find.text('资料库'), findsWidgets);
     expect(find.text('音乐来源'), findsOneWidget);
-    expect(find.text('键盘快捷键'), findsOneWidget);
+    expect(find.text('键盘快捷键'), findsNothing);
+    expect(find.byKey(const ValueKey('settings-group-playback')), findsNothing);
     expect(find.text('添加本地文件夹'), findsNothing);
+    final compactSettingsIcons = tester
+        .widgetList<Icon>(
+          find.descendant(
+            of: find.byKey(const ValueKey('settings-overview')),
+            matching: find.byType(Icon),
+          ),
+        )
+        .map((icon) => icon.icon)
+        .toSet();
+    expect(compactSettingsIcons, {Icons.chevron_right_rounded});
 
     await tester.tap(find.text('播放模式'));
     await tester.pumpAndSettle();
+    expect(find.byType(SoundBottomSheet), findsOneWidget);
+    final compactOptionIcons = tester
+        .widgetList<Icon>(
+          find.descendant(
+            of: find.byType(SoundBottomSheet),
+            matching: find.byType(Icon),
+          ),
+        )
+        .map((icon) => icon.icon)
+        .toSet();
+    expect(compactOptionIcons, {Icons.check_rounded});
     await tester.tap(
       find.byKey(const ValueKey('settings-playback-mode-shuffle')),
     );
     await tester.pumpAndSettle();
     expect(playback.playbackMode.name, 'shuffle');
     expect(find.text('随机播放'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('settings-sleep-timer-row')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SoundBottomSheet), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sleep-timer-15')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SoundBottomSheet), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('settings-sources-row')));
     await tester.pumpAndSettle();
@@ -986,11 +1379,21 @@ void main() {
     expect(find.text('添加本地文件夹'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('settings-overview')), findsOneWidget);
+    expect(find.byKey(const ValueKey('source-settings')), findsNothing);
+
     tester.view.physicalSize = const Size(874, 402);
     await tester.pumpAndSettle();
 
-    expect(find.text('Reverie'), findsNothing);
     expect(find.byType(SoundNavigationBar), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('settings-sleep-timer-row')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sleep-timer-cancel')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
     await _unmountAndFlush(tester);
@@ -1205,6 +1608,7 @@ DriftLibraryRepository _repository() {
 
 Future<DriftLibraryRepository> _repositoryWithAlbum({
   bool includeSecondTrack = false,
+  int extraAlbumCount = 0,
 }) async {
   final repository = _repository();
   final now = DateTime.utc(2026, 7, 11);
@@ -1232,8 +1636,8 @@ Future<DriftLibraryRepository> _repositoryWithAlbum({
           sortName: 'test artist',
         ),
       ],
-      albums: const [
-        LibraryAlbumRecord(
+      albums: [
+        const LibraryAlbumRecord(
           id: 'album:test',
           sourceId: sourceId,
           title: 'Test Album',
@@ -1243,6 +1647,17 @@ Future<DriftLibraryRepository> _repositoryWithAlbum({
           year: 2026,
           genre: 'Test',
         ),
+        for (var index = 0; index < extraAlbumCount; index++)
+          LibraryAlbumRecord(
+            id: 'album:extra:$index',
+            sourceId: sourceId,
+            title: 'Extra Album $index',
+            sortTitle: 'extra album $index',
+            albumArtist: 'Test Artist',
+            artistId: 'artist:test',
+            year: 2026,
+            genre: 'Test',
+          ),
       ],
       tracks: [
         LibraryTrackRecord(
@@ -1272,6 +1687,91 @@ Future<DriftLibraryRepository> _repositoryWithAlbum({
             albumTitle: _secondTestTrack.albumTitle,
             durationMs: _secondTestTrack.duration.inMilliseconds,
             trackNumber: 2,
+            modifiedAt: now,
+          ),
+        for (var index = 0; index < extraAlbumCount; index++)
+          LibraryTrackRecord(
+            id: 'track:extra:$index',
+            sourceId: sourceId,
+            albumId: 'album:extra:$index',
+            artistId: 'artist:test',
+            relativePath: 'extra-$index.flac',
+            mediaUri: 'file:///test/extra-$index.flac',
+            title: 'Extra Track $index',
+            artistName: 'Test Artist',
+            albumTitle: 'Extra Album $index',
+            durationMs: const Duration(minutes: 3).inMilliseconds,
+            trackNumber: 1,
+            modifiedAt: now,
+          ),
+      ],
+    ),
+  );
+  return repository;
+}
+
+Future<DriftLibraryRepository> _repositoryWithFastIndexTracks() async {
+  final repository = _repository();
+  final now = DateTime.utc(2026, 7, 17);
+  const sourceId = 'local:fast-index';
+  const albumId = 'album:fast-index';
+  const artistId = 'artist:fast-index';
+  await repository.upsertSource(
+    LibrarySourceRecord(
+      id: sourceId,
+      type: LibrarySourceType.local,
+      displayName: 'Fast Index Music',
+      rootUri: 'file:///fast-index/',
+      status: LibrarySourceStatus.available,
+      createdAt: now,
+      updatedAt: now,
+    ),
+  );
+  await repository.replaceSourceScan(
+    LibraryScanBatch(
+      sourceId: sourceId,
+      completedAt: now,
+      artists: const [
+        LibraryArtistRecord(
+          id: artistId,
+          sourceId: sourceId,
+          name: 'Index Artist',
+          sortName: 'index artist',
+        ),
+      ],
+      albums: const [
+        LibraryAlbumRecord(
+          id: albumId,
+          sourceId: sourceId,
+          title: 'Index Album',
+          sortTitle: 'index album',
+          albumArtist: 'Index Artist',
+          artistId: artistId,
+        ),
+      ],
+      tracks: [
+        for (var index = 0; index < 30; index++)
+          LibraryTrackRecord(
+            id: 'track:index:$index',
+            sourceId: sourceId,
+            albumId: albumId,
+            artistId: artistId,
+            relativePath: 'track-$index.flac',
+            mediaUri: 'file:///fast-index/track-$index.flac',
+            title: index < 10
+                ? 'Apple ${index.toString().padLeft(2, '0')}'
+                : index < 20
+                ? '陶喆 ${index.toString().padLeft(2, '0')}'
+                : 'Zulu ${index.toString().padLeft(2, '0')}',
+            artistName: 'Index Artist',
+            albumTitle: 'Index Album',
+            durationMs: const Duration(minutes: 3).inMilliseconds,
+            trackNumber: index + 1,
+            year: index < 10
+                ? 2026
+                : index < 20
+                ? 2018
+                : 2010,
             modifiedAt: now,
           ),
       ],

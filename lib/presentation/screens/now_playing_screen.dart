@@ -24,6 +24,7 @@ class NowPlayingScreen extends StatelessWidget {
   const NowPlayingScreen({
     required this.playback,
     this.userState,
+    this.isActive = true,
     this.onClose,
     this.onVerticalDragStart,
     this.onVerticalDragUpdate,
@@ -34,6 +35,12 @@ class NowPlayingScreen extends StatelessWidget {
 
   final SoundPlaybackController playback;
   final LibraryUserStateController? userState;
+
+  /// Whether this surface should consume real-time playback ticks and animate
+  /// its full-screen background. Mobile keeps this false while the surface is
+  /// sliding on or off screen so route motion does not compete with playback
+  /// position updates and a full-screen repaint on the same frames.
+  final bool isActive;
   final VoidCallback? onClose;
   final GestureDragStartCallback? onVerticalDragStart;
   final GestureDragUpdateCallback? onVerticalDragUpdate;
@@ -62,98 +69,120 @@ class NowPlayingScreen extends StatelessWidget {
         }
         return KeyEventResult.ignored;
       },
+      // Keep this wrapper in the tree while mobile expansion is dragged.
+      // Swapping between an AnimatedBuilder and its child replaces the whole
+      // player subtree, which makes artwork and the gradient flash for a frame.
       child: AnimatedBuilder(
-        animation: Listenable.merge([playback, ?userState]),
-        builder: (context, _) {
-          final track = playback.displayTrack;
-          if (track == null) return _NoTrackPlaying(onClose: onClose);
-          final album = albumForTrack(track);
-          final snapshot = playback.snapshot;
-          return Scaffold(
-            backgroundColor: album.palette.last,
-            body: Stack(
-              fit: StackFit.expand,
-              children: [
-                AnimatedArtworkBackground(
-                  album: album,
-                  position: playback.displayPosition,
-                  isPlaying: snapshot.isPlaying,
-                ),
-                SafeArea(
-                  minimum: EdgeInsets.only(top: context.soundTitlebarInset),
-                  child: Column(
-                    children: [
-                      GestureDetector(
-                        key: const ValueKey('now-playing-drag-handle'),
-                        behavior: HitTestBehavior.translucent,
-                        onVerticalDragStart: onVerticalDragStart,
-                        onVerticalDragUpdate: onVerticalDragUpdate,
-                        onVerticalDragEnd: onVerticalDragEnd,
-                        onVerticalDragCancel: onVerticalDragCancel,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 16,
-                          ),
-                          child: Row(
-                            children: [
-                              IconButton.filledTonal(
-                                onPressed: () => _close(context),
-                                icon: const Icon(
-                                  Icons.keyboard_arrow_down_rounded,
-                                ),
-                              ),
-                              const Spacer(),
-                              IconButton.filledTonal(
-                                onPressed: () =>
-                                    showPlaybackQueueSheet(context, playback),
-                                tooltip: '播放队列',
-                                icon: const Icon(Icons.queue_music_rounded),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final compact = constraints.maxWidth < 780;
-                            if (compact) {
-                              return _CompactNowPlaying(
-                                album: album,
-                                track: track,
-                                playback: playback,
-                                userState: userState,
-                                onVerticalDragStart: onVerticalDragStart,
-                                onVerticalDragUpdate: onVerticalDragUpdate,
-                                onVerticalDragEnd: onVerticalDragEnd,
-                                onVerticalDragCancel: onVerticalDragCancel,
-                              );
-                            }
-                            return _WideNowPlaying(
-                              album: album,
-                              track: track,
-                              playback: playback,
-                              userState: userState,
-                            );
-                          },
-                        ),
-                      ),
-                      if (snapshot.errorMessage case final message?)
-                        _PlaybackErrorBanner(
-                          message: message,
-                          onRetry: playback.toggle,
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+        animation: isActive
+            ? Listenable.merge([playback, ?userState])
+            : const _SilentListenable(),
+        builder: (context, _) => _buildPlayer(context),
       ),
     );
   }
+
+  Widget _buildPlayer(BuildContext context) {
+    final track = playback.displayTrack;
+    if (track == null) return _NoTrackPlaying(onClose: onClose);
+    final album = albumForTrack(track);
+    final snapshot = playback.snapshot;
+    final compactChrome = context.soundIsCompact;
+    return Scaffold(
+      backgroundColor: album.palette.last,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          AnimatedArtworkBackground(
+            album: album,
+            position: playback.displayPosition,
+            isPlaying: snapshot.isPlaying && isActive,
+          ),
+          SafeArea(
+            minimum: EdgeInsets.only(top: context.soundTitlebarInset),
+            child: Column(
+              children: [
+                GestureDetector(
+                  key: const ValueKey('now-playing-drag-handle'),
+                  behavior: HitTestBehavior.translucent,
+                  onVerticalDragStart: onVerticalDragStart,
+                  onVerticalDragUpdate: onVerticalDragUpdate,
+                  onVerticalDragEnd: onVerticalDragEnd,
+                  onVerticalDragCancel: onVerticalDragCancel,
+                  child: Padding(
+                    padding: compactChrome
+                        ? const EdgeInsets.fromLTRB(20, 4, 20, 8)
+                        : const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 16,
+                          ),
+                    child: Row(
+                      children: [
+                        IconButton.filledTonal(
+                          onPressed: () => _close(context),
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                        ),
+                        const Spacer(),
+                        IconButton.filledTonal(
+                          onPressed: () =>
+                              showPlaybackQueueSheet(context, playback),
+                          tooltip: '播放队列',
+                          icon: const Icon(Icons.queue_music_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 780;
+                      if (compact) {
+                        return _CompactNowPlaying(
+                          album: album,
+                          track: track,
+                          playback: playback,
+                          userState: userState,
+                          onVerticalDragStart: onVerticalDragStart,
+                          onVerticalDragUpdate: onVerticalDragUpdate,
+                          onVerticalDragEnd: onVerticalDragEnd,
+                          onVerticalDragCancel: onVerticalDragCancel,
+                        );
+                      }
+                      return _WideNowPlaying(
+                        album: album,
+                        track: track,
+                        playback: playback,
+                        userState: userState,
+                      );
+                    },
+                  ),
+                ),
+                if (snapshot.errorMessage case final message?)
+                  _PlaybackErrorBanner(
+                    message: message,
+                    onRetry: playback.toggle,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A stable, inert animation source used while the mobile player is moving.
+///
+/// Keeping the same [AnimatedBuilder] element preserves the album artwork,
+/// scroll position, and animated background state across drag boundaries.
+class _SilentListenable implements Listenable {
+  const _SilentListenable();
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
 }
 
 class _NoTrackPlaying extends StatelessWidget {
@@ -386,7 +415,7 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
                 key: const ValueKey('compact-player'),
                 controller: _coverScrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(28, 20, 28, 40),
+                padding: const EdgeInsets.fromLTRB(28, 8, 28, 40),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 430),
@@ -395,6 +424,7 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
                       track: widget.track,
                       playback: widget.playback,
                       userState: widget.userState,
+                      compactLayout: true,
                       onToggleLyrics: () => setState(() => _showLyrics = true),
                     ),
                   ),
@@ -412,6 +442,7 @@ class _PlayerColumn extends StatelessWidget {
     required this.playback,
     this.userState,
     this.artSize,
+    this.compactLayout = false,
     this.onToggleLyrics,
   });
 
@@ -420,6 +451,7 @@ class _PlayerColumn extends StatelessWidget {
   final SoundPlaybackController playback;
   final LibraryUserStateController? userState;
   final double? artSize;
+  final bool compactLayout;
   final VoidCallback? onToggleLyrics;
 
   @override
@@ -429,40 +461,122 @@ class _PlayerColumn extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AlbumArt(album: album, size: artSize),
-        const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
+        AlbumArt(
+          key: compactLayout
+              ? const ValueKey('compact-now-playing-artwork')
+              : null,
+          album: album,
+          size: artSize,
+          gaplessPlayback: true,
+        ),
+        SizedBox(height: compactLayout ? 26 : 24),
+        if (compactLayout)
+          _TrackChangeTransition(
+            trackId: track.id,
+            child: SizedBox(
+              key: const ValueKey('now-playing-track-title'),
+              width: double.infinity,
               child: Text(
                 track.title,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 27,
+                  height: 1.08,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.5,
                 ),
               ),
             ),
-            _NowPlayingActions(
-              track: track,
-              userState: userState,
-              lyricsSelected: false,
-              onToggleLyrics: onToggleLyrics,
-            ),
-          ],
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: _TrackChangeTransition(
+                  trackId: track.id,
+                  child: Text(
+                    key: const ValueKey('now-playing-track-title'),
+                    track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 27,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+              ),
+              _NowPlayingActions(
+                track: track,
+                userState: userState,
+                lyricsSelected: false,
+                onToggleLyrics: onToggleLyrics,
+              ),
+            ],
+          ),
+        SizedBox(height: compactLayout ? 8 : 5),
+        _TrackChangeTransition(
+          trackId: track.id,
+          child: Text(
+            '${track.artist} — ${track.albumTitle}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: context.soundSecondaryText, fontSize: 13),
+          ),
         ),
-        const SizedBox(height: 5),
-        Text(
-          '${track.artist} — ${track.albumTitle}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: context.soundSecondaryText, fontSize: 13),
+        SizedBox(height: compactLayout ? 26 : 20),
+        _PlaybackTimelineAndControls(
+          key: compactLayout
+              ? const ValueKey('compact-cover-playback-controls')
+              : null,
+          playback: playback,
         ),
-        const SizedBox(height: 20),
-        _PlaybackTimelineAndControls(playback: playback),
+        if (compactLayout) ...[
+          const SizedBox(height: 24),
+          _NowPlayingActions(
+            key: const ValueKey('compact-now-playing-secondary-actions'),
+            track: track,
+            userState: userState,
+            lyricsSelected: false,
+            onToggleLyrics: onToggleLyrics,
+            distributed: true,
+          ),
+        ],
       ],
+    );
+  }
+}
+
+class _TrackChangeTransition extends StatelessWidget {
+  const _TrackChangeTransition({required this.trackId, required this.child});
+
+  final String trackId;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      reverseDuration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: AlignmentDirectional.centerStart,
+        children: [...previousChildren, ?currentChild],
+      ),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.08),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
+      ),
+      child: KeyedSubtree(key: ValueKey(trackId), child: child),
     );
   }
 }
@@ -512,42 +626,41 @@ class _CompactLyricsPlayer extends StatelessWidget {
                   size: 56,
                   borderRadius: 8,
                   showShadow: false,
+                  gaplessPlayback: true,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        track.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.3,
+                      _TrackChangeTransition(
+                        trackId: track.id,
+                        child: Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.3,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        '${track.artist} — ${track.albumTitle}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: context.soundSecondaryText,
-                          fontSize: 12,
+                      _TrackChangeTransition(
+                        trackId: track.id,
+                        child: Text(
+                          '${track.artist} — ${track.albumTitle}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.soundSecondaryText,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 4),
-                _NowPlayingActions(
-                  track: track,
-                  userState: userState,
-                  lyricsSelected: true,
-                  onToggleLyrics: onToggleLyrics,
-                  compact: true,
                 ),
               ],
             ),
@@ -557,7 +670,7 @@ class _CompactLyricsPlayer extends StatelessWidget {
             fit: FlexFit.loose,
             child: ConstrainedBox(
               key: const ValueKey('compact-lyrics-region'),
-              constraints: const BoxConstraints(maxHeight: 360),
+              constraints: const BoxConstraints(maxHeight: 392),
               child: _LyricsPanel(
                 track: track,
                 position: playback.displayPosition,
@@ -571,6 +684,15 @@ class _CompactLyricsPlayer extends StatelessWidget {
           _PlaybackTimelineAndControls(
             key: const ValueKey('compact-lyrics-playback-controls'),
             playback: playback,
+          ),
+          const SizedBox(height: 24),
+          _NowPlayingActions(
+            key: const ValueKey('compact-lyrics-secondary-actions'),
+            track: track,
+            userState: userState,
+            lyricsSelected: true,
+            onToggleLyrics: onToggleLyrics,
+            distributed: true,
           ),
         ],
       ),
@@ -678,29 +800,26 @@ class _NowPlayingActions extends StatelessWidget {
     required this.userState,
     required this.lyricsSelected,
     required this.onToggleLyrics,
-    this.compact = false,
+    this.distributed = false,
+    super.key,
   });
 
   final Track track;
   final LibraryUserStateController? userState;
   final bool lyricsSelected;
   final VoidCallback? onToggleLyrics;
-  final bool compact;
+  final bool distributed;
 
   @override
   Widget build(BuildContext context) {
     final state = userState;
     final isFavorite = state?.isFavorite(track.id) ?? false;
-    final buttonStyle = compact
-        ? IconButton.styleFrom(
-            fixedSize: const Size.square(36),
-            minimumSize: const Size.square(36),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          )
-        : null;
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: distributed ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisAlignment: distributed
+          ? MainAxisAlignment.spaceBetween
+          : MainAxisAlignment.start,
+      textDirection: distributed ? TextDirection.rtl : TextDirection.ltr,
       children: [
         if (state != null)
           IconButton(
@@ -708,8 +827,6 @@ class _NowPlayingActions extends StatelessWidget {
             onPressed: () => unawaited(state.toggleFavorite(track)),
             tooltip: isFavorite ? '取消收藏' : '收藏歌曲',
             color: isFavorite ? SoundColors.accent : null,
-            style: buttonStyle,
-            iconSize: compact ? 22 : null,
             icon: Icon(
               isFavorite
                   ? Icons.favorite_rounded
@@ -722,8 +839,6 @@ class _NowPlayingActions extends StatelessWidget {
             onPressed: () =>
                 showAddToPlaylistSheet(context, userState: state, track: track),
             tooltip: '添加到播放列表',
-            style: buttonStyle,
-            iconSize: compact ? 22 : null,
             icon: const Icon(Icons.playlist_add_rounded),
           ),
         if (onToggleLyrics != null)
@@ -736,8 +851,6 @@ class _NowPlayingActions extends StatelessWidget {
             onPressed: onToggleLyrics,
             tooltip: lyricsSelected ? '返回封面' : '查看歌词',
             color: lyricsSelected ? SoundColors.accent : null,
-            style: buttonStyle,
-            iconSize: compact ? 22 : null,
             icon: const Icon(Icons.lyrics_rounded),
           ),
       ],

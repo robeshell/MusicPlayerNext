@@ -88,6 +88,7 @@ class _SearchScreenState extends State<SearchScreen> {
           final compact = context.soundIsCompact;
           final gutter = context.soundPageGutter;
           return CustomScrollView(
+            key: const PageStorageKey<String>('library-search-results'),
             slivers: [
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(

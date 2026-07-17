@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
@@ -9,6 +11,7 @@ import '../../playback/playback_mode.dart';
 import '../controllers/library_user_state_controller.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
+import '../widgets/animated_artwork_background.dart';
 import '../widgets/progress_scrubber.dart';
 import '../widgets/sound_components.dart';
 
@@ -47,6 +50,97 @@ class LibraryCollectionScreen extends StatefulWidget {
 class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
   LibraryCollectionTrackSort _trackSort =
       LibraryCollectionTrackSort.libraryOrder;
+  late List<Color> _backgroundColors = artworkPageBackgroundColors(
+    _collectionFallbackColors(widget.collection, Brightness.light),
+    Brightness.light,
+  );
+  Brightness? _paletteBrightness;
+  bool? _paletteCompact;
+  String? _paletteRequest;
+  Timer? _paletteLoadTimer;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    final compact = context.soundIsCompact;
+    if (_paletteBrightness != brightness || _paletteCompact != compact) {
+      _paletteBrightness = brightness;
+      _paletteCompact = compact;
+      _refreshPalette(brightness: brightness, extractArtwork: compact);
+    }
+  }
+
+  @override
+  void didUpdateWidget(LibraryCollectionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldArtwork = oldWidget.collection.albums.firstOrNull?.artworkUri;
+    final newArtwork = widget.collection.albums.firstOrNull?.artworkUri;
+    if (oldWidget.collection.id != widget.collection.id ||
+        oldArtwork != newArtwork) {
+      _refreshPalette(
+        brightness: _paletteBrightness ?? Theme.of(context).brightness,
+        extractArtwork: _paletteCompact ?? context.soundIsCompact,
+      );
+    }
+  }
+
+  void _refreshPalette({
+    required Brightness brightness,
+    required bool extractArtwork,
+  }) {
+    final collection = widget.collection;
+    final artworkAlbum = collection.albums.firstOrNull;
+    final request =
+        '${collection.id}|${artworkAlbum?.artworkUri}|${brightness.name}';
+    _paletteRequest = request;
+    _backgroundColors = artworkPageBackgroundColors(
+      _collectionFallbackColors(collection, brightness),
+      brightness,
+    );
+    _paletteLoadTimer?.cancel();
+    final artworkUri = artworkAlbum?.artworkUri?.trim();
+    if (extractArtwork &&
+        collection.kind == LibraryCollectionKind.artist &&
+        artworkAlbum != null &&
+        artworkUri != null &&
+        artworkUri.isNotEmpty) {
+      _paletteLoadTimer = Timer(const Duration(milliseconds: 320), () {
+        if (!mounted || _paletteRequest != request) return;
+        unawaited(_loadArtworkPalette(request, artworkAlbum, brightness));
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _paletteLoadTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadArtworkPalette(
+    String request,
+    Album album,
+    Brightness brightness,
+  ) async {
+    try {
+      final scheme = await AnimatedArtworkBackground.colorSchemeForAlbum(
+        album: album,
+        brightness: brightness,
+      );
+      if (scheme == null || !mounted || _paletteRequest != request) return;
+      final colors = artworkPageBackgroundColors(
+        artworkGradientColorsFromScheme(scheme, brightness),
+        brightness,
+      );
+      if (listEquals(colors, _backgroundColors)) return;
+      setState(() => _backgroundColors = colors);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Artist artwork palette extraction failed: $error');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,14 +155,22 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
     };
     return AnimatedBuilder(
       animation: Listenable.merge([?widget.userState]),
-      builder: (context, _) => Material(
-        color: Colors.transparent,
-        child: CustomScrollView(
+      builder: (context, _) {
+        final immersiveArtist =
+            compact && collection.kind == LibraryCollectionKind.artist;
+        final pagePalette = immersiveArtist
+            ? ArtworkPagePalette.fromBackground(_backgroundColors)
+            : null;
+        final scrollView = CustomScrollView(
+          key: PageStorageKey<String>(
+            'library-collection-${collection.kind.name}-${collection.id}',
+          ),
           slivers: [
             SliverToBoxAdapter(
               child: _CollectionHero(
                 collection: collection,
                 onBack: widget.onBack,
+                pagePalette: pagePalette,
                 onPlay: sortedTracks.isEmpty
                     ? null
                     : () => widget.playback.playTrack(
@@ -86,6 +188,16 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                           ),
                         );
                       },
+                onQueue: sortedTracks.isEmpty
+                    ? null
+                    : () {
+                        for (final track in sortedTracks.reversed) {
+                          widget.playback.playNext(track);
+                        }
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已添加到接下来播放')),
+                        );
+                      },
               ),
             ),
             if (collection.albums.isNotEmpty) ...[
@@ -100,6 +212,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                   child: Text(
                     '专辑',
                     style: TextStyle(
+                      color: pagePalette?.primaryText,
                       fontSize: compact ? 17 : 20,
                       fontWeight: FontWeight.w800,
                     ),
@@ -138,6 +251,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                         final album = collection.albums[index];
                         return _CollectionAlbumCard(
                           album: album,
+                          pagePalette: pagePalette,
                           onTap: () => widget.onOpenAlbum(album),
                         );
                       },
@@ -152,6 +266,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                 child: _CollectionTrackHeader(
                   trackCount: sortedTracks.length,
                   sort: _trackSort,
+                  pagePalette: pagePalette,
                   onSortChanged: (value) => setState(() => _trackSort = value),
                 ),
               ),
@@ -172,6 +287,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                     onToggleFavorite: null,
                     onAddToPlaylist: null,
                     onOpenAlbum: () {},
+                    pagePalette: pagePalette,
                   ),
                   itemBuilder: (context, index) {
                     final track = sortedTracks[index];
@@ -196,13 +312,48 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                               track: track,
                             ),
                       onOpenAlbum: () => widget.onOpenAlbum(album),
+                      pagePalette: pagePalette,
                     );
                   },
                 ),
               ),
           ],
-        ),
-      ),
+        );
+        final content = Material(color: Colors.transparent, child: scrollView);
+        if (!immersiveArtist || pagePalette == null) return content;
+
+        final overlayStyle =
+            (pagePalette.useLightText
+                    ? SystemUiOverlayStyle.light
+                    : SystemUiOverlayStyle.dark)
+                .copyWith(
+                  statusBarColor: Colors.transparent,
+                  systemStatusBarContrastEnforced: false,
+                );
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: overlayStyle,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: AnimatedContainer(
+                  key: const ValueKey('artist-detail-background'),
+                  duration: const Duration(milliseconds: 420),
+                  curve: Curves.easeOutCubic,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: _backgroundColors,
+                      stops: const [0, 0.56, 1],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(child: content),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -237,16 +388,29 @@ int _compareText(String left, String right) =>
 int _compareThen(int comparison, int Function() next) =>
     comparison == 0 ? next() : comparison;
 
+List<Color> _collectionFallbackColors(
+  LibraryCollection collection,
+  Brightness brightness,
+) {
+  final album = collection.albums.firstOrNull;
+  if (album != null) return artworkFallbackGradientColors(album, brightness);
+  final first = collection.palette.first;
+  final last = collection.palette.last;
+  return [first, Color.lerp(first, last, 0.42)!, last];
+}
+
 class _CollectionTrackHeader extends StatelessWidget {
   const _CollectionTrackHeader({
     required this.trackCount,
     required this.sort,
     required this.onSortChanged,
+    required this.pagePalette,
   });
 
   final int trackCount;
   final LibraryCollectionTrackSort sort;
   final ValueChanged<LibraryCollectionTrackSort> onSortChanged;
+  final ArtworkPagePalette? pagePalette;
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +424,7 @@ class _CollectionTrackHeader extends StatelessWidget {
         Text(
           '$trackCount 首歌曲',
           style: TextStyle(
+            color: pagePalette?.primaryText,
             fontSize: compact ? 17 : 20,
             fontWeight: FontWeight.w800,
           ),
@@ -290,8 +455,10 @@ class _CollectionTrackHeader extends StatelessWidget {
           ],
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: context.soundTint(0.045),
-              border: Border.all(color: context.soundDivider),
+              color: pagePalette?.controlSurface ?? context.soundTint(0.045),
+              border: Border.all(
+                color: pagePalette?.divider ?? context.soundDivider,
+              ),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Padding(
@@ -302,17 +469,26 @@ class _CollectionTrackHeader extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.sort_rounded, size: 17),
+                  Icon(
+                    Icons.sort_rounded,
+                    size: 17,
+                    color: pagePalette?.primaryText,
+                  ),
                   const SizedBox(width: 7),
                   Text(
                     sort.label,
-                    style: const TextStyle(
+                    style: TextStyle(
+                      color: pagePalette?.primaryText,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(width: 5),
-                  const Icon(Icons.arrow_drop_down_rounded, size: 18),
+                  Icon(
+                    Icons.arrow_drop_down_rounded,
+                    size: 18,
+                    color: pagePalette?.primaryText,
+                  ),
                 ],
               ),
             ),
@@ -329,12 +505,16 @@ class _CollectionHero extends StatelessWidget {
     required this.onBack,
     required this.onPlay,
     required this.onShuffle,
+    required this.onQueue,
+    required this.pagePalette,
   });
 
   final LibraryCollection collection;
   final VoidCallback onBack;
   final VoidCallback? onPlay;
   final VoidCallback? onShuffle;
+  final VoidCallback? onQueue;
+  final ArtworkPagePalette? pagePalette;
 
   @override
   Widget build(BuildContext context) {
@@ -346,6 +526,9 @@ class _CollectionHero extends StatelessWidget {
             !context.soundIsCompact;
         if (desktopArtist) {
           return _buildDesktopArtist(context, constraints);
+        }
+        if (compact && collection.kind == LibraryCollectionKind.artist) {
+          return _buildCompactArtist(context, constraints);
         }
         final details = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,6 +632,127 @@ class _CollectionHero extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCompactArtist(BuildContext context, BoxConstraints constraints) {
+    final palette = pagePalette!;
+    final artworkSize = (constraints.maxWidth * 0.59)
+        .clamp(204.0, 244.0)
+        .toDouble();
+    final artworkCacheExtent = quantizedArtworkCacheExtent(
+      (constraints.maxWidth - context.soundPageGutter * 2 - 12) / 2,
+      MediaQuery.devicePixelRatioOf(context),
+    );
+    final artwork = collection.albums.isEmpty
+        ? Container(
+            key: const ValueKey('collection-detail-artwork'),
+            width: artworkSize,
+            height: artworkSize,
+            decoration: BoxDecoration(
+              color: palette.controlSurface,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.person_rounded,
+              size: artworkSize * 0.34,
+              color: palette.mutedText,
+            ),
+          )
+        : AlbumArt(
+            key: const ValueKey('collection-detail-artwork'),
+            album: collection.albums.first,
+            size: artworkSize,
+            borderRadius: 14,
+            cacheExtent: artworkCacheExtent,
+          );
+
+    return Container(
+      key: const ValueKey('collection-detail-hero'),
+      padding: EdgeInsets.fromLTRB(
+        context.soundPageGutter,
+        MediaQuery.paddingOf(context).top + 4,
+        context.soundPageGutter,
+        22,
+      ),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.divider)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              onPressed: onBack,
+              tooltip: '返回',
+              icon: const Icon(Icons.arrow_back_rounded),
+              style: IconButton.styleFrom(
+                foregroundColor: palette.primaryText,
+                minimumSize: const Size.square(40),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Center(child: artwork),
+          const SizedBox(height: 18),
+          Text(
+            collection.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: palette.primaryText,
+              fontSize: 28,
+              height: 1.06,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.8,
+            ),
+          ),
+          const SizedBox(height: 9),
+          Text(
+            '${collection.albums.length} 张专辑 · '
+            '${collection.tracks.length} 首歌曲',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: palette.mutedText,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 19),
+          Row(
+            children: [
+              _CollectionImmersiveAction(
+                tooltip: '随机播放',
+                icon: Icons.shuffle_rounded,
+                onPressed: onShuffle,
+                palette: palette,
+              ),
+              const Spacer(),
+              _CollectionImmersiveAction(
+                key: const ValueKey('mobile-artist-play'),
+                tooltip: '播放全部',
+                icon: Icons.play_arrow_rounded,
+                onPressed: onPlay,
+                palette: palette,
+                dimension: 60,
+                iconSize: 30,
+                emphasized: true,
+              ),
+              const Spacer(),
+              _CollectionImmersiveAction(
+                tooltip: '接下来播放全部歌曲',
+                icon: Icons.queue_music_rounded,
+                onPressed: onQueue,
+                palette: palette,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -602,6 +906,51 @@ class _CollectionHero extends StatelessWidget {
   }
 }
 
+class _CollectionImmersiveAction extends StatelessWidget {
+  const _CollectionImmersiveAction({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    required this.palette,
+    this.dimension = 52,
+    this.iconSize = 24,
+    this.emphasized = false,
+    super.key,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final ArtworkPagePalette palette;
+  final double dimension;
+  final double iconSize;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = emphasized
+        ? palette.primaryText.withValues(
+            alpha: palette.useLightText ? 0.20 : 0.14,
+          )
+        : palette.controlSurface;
+    return SizedBox.square(
+      dimension: dimension,
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: Icon(icon, size: iconSize),
+        style: IconButton.styleFrom(
+          foregroundColor: palette.primaryText,
+          backgroundColor: surface,
+          disabledForegroundColor: palette.primaryText.withValues(alpha: 0.3),
+          disabledBackgroundColor: surface.withValues(alpha: 0.45),
+          shape: const CircleBorder(),
+        ),
+      ),
+    );
+  }
+}
+
 class _DesktopCollectionActionButton extends StatelessWidget {
   const _DesktopCollectionActionButton({
     required this.label,
@@ -639,10 +988,15 @@ class _DesktopCollectionActionButton extends StatelessWidget {
 }
 
 class _CollectionAlbumCard extends StatelessWidget {
-  const _CollectionAlbumCard({required this.album, required this.onTap});
+  const _CollectionAlbumCard({
+    required this.album,
+    required this.onTap,
+    required this.pagePalette,
+  });
 
   final Album album;
   final VoidCallback onTap;
+  final ArtworkPagePalette? pagePalette;
 
   @override
   Widget build(BuildContext context) {
@@ -658,14 +1012,21 @@ class _CollectionAlbumCard extends StatelessWidget {
             album.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: pagePalette?.primaryText,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             album.artist,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
+            style: TextStyle(
+              fontSize: 12,
+              color: pagePalette?.secondaryText ?? context.soundSecondaryText,
+            ),
           ),
         ],
       ),
@@ -683,6 +1044,7 @@ class _CollectionTrackRow extends StatelessWidget {
     required this.onToggleFavorite,
     required this.onAddToPlaylist,
     required this.onOpenAlbum,
+    required this.pagePalette,
   });
 
   final Track track;
@@ -693,6 +1055,7 @@ class _CollectionTrackRow extends StatelessWidget {
   final VoidCallback? onToggleFavorite;
   final VoidCallback? onAddToPlaylist;
   final VoidCallback onOpenAlbum;
+  final ArtworkPagePalette? pagePalette;
 
   @override
   Widget build(BuildContext context) {
@@ -702,14 +1065,20 @@ class _CollectionTrackRow extends StatelessWidget {
       semanticLabel: track.title,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: context.soundDivider)),
+          border: Border(
+            bottom: BorderSide(
+              color: pagePalette?.divider ?? context.soundDivider,
+            ),
+          ),
         ),
         child: compact
             ? SoundCompactMediaRow(
                 key: ValueKey('collection-track-row-${track.id}'),
                 leading: AlbumArt(album: album, borderRadius: 8),
                 title: track.title,
+                titleColor: pagePalette?.primaryText,
                 subtitle: '${track.artist} — ${album.title}',
+                subtitleColor: pagePalette?.mutedText,
                 trailing: _actions(compact: true),
               )
             : ListTile(
@@ -764,6 +1133,7 @@ class _CollectionTrackRow extends StatelessWidget {
       icon: Icon(
         compact ? Icons.more_horiz_rounded : Icons.more_vert_rounded,
         size: compact ? 21 : 20,
+        color: compact ? pagePalette?.primaryText : null,
       ),
       onSelected: (value) {
         if (value == 'play-next') onPlayNext();
