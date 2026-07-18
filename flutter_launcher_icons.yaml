@@ -4,22 +4,31 @@ flutter_launcher_icons:
   # Keep a distinct Android resource name so OEM icon caches do not keep the
   # original Flutter launcher badge after an in-place upgrade.
   android: ic_launcher_reverie
+  image_path_android: assets/branding/app_icon_windows.png
+  adaptive_icon_background: "#FAF5EE"
+  adaptive_icon_foreground: assets/branding/app_icon_android_foreground.png
+  adaptive_icon_foreground_inset: 0
+  adaptive_icon_monochrome: assets/branding/app_icon_android_monochrome.png
 
   ios: true
+  image_path_ios: assets/branding/app_icon_ios.png
   remove_alpha_ios: true
   background_color_ios: "#FAF5EE"
 
   web:
     generate: true
     image_path: assets/branding/app_icon_master-v6.png
-    background_color: "#FAF5EE"
+    background_color: "#F7F7F8"
     theme_color: "#FF5A4D"
 
   windows:
-    generate: true
-    image_path: assets/branding/app_icon_master-v6.png
-    icon_size: 256
+    # tool/generate_branding_assets.py writes a multi-resolution ICO. The
+    # launcher-icons Windows generator only stores one resolution.
+    generate: false
 
   macos:
     generate: true
-    image_path: assets/branding/app_icon_master-v6.png
+    # macOS Dock icons need more optical breathing room than the other
+    # platforms. This source keeps the visible rounded square near the
+    # platform's design grid instead of filling almost the entire canvas.
+    image_path: assets/branding/app_icon_macos.png
