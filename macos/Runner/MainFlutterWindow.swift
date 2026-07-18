@@ -26,14 +26,6 @@ class MainFlutterWindow: NSWindow {
     self.styleMask.insert(.fullSizeContentView)
     self.isMovableByWindowBackground = true
 
-    // Flutter debug launches and LaunchServices can retain the framework's
-    // default Dock icon. Always load the icon shipped in this app bundle so
-    // debug and release builds present the same Reverie identity.
-    if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
-       let appIcon = NSImage(contentsOf: iconURL) {
-      NSApplication.shared.applicationIconImage = appIcon
-    }
-
     RegisterGeneratedPlugins(registry: flutterViewController)
     launchScreenBridge = LaunchScreenBridge(
       messenger: flutterViewController.engine.binaryMessenger,
@@ -106,7 +98,7 @@ private final class LaunchScreenView: NSView {
     imageView.translatesAutoresizingMaskIntoConstraints = false
 
     let title = NSTextField(labelWithString: "Reverie")
-    title.font = .systemFont(ofSize: 20, weight: .semibold)
+    title.font = .systemFont(ofSize: 24, weight: .semibold)
     title.textColor = NSColor(
       srgbRed: 28 / 255,
       green: 28 / 255,
@@ -115,15 +107,28 @@ private final class LaunchScreenView: NSView {
     title.alignment = .center
     title.translatesAutoresizingMaskIntoConstraints = false
 
+    let tagline = NSTextField(labelWithString: "听自己的音乐")
+    tagline.font = .systemFont(ofSize: 13, weight: .regular)
+    tagline.textColor = NSColor(
+      srgbRed: 112 / 255,
+      green: 112 / 255,
+      blue: 122 / 255,
+      alpha: 1)
+    tagline.alignment = .center
+    tagline.translatesAutoresizingMaskIntoConstraints = false
+
     addSubview(imageView)
     addSubview(title)
+    addSubview(tagline)
     NSLayoutConstraint.activate([
       imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-      imageView.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -24),
-      imageView.widthAnchor.constraint(equalToConstant: 180),
-      imageView.heightAnchor.constraint(equalToConstant: 180),
+      imageView.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -50),
+      imageView.widthAnchor.constraint(equalToConstant: 144),
+      imageView.heightAnchor.constraint(equalToConstant: 144),
       title.centerXAnchor.constraint(equalTo: centerXAnchor),
-      title.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 58),
+      title.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 28),
+      tagline.centerXAnchor.constraint(equalTo: centerXAnchor),
+      tagline.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 58),
     ])
   }
 
