@@ -443,7 +443,7 @@ class _CollectionTrackHeader extends StatelessWidget {
                     Expanded(child: Text(option.label)),
                     if (option == sort) ...[
                       const SizedBox(width: 12),
-                      const Icon(
+                      Icon(
                         Icons.check_rounded,
                         size: 18,
                         color: SoundColors.accent,
@@ -1063,11 +1063,13 @@ class _CollectionTrackRow extends StatelessWidget {
     return SoundTrackActivation(
       onActivate: onTap,
       semanticLabel: track.title,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: pagePalette?.divider ?? context.soundDivider,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: pagePalette?.divider ?? context.soundDivider,
             ),
           ),
         ),
@@ -1121,6 +1123,7 @@ class _CollectionTrackRow extends StatelessWidget {
                   ],
                 ),
               ),
+      ),
       ),
     );
   }

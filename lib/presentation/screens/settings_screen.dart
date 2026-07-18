@@ -18,7 +18,7 @@ import 'source_settings_screen.dart';
 
 enum SettingsDestination { overview, sources, offline, diagnostics }
 
-enum _SettingsGroup { playback, library, operation, about }
+enum _SettingsGroup { playback, library, appearance, operation, about }
 
 Color _settingsPrimaryText(BuildContext context) => context.soundPrimaryText
     .withValues(alpha: context.soundPrimaryText.a * 0.88);
@@ -33,6 +33,7 @@ extension on _SettingsGroup {
   String get label => switch (this) {
     _SettingsGroup.playback => '播放',
     _SettingsGroup.library => '资料库',
+    _SettingsGroup.appearance => '外观',
     _SettingsGroup.operation => '操作',
     _SettingsGroup.about => '关于',
   };
@@ -49,6 +50,8 @@ class SettingsScreen extends StatefulWidget {
     this.webDavService,
     this.offline,
     this.initialDestination = SettingsDestination.overview,
+    required this.accentPreset,
+    required this.onAccentChanged,
     super.key,
   });
 
@@ -61,6 +64,8 @@ class SettingsScreen extends StatefulWidget {
   final SleepTimerController sleepTimer;
   final AppDiagnosticsController diagnostics;
   final SettingsDestination initialDestination;
+  final AccentPreset accentPreset;
+  final ValueChanged<AccentPreset> onAccentChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -76,6 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _groupSyncScheduled = false;
   bool _playbackModesExpanded = false;
   bool _sleepTimerExpanded = false;
+  bool _accentColorExpanded = false;
 
   @override
   void initState() {
@@ -295,6 +301,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 28),
                     _SettingsSection(
+                      key: _groupKeys[_SettingsGroup.appearance],
+                      title: '外观',
+                      children: [
+                        _SettingsRow(
+                          key: const ValueKey('settings-accent-row'),
+                          icon: Icons.palette_outlined,
+                          iconColor: SoundColors.accent,
+                          title: '主题色',
+                          subtitle: '调整应用按钮和图标的强调色',
+                          value: widget.accentPreset.name,
+                          expanded: _accentColorExpanded,
+                          onTap: () => setState(
+                            () => _accentColorExpanded = !_accentColorExpanded,
+                          ),
+                        ),
+                        if (_accentColorExpanded)
+                          _AccentPresetSelector(
+                            selected: widget.accentPreset,
+                            onSelected: (preset) {
+                              widget.onAccentChanged(preset);
+                              setState(() => _accentColorExpanded = false);
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    _SettingsSection(
                       key: _groupKeys[_SettingsGroup.operation],
                       title: '操作',
                       flat: true,
@@ -445,6 +478,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => setState(
                           () => _destination = SettingsDestination.offline,
                         ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                _SettingsSection(
+                  key: _groupKeys[_SettingsGroup.appearance],
+                  title: '外观',
+                  children: [
+                    _SettingsRow(
+                      key: const ValueKey('settings-accent-row'),
+                      icon: Icons.palette_outlined,
+                      iconColor: SoundColors.accent,
+                      title: '主题色',
+                      subtitle: '调整应用按钮和图标的强调色',
+                      value: widget.accentPreset.name,
+                      expanded: _accentColorExpanded,
+                      onTap: () => setState(
+                        () => _accentColorExpanded = !_accentColorExpanded,
+                      ),
+                    ),
+                    if (_accentColorExpanded)
+                      _AccentPresetSelector(
+                        selected: widget.accentPreset,
+                        onSelected: (preset) {
+                          widget.onAccentChanged(preset);
+                          setState(() => _accentColorExpanded = false);
+                        },
                       ),
                   ],
                 ),
@@ -767,7 +827,7 @@ class _CompactSettingsOption extends StatelessWidget {
                   ),
                 ),
                 if (selected)
-                  const Icon(
+                  Icon(
                     Icons.check_rounded,
                     size: 20,
                     color: SoundColors.accent,
@@ -1925,12 +1985,96 @@ class _PlaybackModeChoice extends StatelessWidget {
                 ),
               ),
               if (selected)
-                const Icon(
+                Icon(
                   Icons.check_rounded,
                   size: 17,
                   color: SoundColors.accent,
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccentPresetSelector extends StatelessWidget {
+  const _AccentPresetSelector({
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final AccentPreset selected;
+  final ValueChanged<AccentPreset> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 7, 0, 13),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          for (final preset in SoundColors.accentPresets)
+            _AccentPresetSwatch(
+              preset: preset,
+              selected: preset.id == selected.id,
+              onTap: () => onSelected(preset),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccentPresetSwatch extends StatelessWidget {
+  const _AccentPresetSwatch({
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AccentPreset preset;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${preset.name} 主题色',
+      child: Tooltip(
+        message: preset.name,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: preset.accent,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected
+                    ? _settingsPrimaryText(context)
+                    : Colors.transparent,
+                width: selected ? 3 : 0,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: preset.accent.withValues(alpha: 0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: selected
+                ? const Icon(Icons.check_rounded, color: Colors.white, size: 20)
+                : null,
           ),
         ),
       ),

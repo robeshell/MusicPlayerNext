@@ -87,6 +87,7 @@ class NowPlayingScreen extends StatelessWidget {
     final album = albumForTrack(track);
     final snapshot = playback.snapshot;
     final compactChrome = context.soundIsCompact;
+    final foldableChrome = context.soundUsesMobileShell && !compactChrome;
     return Scaffold(
       backgroundColor: album.palette.last,
       body: Stack(
@@ -111,6 +112,8 @@ class NowPlayingScreen extends StatelessWidget {
                   child: Padding(
                     padding: compactChrome
                         ? const EdgeInsets.fromLTRB(20, 4, 20, 8)
+                        : foldableChrome
+                        ? const EdgeInsets.fromLTRB(24, 0, 24, 2)
                         : const EdgeInsets.symmetric(
                             horizontal: 20,
                             vertical: 16,
@@ -135,7 +138,11 @@ class NowPlayingScreen extends StatelessWidget {
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 780;
+                      // Open foldables are commonly around 700 logical
+                      // pixels wide. Use that space for a centered
+                      // two-pane player, with the crease falling inside
+                      // the inter-pane gap.
+                      final compact = constraints.maxWidth < 680;
                       if (compact) {
                         return _CompactNowPlaying(
                           album: album,
@@ -237,18 +244,35 @@ class _WideNowPlaying extends StatelessWidget {
       builder: (context, constraints) {
         const verticalPadding = 50.0;
         const playerChromeHeight = 230.0;
+        final foldableWidth = constraints.maxWidth < 780;
+        final horizontalPadding = foldableWidth ? 24.0 : 44.0;
+        final paneGap = math.max(
+          foldableWidth ? 24.0 : 48.0,
+          _centerDisplayFeatureGap(context, constraints),
+        );
+        final paneWidth = math.max(
+          160.0,
+          (constraints.maxWidth - horizontalPadding * 2 - paneGap) / 2,
+        );
         final playerHeight = math.max(
           0.0,
           constraints.maxHeight - verticalPadding,
         );
         final artSize = math.min(
-          340.0,
+          math.min(340.0, paneWidth),
           math.max(160.0, playerHeight - playerChromeHeight),
         );
         return Padding(
-          padding: const EdgeInsets.fromLTRB(44, 8, 44, 24),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            foldableWidth ? 0 : 8,
+            horizontalPadding,
+            24,
+          ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: foldableWidth
+                ? CrossAxisAlignment.start
+                : CrossAxisAlignment.stretch,
             children: [
               Expanded(
                 child: Align(
@@ -268,11 +292,13 @@ class _WideNowPlaying extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 48),
+              SizedBox(width: paneGap),
               Expanded(
                 child: Padding(
                   key: const ValueKey('wide-now-playing-lyrics'),
-                  padding: const EdgeInsets.fromLTRB(8, 6, 0, 0),
+                  padding: EdgeInsets.fromLTRB(
+                    8, 6, 0, foldableWidth ? 24 : 0,
+                  ),
                   child: _LyricsPanel(
                     track: track,
                     position: playback.displayPosition,
@@ -288,6 +314,22 @@ class _WideNowPlaying extends StatelessWidget {
       },
     );
   }
+}
+
+double _centerDisplayFeatureGap(
+  BuildContext context,
+  BoxConstraints constraints,
+) {
+  var gap = 0.0;
+  for (final feature in MediaQuery.of(context).displayFeatures) {
+    final bounds = feature.bounds;
+    final nearCenter =
+        bounds.center.dx > constraints.maxWidth * 0.35 &&
+        bounds.center.dx < constraints.maxWidth * 0.65;
+    final vertical = bounds.height > constraints.maxHeight * 0.5;
+    if (nearCenter && vertical) gap = math.max(gap, bounds.width + 16);
+  }
+  return gap;
 }
 
 class _CompactNowPlaying extends StatefulWidget {
@@ -879,7 +921,7 @@ class _PlaybackErrorBanner extends StatelessWidget {
           showShadow: false,
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.error_outline_rounded,
                 color: SoundColors.accent,
               ),

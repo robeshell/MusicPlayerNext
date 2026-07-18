@@ -838,7 +838,7 @@ class _SongFastIndexState extends State<_SongFastIndex> {
                         ),
                         child: Text(
                           activeLabel,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: SoundColors.accent,
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
@@ -1279,7 +1279,7 @@ class _MenuItemLabel extends StatelessWidget {
         Expanded(child: Text(label)),
         if (selected) ...[
           const SizedBox(width: 12),
-          const Icon(Icons.check_rounded, size: 18, color: SoundColors.accent),
+          Icon(Icons.check_rounded, size: 18, color: SoundColors.accent),
         ],
       ],
     );

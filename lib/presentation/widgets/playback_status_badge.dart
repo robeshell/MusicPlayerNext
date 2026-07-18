@@ -68,7 +68,7 @@ class PlaybackVisualState {
         statusIcon: Icons.check_circle_rounded,
         primaryVisual: PlaybackPrimaryVisual.replay,
       ),
-      PlaybackPhase.error => const PlaybackVisualState(
+      PlaybackPhase.error => PlaybackVisualState(
         label: '播放错误',
         color: SoundColors.accent,
         statusIcon: Icons.error_outline_rounded,

@@ -144,7 +144,7 @@ class PlaybackQueueSheet extends StatelessWidget {
                                 child: SoundCompactMediaRow(
                                   key: ValueKey('queue-track-row-${track.id}'),
                                   leading: active
-                                      ? const Icon(
+                                      ? Icon(
                                           Icons.graphic_eq_rounded,
                                           color: SoundColors.accent,
                                           size: 18,
@@ -216,7 +216,7 @@ class PlaybackQueueSheet extends StatelessWidget {
                             leading: SizedBox(
                               width: 30,
                               child: active
-                                  ? const Icon(
+                                  ? Icon(
                                       Icons.graphic_eq_rounded,
                                       color: SoundColors.accent,
                                     )

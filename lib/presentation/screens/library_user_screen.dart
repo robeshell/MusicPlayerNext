@@ -767,9 +767,11 @@ class _PlaylistTrackRow extends StatelessWidget {
     return SoundTrackActivation(
       onActivate: onTap,
       semanticLabel: track.title,
-      child: Material(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        child: DecoratedBox(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Material(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: DecoratedBox(
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
@@ -855,6 +857,7 @@ class _PlaylistTrackRow extends StatelessWidget {
                   ),
                 ),
         ),
+      ),
       ),
     );
   }

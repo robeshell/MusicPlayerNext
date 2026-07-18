@@ -577,7 +577,7 @@ class _Hero extends StatelessWidget {
                             album.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: SoundColors.accent,
                               fontSize: 28,
                               height: 1.08,
@@ -762,7 +762,7 @@ class _DiscHeader extends StatelessWidget {
         children: [
           Text(
             '第 $number 碟',
-            style: const TextStyle(
+            style: TextStyle(
               color: SoundColors.accent,
               fontSize: 13,
               fontWeight: FontWeight.w800,
@@ -838,7 +838,7 @@ class _TrackRow extends StatelessWidget {
         child: compact
             ? SoundCompactMediaRow(
                 leading: active
-                    ? const Icon(
+                    ? Icon(
                         Icons.graphic_eq_rounded,
                         color: SoundColors.accent,
                         size: 18,
@@ -876,7 +876,7 @@ class _TrackRow extends StatelessWidget {
                   SizedBox(
                     width: 48,
                     child: active
-                        ? const Icon(
+                        ? Icon(
                             Icons.graphic_eq_rounded,
                             color: SoundColors.accent,
                             size: 18,
@@ -995,7 +995,7 @@ class _TrackOfflineIndicator extends StatelessWidget {
       );
     }
     if (task?.state == OfflineDownloadTaskState.failed) {
-      return const Icon(
+      return Icon(
         Icons.error_outline_rounded,
         size: 16,
         color: SoundColors.accent,

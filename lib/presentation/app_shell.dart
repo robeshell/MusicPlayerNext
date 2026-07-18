@@ -49,6 +49,8 @@ class AppShell extends StatefulWidget {
     this.initialCatalog,
     this.webDavCache,
     this.enableFirstRunGuide = false,
+    this.accentPreset,
+    this.onAccentChanged,
     super.key,
   });
 
@@ -58,6 +60,8 @@ class AppShell extends StatefulWidget {
   final LibraryCatalogSnapshot? initialCatalog;
   final WebDavCache? webDavCache;
   final bool enableFirstRunGuide;
+  final AccentPreset? accentPreset;
+  final ValueChanged<AccentPreset>? onAccentChanged;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -489,17 +493,29 @@ class _AppShellState extends State<AppShell>
 
   void _openNowPlaying() {
     if (widget.playback.displayTrack == null) return;
-    if (!soundUsesDesktopPlatform &&
-        context.soundWindowClass == SoundWindowClass.compact) {
+    if (context.soundUsesMobileShell) {
       _expandMobileNowPlaying();
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => NowPlayingScreen(
+      PageRouteBuilder<void>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            NowPlayingScreen(
           playback: widget.playback,
           userState: _libraryUserState,
         ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            )),
+            child: child,
+          );
+        },
       ),
     );
   }
@@ -815,6 +831,9 @@ class _AppShellState extends State<AppShell>
                       diagnostics: _diagnostics,
                       onShowKeyboardShortcuts: _showKeyboardShortcuts,
                       initialDestination: _settingsDestination,
+                      accentPreset:
+                          widget.accentPreset ?? SoundColors.accentPresets[0],
+                      onAccentChanged: widget.onAccentChanged ?? (_) {},
                     ),
                   };
 
@@ -1161,7 +1180,7 @@ class _AppFailureBanner extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
         child: Row(
           children: [
-            const Icon(Icons.error_outline_rounded, color: SoundColors.accent),
+            Icon(Icons.error_outline_rounded, color: SoundColors.accent),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

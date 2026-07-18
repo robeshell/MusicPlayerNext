@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../core/sound_theme.dart';
+import 'theme_preferences.dart';
 import '../domain/library_models.dart';
 import '../library/library_repository.dart';
 import '../playback/playback_controller.dart';
@@ -67,6 +68,8 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
   late final PlaybackEngine _engine;
   SoundPlaybackController? _playback;
   PlaybackSessionStore? _sessionStore;
+  ThemePreferences? _themePrefs;
+  AccentPreset _accentPreset = SoundColors.accentPresets[0];
   Timer? _sessionSaveTimer;
   DateTime? _lastSessionSaveStartedAt;
   Future<void> _writeTail = Future<void>.value();
@@ -80,11 +83,26 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _engine = widget.engine;
+    _loadThemePreferences();
     if (widget.sessionIsPreloaded) {
       _attachPlayback(widget.sessionStore!, widget.initialSession);
     } else {
       unawaited(_bootstrapPlayback());
     }
+  }
+
+  Future<void> _loadThemePreferences() async {
+    try {
+      _themePrefs = await ThemePreferences.load();
+      if (mounted) setState(() => _accentPreset = _themePrefs!.selectedPreset);
+    } catch (_) {}
+  }
+
+  Future<void> _changeAccent(AccentPreset preset) async {
+    if (preset.id == _accentPreset.id) return;
+    preset.apply();
+    if (_themePrefs != null) await _themePrefs!.save(preset);
+    if (mounted) setState(() => _accentPreset = preset);
   }
 
   Future<void> _bootstrapPlayback() async {
@@ -318,6 +336,8 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
               webDavCache: widget.webDavCache,
               enableFirstRunGuide:
                   widget.enableFirstRunGuide ?? widget.repository == null,
+              accentPreset: _accentPreset,
+              onAccentChanged: _changeAccent,
             ),
     );
   }

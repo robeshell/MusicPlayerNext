@@ -70,14 +70,29 @@ extension SoundThemeContext on BuildContext {
           ? SoundWindowClass.medium
           : SoundWindowClass.wide;
     }
-    if (size.width < 820 || size.height < 600) {
+    // A foldable cover display is phone-sized, while the opened inner display
+    // normally lands around 650–800 logical pixels. Keep those as distinct
+    // classes so unfolding can use the extra width without opting into the
+    // desktop information architecture.
+    if (size.width <= 600 || size.height < 600) {
       return SoundWindowClass.compact;
     }
-    if (size.width < 1100) return SoundWindowClass.medium;
+    if (size.width < 1000) return SoundWindowClass.medium;
     return SoundWindowClass.wide;
   }
 
   bool get soundIsCompact => soundWindowClass == SoundWindowClass.compact;
+
+  /// Whether the window should retain touch-first navigation.
+  ///
+  /// Medium foldable screens deliberately keep the bottom navigation and
+  /// mobile now-playing gesture. A regular tablet can still promote itself to
+  /// the persistent sidebar once it has enough width.
+  bool get soundUsesMobileShell {
+    if (soundUsesDesktopPlatform) return false;
+    final size = MediaQuery.sizeOf(this);
+    return size.width < 820 || size.height < 600;
+  }
 
   double get soundPageGutter => switch (soundWindowClass) {
     SoundWindowClass.compact => 16,
@@ -87,7 +102,7 @@ extension SoundThemeContext on BuildContext {
 
   double get soundPageTitleSize => soundIsCompact ? 26 : 28;
 
-  double get soundContentBottomPadding => soundIsCompact ? 140 : 32;
+  double get soundContentBottomPadding => soundUsesMobileShell ? 140 : 32;
 
   double get soundSidebarWidth => switch (soundWindowClass) {
     SoundWindowClass.compact => 0,
@@ -98,10 +113,32 @@ extension SoundThemeContext on BuildContext {
 
 enum SoundWindowClass { compact, medium, wide }
 
+class AccentPreset {
+  const AccentPreset({
+    required this.id,
+    required this.name,
+    required this.accent,
+    required this.accentHover,
+    required this.accentPressed,
+  });
+
+  final String id;
+  final String name;
+  final Color accent;
+  final Color accentHover;
+  final Color accentPressed;
+
+  void apply() {
+    SoundColors.accent = accent;
+    SoundColors.accentHover = accentHover;
+    SoundColors.accentPressed = accentPressed;
+  }
+}
+
 abstract final class SoundColors {
-  static const accent = Color(0xFFFF5A4D);
-  static const accentHover = Color(0xFFFF7567);
-  static const accentPressed = Color(0xFFE3483E);
+  static Color accent = const Color(0xFFE0556D);
+  static Color accentHover = const Color(0xFFEE7B8D);
+  static Color accentPressed = const Color(0xFFC94458);
   static const darkCanvas = Color(0xFF0D0D0F);
   static const darkSurface = Color(0xFF17171A);
   static const darkElevated = Color(0xFF202024);
@@ -112,6 +149,15 @@ abstract final class SoundColors {
   static const lightOverlay = Color(0xFFF1F2F4);
   static const webDav = Color(0xFF5E8BFF);
   static const local = Color(0xFF55B889);
+
+  static const List<AccentPreset> accentPresets = [
+    AccentPreset(id: 'rose', name: '玫红', accent: Color(0xFFE0556D), accentHover: Color(0xFFEE7B8D), accentPressed: Color(0xFFC94458)),
+    AccentPreset(id: 'indigo', name: '靛蓝', accent: Color(0xFF818CF8), accentHover: Color(0xFFA5B4FC), accentPressed: Color(0xFF6366E0)),
+    AccentPreset(id: 'teal', name: '青绿', accent: Color(0xFF4ECDC4), accentHover: Color(0xFF7EDDD6), accentPressed: Color(0xFF3DBDB5)),
+    AccentPreset(id: 'amber', name: '琥珀', accent: Color(0xFFF59E0B), accentHover: Color(0xFFF7B84D), accentPressed: Color(0xFFD97706)),
+    AccentPreset(id: 'violet', name: '紫罗兰', accent: Color(0xFFA78BFA), accentHover: Color(0xFFC4B5FD), accentPressed: Color(0xFF8B5CF6)),
+    AccentPreset(id: 'coral', name: '珊瑚', accent: Color(0xFFFF5A4D), accentHover: Color(0xFFFF7567), accentPressed: Color(0xFFE3483E)),
+  ];
 }
 
 @immutable
@@ -334,7 +380,7 @@ abstract final class SoundTheme {
     });
     final focusSide = WidgetStateProperty.resolveWith<BorderSide?>((states) {
       return states.contains(WidgetState.focused)
-          ? const BorderSide(color: SoundColors.accent, width: 2)
+          ? BorderSide(color: SoundColors.accent, width: 2)
           : null;
     });
     final standardButtonStyle = ButtonStyle(
@@ -531,7 +577,7 @@ abstract final class SoundTheme {
           border: inputBorder,
           enabledBorder: inputBorder,
           focusedBorder: inputBorder.copyWith(
-            borderSide: const BorderSide(color: SoundColors.accent, width: 2),
+            borderSide: BorderSide(color: SoundColors.accent, width: 2),
           ),
         ),
         menuStyle: MenuStyle(
@@ -560,7 +606,7 @@ abstract final class SoundTheme {
           borderSide: BorderSide(color: disabledBorder),
         ),
         focusedBorder: inputBorder.copyWith(
-          borderSide: const BorderSide(color: SoundColors.accent, width: 2),
+          borderSide: BorderSide(color: SoundColors.accent, width: 2),
         ),
         errorBorder: inputBorder.copyWith(
           borderSide: BorderSide(color: scheme.error),
@@ -569,7 +615,7 @@ abstract final class SoundTheme {
           borderSide: BorderSide(color: scheme.error, width: 2),
         ),
         labelStyle: TextStyle(color: secondary, fontWeight: FontWeight.w600),
-        floatingLabelStyle: const TextStyle(
+        floatingLabelStyle: TextStyle(
           color: SoundColors.accent,
           fontWeight: FontWeight.w700,
         ),
@@ -741,7 +787,7 @@ abstract final class SoundTheme {
         }),
         trackColor: const WidgetStatePropertyAll(Colors.transparent),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
+      progressIndicatorTheme: ProgressIndicatorThemeData(
         color: SoundColors.accent,
         linearTrackColor: Colors.transparent,
       ),

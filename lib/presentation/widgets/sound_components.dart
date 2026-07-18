@@ -471,13 +471,15 @@ class SoundTrackListRow extends StatelessWidget {
     return SoundTrackActivation(
       onActivate: onActivate,
       semanticLabel: title,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: divider)),
-        ),
-        child: SizedBox(
-          height: compact ? compactHeight : desktopHeight,
-          child: Row(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: divider)),
+          ),
+          child: SizedBox(
+            height: compact ? compactHeight : desktopHeight,
+            child: Row(
             children: [
               SizedBox.square(dimension: compact ? 44 : 48, child: leading),
               SizedBox(width: compact ? 11 : 12),
@@ -520,6 +522,7 @@ class SoundTrackListRow extends StatelessWidget {
               ],
             ],
           ),
+        ),
         ),
       ),
     );

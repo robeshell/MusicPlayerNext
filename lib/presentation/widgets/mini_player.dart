@@ -57,7 +57,7 @@ class MiniPlayer extends StatelessWidget {
               final wide = docked || (!compact && constraints.maxWidth >= 900);
               final height = docked
                   ? 76.0
-                  : (compact ? (embedded ? 66.0 : 72.0) : (wide ? 88.0 : 82.0));
+                  : (compact ? (embedded ? 66.0 : 72.0) : (wide ? 58.0 : 82.0));
               final content = SizedBox(
                 height: height,
                 child: docked
@@ -258,16 +258,19 @@ class _WideMiniPlayer extends StatelessWidget {
           const SizedBox(width: 22),
           Expanded(
             flex: 42,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _TransportControls(playback: playback, visual: visual),
-                _MiniProgressRow(
-                  playback: playback,
-                  position: position,
-                  duration: duration,
-                ),
-              ],
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TransportControls(playback: playback, visual: visual),
+                  _MiniProgressRow(
+                    playback: playback,
+                    position: position,
+                    duration: duration,
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 18),
@@ -343,7 +346,7 @@ class _DockedMiniPlayer extends StatelessWidget {
           children: [
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 16, 2),
+                padding: const EdgeInsets.fromLTRB(20, 6, 16, 6),
                 child: Row(
                   children: [
                     _OpenArtwork(album: album, onOpen: onOpen, dimension: 48),
@@ -398,8 +401,8 @@ class _DockedMiniPlayer extends StatelessWidget {
             Positioned(
               left: 0,
               right: 0,
-              top: -6,
-              height: 28,
+              top: 0,
+              height: 6,
               child: ProgressScrubber(
                 key: const ValueKey('mini-player-progress'),
                 position: position,
@@ -408,9 +411,8 @@ class _DockedMiniPlayer extends StatelessWidget {
                 activeColor: SoundColors.accent,
                 inactiveColor: context.soundTint(0.1),
                 trackHeight: 3,
-                thumbRadius: 4,
-                overlayRadius: 8,
                 padding: EdgeInsets.zero,
+                interactive: false,
               ),
             ),
           ],
@@ -455,7 +457,7 @@ class _CondensedMiniPlayer extends StatelessWidget {
       children: [
         Positioned.fill(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(compact ? 9 : 13, 7, 8, 13),
+            padding: EdgeInsets.all(compact ? 6 : (availableWidth < 800 ? 8 : 14)),
             child: Row(
               children: [
                 _OpenArtwork(
@@ -506,8 +508,7 @@ class _CondensedMiniPlayer extends StatelessWidget {
         Positioned(
           left: 0,
           right: 0,
-          bottom: -3,
-          height: 28,
+          bottom: 0,
           child: ProgressScrubber(
             key: const ValueKey('mini-player-progress'),
             position: position,
@@ -518,9 +519,8 @@ class _CondensedMiniPlayer extends StatelessWidget {
                 : context.soundPrimaryText,
             inactiveColor: context.soundTint(embedded ? 0.075 : 0.12),
             trackHeight: embedded ? 1.5 : 2.5,
-            thumbRadius: embedded ? 2.5 : 3.5,
-            overlayRadius: 12,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            padding: EdgeInsets.zero,
+            interactive: false,
           ),
         ),
       ],
@@ -632,7 +632,7 @@ class _TransportControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 43,
+      height: 28,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -683,12 +683,15 @@ class _MiniProgressRow extends StatelessWidget {
         ? '-${formatDuration(remaining.isNegative ? Duration.zero : remaining)}'
         : '0:00';
     return SizedBox(
-      height: 30,
+      height: 4,
       child: Row(
         children: [
           SizedBox(
             width: 38,
-            child: Text(formatDuration(position), style: _timeStyle(context)),
+            child: Align(
+              alignment: Alignment.center,
+              child: Text(formatDuration(position), style: _timeStyle(context)),
+            ),
           ),
           Expanded(
             child: ProgressScrubber(
@@ -699,17 +702,19 @@ class _MiniProgressRow extends StatelessWidget {
               activeColor: context.soundPrimaryText,
               inactiveColor: context.soundTint(0.12),
               trackHeight: 3,
-              thumbRadius: 4.5,
-              overlayRadius: 13,
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 11),
+              padding: EdgeInsets.zero,
+              interactive: false,
             ),
           ),
           SizedBox(
             width: 42,
-            child: Text(
-              remainingLabel,
-              textAlign: TextAlign.end,
-              style: _timeStyle(context),
+            child: Align(
+              alignment: Alignment.center,
+              child: Text(
+                remainingLabel,
+                textAlign: TextAlign.end,
+                style: _timeStyle(context),
+              ),
             ),
           ),
         ],
