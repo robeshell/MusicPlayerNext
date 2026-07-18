@@ -30,14 +30,18 @@ void main() {
       final violet = SoundColors.accentPresets.firstWhere(
         (preset) => preset.id == 'violet',
       );
-      await preferences.save(violet);
+      await preferences.save(
+        accentPreset: violet,
+        skinPreset: SoundSkins.deepNight,
+      );
 
       SoundColors.defaultAccentPreset.apply();
       final restored = await ThemePreferences.load(
         supportDirectory: supportDirectory,
       );
 
-      expect(restored.selectedPreset, same(violet));
+      expect(restored.selectedAccentPreset, same(violet));
+      expect(restored.selectedSkinPreset, same(SoundSkins.deepNight));
       expect(SoundColors.accent, SoundColors.defaultAccentPreset.accent);
     },
   );
@@ -51,6 +55,35 @@ void main() {
       supportDirectory: supportDirectory,
     );
 
-    expect(restored.selectedPreset, same(SoundColors.defaultAccentPreset));
+    expect(
+      restored.selectedAccentPreset,
+      same(SoundColors.defaultAccentPreset),
+    );
+    expect(restored.selectedSkinPreset, same(SoundSkins.defaultPreset));
+  });
+
+  test('migrates an accent-only preference to the default skin', () async {
+    await File(
+      '${supportDirectory.path}/theme.json',
+    ).writeAsString('{"accentPreset":"indigo"}');
+
+    final restored = await ThemePreferences.load(
+      supportDirectory: supportDirectory,
+    );
+
+    expect(restored.selectedAccentPreset.id, 'indigo');
+    expect(restored.selectedSkinPreset, same(SoundSkins.standard));
+  });
+
+  test('migrates the temporary warm-mist skin identifier', () async {
+    await File(
+      '${supportDirectory.path}/theme.json',
+    ).writeAsString('{"accentPreset":"coral","skinPreset":"warm-mist"}');
+
+    final restored = await ThemePreferences.load(
+      supportDirectory: supportDirectory,
+    );
+
+    expect(restored.selectedSkinPreset, same(SoundSkins.standard));
   });
 }

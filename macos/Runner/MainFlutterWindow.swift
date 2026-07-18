@@ -90,9 +90,9 @@ private final class LaunchScreenBridge {
 
 private final class LaunchScreenView: NSView {
   static let backgroundColor = NSColor(
-    srgbRed: 250 / 255,
-    green: 245 / 255,
-    blue: 238 / 255,
+    srgbRed: 247 / 255,
+    green: 247 / 255,
+    blue: 248 / 255,
     alpha: 1)
 
   override init(frame frameRect: NSRect) {

@@ -18,7 +18,23 @@ void main() {
     ]);
   });
 
-  test('light theme exposes the approved warm glass tokens', () {
+  test('skins preserve the default and provide distinct adaptive surfaces', () {
+    final standard = SoundTheme.forSkin(SoundSkins.standard);
+    final pure = SoundTheme.forSkin(SoundSkins.pure);
+    final deep = SoundTheme.forSkin(SoundSkins.deepNight);
+
+    expect(SoundSkins.standard.id, 'default');
+    expect(SoundSkins.standard.name, '默认');
+    expect(standard.scaffoldBackgroundColor, SoundColors.lightCanvas);
+    expect(standard.extension<SoundGlassTheme>(), same(SoundGlassTheme.light));
+    expect(pure.scaffoldBackgroundColor, const Color(0xFFF4F5F7));
+    expect(pure.extension<SoundGlassTheme>()?.blur, 0);
+    expect(deep.brightness, Brightness.dark);
+    expect(deep.scaffoldBackgroundColor, SoundColors.darkCanvas);
+    expect(SoundSkins.presets.first, same(SoundSkins.defaultPreset));
+  });
+
+  test('light theme exposes the approved neutral glass tokens', () {
     final theme = SoundTheme.light;
     final glass = theme.extension<SoundGlassTheme>();
 

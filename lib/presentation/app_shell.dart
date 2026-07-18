@@ -114,6 +114,8 @@ class AppShell extends StatefulWidget {
     this.enableFirstRunGuide = false,
     this.accentPreset,
     this.onAccentChanged,
+    this.skinPreset,
+    this.onSkinChanged,
     this.failureOverlayController,
     super.key,
   });
@@ -126,6 +128,8 @@ class AppShell extends StatefulWidget {
   final bool enableFirstRunGuide;
   final AccentPreset? accentPreset;
   final ValueChanged<AccentPreset>? onAccentChanged;
+  final SoundSkinPreset? skinPreset;
+  final ValueChanged<SoundSkinPreset>? onSkinChanged;
   final AppFailureOverlayController? failureOverlayController;
 
   @override
@@ -591,18 +595,18 @@ class _AppShellState extends State<AppShell>
       PageRouteBuilder<void>(
         pageBuilder: (context, animation, secondaryAnimation) =>
             NowPlayingScreen(
-          playback: widget.playback,
-          userState: _libraryUserState,
-        ),
+              playback: widget.playback,
+              userState: _libraryUserState,
+            ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            )),
+            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
             child: child,
           );
         },
@@ -921,8 +925,11 @@ class _AppShellState extends State<AppShell>
                       onShowKeyboardShortcuts: _showKeyboardShortcuts,
                       initialDestination: _settingsDestination,
                       accentPreset:
-                          widget.accentPreset ?? SoundColors.defaultAccentPreset,
+                          widget.accentPreset ??
+                          SoundColors.defaultAccentPreset,
                       onAccentChanged: widget.onAccentChanged ?? (_) {},
+                      skinPreset: widget.skinPreset ?? SoundSkins.defaultPreset,
+                      onSkinChanged: widget.onSkinChanged ?? (_) {},
                     ),
                   };
 
@@ -1372,10 +1379,7 @@ class _AppFailureBanner extends StatelessWidget {
               onPressed: onDismiss,
               tooltip: '暂时关闭',
               visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints.tightFor(
-                width: 32,
-                height: 32,
-              ),
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
               color: context.soundMutedText,
               icon: const Icon(Icons.close_rounded, size: 17),
             ),

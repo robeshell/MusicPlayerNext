@@ -14,13 +14,14 @@ desktop spacing and component composition where the two differ.
 ## Product character
 
 Reverie is an artwork-first personal music player for local and remote libraries.
-It should feel calm, warm and native rather than technical: strong cover art,
-quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
+It should feel calm, neutral and native rather than technical: strong cover art,
+quiet metadata, restrained glass surfaces, and one vivid coral-red playback
+accent.
 
 ## Approved visual direction
 
 - Light mode is the product default and primary acceptance target.
-- The canvas is warm off-white rather than pure white.
+- The default canvas is a neutral near-white rather than a warm or tinted white.
 - Sidebar, navigation, mini player, menus and dialogs use translucent frosted
   glass. Ordinary list rows and cards use cheaper translucent fills so blur is
   not multiplied through long scrolling surfaces.
@@ -33,6 +34,26 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
   hidden, and interactive content starts below a 38 px safe region.
 - Dark mode remains supported by the same semantic tokens, while the product
   default and primary acceptance target stay light.
+
+## Appearance layers
+
+Reverie's appearance is composed from independent layers rather than one
+monolithic theme:
+
+- **Skin** controls canvas, surfaces, text hierarchy, glass strength and overall
+  material. `Default` is the frozen original appearance; new skins must not
+  change its approved tokens.
+- **Accent** controls playback actions, progress, selection and focus. Coral is
+  the brand default, while alternate accents remain available inside every
+  skin.
+- **Player layout** controls now-playing composition independently of color.
+  A chosen layout expresses the same intent through compact, medium, wide and
+  hinge-aware foldable variants instead of storing a separate choice per device.
+
+The first skin set is Default, Pure and Deep night. Only Default is the current
+acceptance baseline; the other skins remain experimental until separately
+reviewed. Appearance choices are local, persistent and preview immediately
+without collapsing the selector.
 
 ## Core screens retained from the prototype
 
@@ -72,7 +93,7 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
 
 - Startup uses a native launch surface so audio, cache and library
   initialization never exposes an empty white or black window.
-- The launch surface is deliberately quiet: `#FAF5EE` canvas and the rounded
+- The launch surface is deliberately quiet: `#F7F7F8` canvas and the rounded
   coral Reverie music icon. macOS and web pair it with a 20 px semibold
   wordmark; Android and iOS follow the platform's icon-only convention. It
   contains no artwork card, slogan, progress percentage or decorative gradient.
@@ -90,7 +111,7 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
 ### Color
 
 - Accent: `#FF5A4D`; hover: `#FF7567`; pressed: `#E3483E`.
-- Canvas: `#FAF5EE`, with a very soft `#FFFAF4` to `#F6EFE7` diagonal wash.
+- Canvas: `#F7F7F8`, with a restrained `#FBFBFC` to `#F1F2F4` neutral wash.
 - Glass surface: white at 72% opacity; strong floating glass: 87%.
 - Primary text: `#1C1C22`; secondary text: `#5A5A62`; auxiliary text:
   `#77747D`. Auxiliary text is reserved for short metadata.
@@ -98,7 +119,7 @@ quiet metadata, milky glass surfaces, and one vivid coral-red playback accent.
   border: 7%, plus a restrained white inner highlight where useful.
 - Glass blur: 20 px for navigation and menus, 28 px for the mini player and
   modal surfaces. Blur is not applied to every repeated library row.
-- Shadow: warm charcoal at 8-14% opacity with a wide, soft radius.
+- Shadow: neutral charcoal at 8-14% opacity with a wide, soft radius.
 - Album palette colors may tint hero glows and the now-playing backdrop, but
   never replace the playback accent.
 
@@ -222,13 +243,14 @@ The implementation primitives for these rules are `SoundChoiceStrip`,
 
 ## Responsive layout
 
-- Compact mobile/tablet windows (below 820 px or below 600 px tall): 16 px
-  gutter, bottom navigation, stacked album detail, compact player, and
-  full-screen now playing.
-- Medium (820-1099 px): 24 px gutter, 216 px sidebar, two-column detail where
-  space permits, and the desktop player dock.
-- Wide (1100 px and above): 32 px gutter, 236 px sidebar, flexible content, and
-  the full-width desktop player dock.
+- Compact density (up to 600 px wide, or below 600 px tall): 16 px gutter,
+  stacked detail and compact controls.
+- Medium density (601-999 px): 24 px gutter and two-column detail where space
+  permits. Touch-first devices retain bottom navigation until 820 px wide;
+  wider tablet windows may promote to the persistent sidebar.
+- Wide density (1000 px and above): 32 px gutter, flexible content and the
+  full-width player dock. Native desktop uses a 216 px sidebar below 1100 px
+  and a 236 px sidebar from 1100 px upward.
 - macOS, Windows and Linux never switch to phone navigation. Their windows use
   desktop navigation at every supported size and enforce a 900 x 600 logical
   pixel minimum; smaller desktop widths only tighten content density.

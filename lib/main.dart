@@ -26,7 +26,7 @@ Future<void> main() async {
   var initialAccent = SoundColors.defaultAccentPreset;
   try {
     themePreferences = await ThemePreferences.load();
-    initialAccent = themePreferences.selectedPreset;
+    initialAccent = themePreferences.selectedAccentPreset;
   } catch (error, stackTrace) {
     FlutterError.reportError(
       FlutterErrorDetails(

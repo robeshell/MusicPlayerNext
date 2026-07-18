@@ -318,6 +318,86 @@ abstract final class SoundRadii {
   static const pill = 999.0;
 }
 
+@immutable
+class SoundSkinPreset {
+  const SoundSkinPreset({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.brightness,
+    required this.canvas,
+    required this.surface,
+    required this.elevated,
+    required this.overlay,
+    required this.glass,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final Brightness brightness;
+  final Color canvas;
+  final Color surface;
+  final Color elevated;
+  final Color overlay;
+  final SoundGlassTheme glass;
+}
+
+abstract final class SoundSkins {
+  /// The original Reverie appearance. Keep these tokens stable so adding new
+  /// skins never changes the visual baseline existing users already know.
+  static const standard = SoundSkinPreset(
+    id: 'default',
+    name: '默认',
+    description: 'Reverie 的中性浅色玻璃界面',
+    brightness: Brightness.light,
+    canvas: SoundColors.lightCanvas,
+    surface: SoundColors.lightSurface,
+    elevated: SoundColors.lightElevated,
+    overlay: SoundColors.lightOverlay,
+    glass: SoundGlassTheme.light,
+  );
+
+  static const pure = SoundSkinPreset(
+    id: 'pure',
+    name: '纯净',
+    description: '更清晰的中性表面与轻量层次',
+    brightness: Brightness.light,
+    canvas: Color(0xFFF4F5F7),
+    surface: Color(0xFFFAFBFC),
+    elevated: Color(0xFFFFFFFF),
+    overlay: Color(0xFFEAEDF1),
+    glass: SoundGlassTheme(
+      canvasHighlight: Color(0xFFFFFFFF),
+      surface: Color(0xFAFFFFFF),
+      strongSurface: Color(0xFFFFFFFF),
+      border: Color(0x140F172A),
+      innerHighlight: Color(0xFFFFFFFF),
+      shadow: Color(0x12000000),
+      primaryText: Color(0xFF171A21),
+      secondaryText: Color(0xFF555B66),
+      mutedText: Color(0xFF737A86),
+      blur: 0,
+      strongBlur: 0,
+    ),
+  );
+
+  static const deepNight = SoundSkinPreset(
+    id: 'deep-night',
+    name: '深夜',
+    description: '专注于封面和歌词的低亮深色界面',
+    brightness: Brightness.dark,
+    canvas: SoundColors.darkCanvas,
+    surface: SoundColors.darkSurface,
+    elevated: SoundColors.darkElevated,
+    overlay: SoundColors.darkOverlay,
+    glass: SoundGlassTheme.dark,
+  );
+
+  static const defaultPreset = standard;
+  static const presets = [standard, pure, deepNight];
+}
+
 abstract final class SoundTheme {
   static const _animationDuration = Duration(milliseconds: 160);
   static const _fontFallback = <String>[
@@ -328,19 +408,23 @@ abstract final class SoundTheme {
     'sans-serif',
   ];
 
-  static ThemeData get dark => _build(Brightness.dark);
+  static ThemeData get dark => forSkin(SoundSkins.deepNight);
 
-  static ThemeData get light => _build(Brightness.light);
+  static ThemeData get light => forSkin(SoundSkins.standard);
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData forSkin(SoundSkinPreset skin) =>
+      _build(skin.brightness, skin: skin);
+
+  static ThemeData _build(
+    Brightness brightness, {
+    required SoundSkinPreset skin,
+  }) {
     final dark = brightness == Brightness.dark;
-    final canvas = dark ? SoundColors.darkCanvas : SoundColors.lightCanvas;
-    final surface = dark ? SoundColors.darkSurface : SoundColors.lightSurface;
-    final elevated = dark
-        ? SoundColors.darkElevated
-        : SoundColors.lightElevated;
-    final overlay = dark ? SoundColors.darkOverlay : SoundColors.lightOverlay;
-    final glass = dark ? SoundGlassTheme.dark : SoundGlassTheme.light;
+    final canvas = skin.canvas;
+    final surface = skin.surface;
+    final elevated = skin.elevated;
+    final overlay = skin.overlay;
+    final glass = skin.glass;
     final foreground = glass.primaryText;
     final secondary = glass.secondaryText;
     final border = dark

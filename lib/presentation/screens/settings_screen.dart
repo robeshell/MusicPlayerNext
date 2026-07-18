@@ -20,11 +20,10 @@ enum SettingsDestination { overview, sources, offline, diagnostics }
 
 enum _SettingsGroup { playback, library, appearance, operation, about }
 
-Color _settingsPrimaryText(BuildContext context) => context.soundPrimaryText
-    .withValues(alpha: context.soundPrimaryText.a * 0.88);
+Color _settingsPrimaryText(BuildContext context) => context.soundPrimaryText;
 
 Color _settingsSecondaryText(BuildContext context) =>
-    context.soundMutedText.withValues(alpha: context.soundMutedText.a * 0.76);
+    context.soundSecondaryText;
 
 Color _settingsHairline(BuildContext context) =>
     context.soundDivider.withValues(alpha: context.soundDivider.a * 0.68);
@@ -52,6 +51,8 @@ class SettingsScreen extends StatefulWidget {
     this.initialDestination = SettingsDestination.overview,
     required this.accentPreset,
     required this.onAccentChanged,
+    required this.skinPreset,
+    required this.onSkinChanged,
     super.key,
   });
 
@@ -66,6 +67,8 @@ class SettingsScreen extends StatefulWidget {
   final SettingsDestination initialDestination;
   final AccentPreset accentPreset;
   final ValueChanged<AccentPreset> onAccentChanged;
+  final SoundSkinPreset skinPreset;
+  final ValueChanged<SoundSkinPreset> onSkinChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -81,6 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _groupSyncScheduled = false;
   bool _playbackModesExpanded = false;
   bool _sleepTimerExpanded = false;
+  bool _skinExpanded = false;
   bool _accentColorExpanded = false;
 
   @override
@@ -305,6 +309,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: '外观',
                       children: [
                         _SettingsRow(
+                          key: const ValueKey('settings-skin-row'),
+                          icon: Icons.layers_outlined,
+                          iconColor: SoundColors.accent,
+                          title: '皮肤',
+                          subtitle: '调整背景、表面和整体材质',
+                          value: widget.skinPreset.name,
+                          expanded: _skinExpanded,
+                          onTap: () =>
+                              setState(() => _skinExpanded = !_skinExpanded),
+                        ),
+                        if (_skinExpanded)
+                          _SkinPresetSelector(
+                            selected: widget.skinPreset,
+                            onSelected: widget.onSkinChanged,
+                          ),
+                        _SettingsRow(
                           key: const ValueKey('settings-accent-row'),
                           icon: Icons.palette_outlined,
                           iconColor: SoundColors.accent,
@@ -483,6 +503,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   key: _groupKeys[_SettingsGroup.appearance],
                   title: '外观',
                   children: [
+                    _SettingsRow(
+                      key: const ValueKey('settings-skin-row'),
+                      icon: Icons.layers_outlined,
+                      iconColor: SoundColors.accent,
+                      title: '皮肤',
+                      subtitle: '调整背景、表面和整体材质',
+                      value: widget.skinPreset.name,
+                      expanded: _skinExpanded,
+                      onTap: () =>
+                          setState(() => _skinExpanded = !_skinExpanded),
+                    ),
+                    if (_skinExpanded)
+                      _SkinPresetSelector(
+                        selected: widget.skinPreset,
+                        onSelected: widget.onSkinChanged,
+                      ),
                     _SettingsRow(
                       key: const ValueKey('settings-accent-row'),
                       icon: Icons.palette_outlined,
@@ -1983,6 +2019,182 @@ class _PlaybackModeChoice extends StatelessWidget {
               if (selected)
                 Icon(Icons.check_rounded, size: 17, color: SoundColors.accent),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkinPresetSelector extends StatelessWidget {
+  const _SkinPresetSelector({required this.selected, required this.onSelected});
+
+  final SoundSkinPreset selected;
+  final ValueChanged<SoundSkinPreset> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      key: const ValueKey('skin-preset-selector'),
+      padding: const EdgeInsets.fromLTRB(4, 8, 0, 14),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const spacing = 10.0;
+          final columns = constraints.maxWidth < 420
+              ? 2
+              : constraints.maxWidth < 760
+              ? 3
+              : 4;
+          final width =
+              (constraints.maxWidth - spacing * (columns - 1)) / columns;
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: [
+              for (final preset in SoundSkins.presets)
+                SizedBox(
+                  width: width,
+                  child: _SkinPresetCard(
+                    preset: preset,
+                    selected: preset.id == selected.id,
+                    onTap: () => onSelected(preset),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SkinPresetCard extends StatelessWidget {
+  const _SkinPresetCard({
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final SoundSkinPreset preset;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${preset.name} 皮肤',
+      child: Tooltip(
+        message: preset.description,
+        child: InkWell(
+          key: ValueKey('skin-preset-${preset.id}'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: selected
+                  ? SoundColors.accent.withValues(alpha: 0.055)
+                  : context.soundTint(0.018),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? SoundColors.accent.withValues(alpha: 0.72)
+                    : context.soundDivider,
+                width: selected ? 1.5 : 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AspectRatio(
+                  aspectRatio: 1.65,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: ColoredBox(
+                      color: preset.canvas,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            left: 7,
+                            top: 7,
+                            bottom: 7,
+                            width: 22,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: preset.surface,
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(color: preset.glass.border),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 36,
+                            right: 7,
+                            top: 7,
+                            height: 13,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: preset.elevated,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 36,
+                            right: 7,
+                            top: 27,
+                            bottom: 7,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: preset.overlay,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                            ),
+                          ),
+                          if (selected)
+                            Positioned(
+                              right: 7,
+                              bottom: 7,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: SoundColors.accent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(3),
+                                  child: Icon(
+                                    Icons.check_rounded,
+                                    size: 12,
+                                    color: AccentPreset.readableForeground(
+                                      SoundColors.accent,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  preset.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected
+                        ? SoundColors.accent
+                        : context.soundPrimaryText,
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -1344,6 +1344,27 @@ void main() {
         .map((icon) => icon.icon)
         .toSet();
     expect(compactSettingsIcons, {Icons.chevron_right_rounded});
+    expect(
+      tester.widget<Text>(find.text('设置队列结束和切歌方式')).style?.color,
+      SoundGlassTheme.light.secondaryText,
+    );
+    expect(
+      tester.widget<Text>(find.text('播放模式')).style?.color,
+      SoundGlassTheme.light.primaryText,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('settings-skin-row')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('skin-preset-selector')), findsOneWidget);
+    expect(find.byKey(const ValueKey('skin-preset-default')), findsOneWidget);
+    expect(find.byKey(const ValueKey('skin-preset-pure')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('skin-preset-deep-night')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('skin-preset-deep-night')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('skin-preset-selector')), findsOneWidget);
 
     await tester.tap(find.text('播放模式'));
     await tester.pumpAndSettle();

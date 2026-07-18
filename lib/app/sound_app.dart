@@ -72,7 +72,9 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
   PlaybackSessionStore? _sessionStore;
   ThemePreferences? _themePrefs;
   AccentPreset _accentPreset = SoundColors.defaultAccentPreset;
+  SoundSkinPreset _skinPreset = SoundSkins.defaultPreset;
   int _accentChangeRevision = 0;
+  int _skinChangeRevision = 0;
   Future<void> _themeWriteTail = Future<void>.value();
   Timer? _sessionSaveTimer;
   DateTime? _lastSessionSaveStartedAt;
@@ -91,7 +93,8 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
     final initialThemePreferences = widget.initialThemePreferences;
     if (initialThemePreferences != null) {
       _themePrefs = initialThemePreferences;
-      _accentPreset = initialThemePreferences.selectedPreset;
+      _accentPreset = initialThemePreferences.selectedAccentPreset;
+      _skinPreset = initialThemePreferences.selectedSkinPreset;
       _accentPreset.apply();
     } else {
       SoundColors.defaultAccentPreset.apply();
@@ -108,13 +111,25 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
     try {
       final preferences = await ThemePreferences.load();
       _themePrefs = preferences;
-      if (_accentChangeRevision == 0) {
-        preferences.selectedPreset.apply();
-        if (mounted) {
-          setState(() => _accentPreset = preferences.selectedPreset);
-        }
-      } else {
-        await _saveAccentPreference(preferences, _accentPreset);
+      final loadedAccent = _accentChangeRevision == 0
+          ? preferences.selectedAccentPreset
+          : _accentPreset;
+      final loadedSkin = _skinChangeRevision == 0
+          ? preferences.selectedSkinPreset
+          : _skinPreset;
+      loadedAccent.apply();
+      if (mounted) {
+        setState(() {
+          _accentPreset = loadedAccent;
+          _skinPreset = loadedSkin;
+        });
+      }
+      if (_accentChangeRevision != 0 || _skinChangeRevision != 0) {
+        await _saveThemePreference(
+          preferences,
+          accentPreset: loadedAccent,
+          skinPreset: loadedSkin,
+        );
       }
     } catch (_) {
       // Theme preferences are optional. Keep the already-applied default
@@ -129,25 +144,44 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
     if (mounted) setState(() => _accentPreset = preset);
     final preferences = _themePrefs;
     if (preferences == null) return;
-    await _saveAccentPreference(preferences, preset);
+    await _saveThemePreference(
+      preferences,
+      accentPreset: preset,
+      skinPreset: _skinPreset,
+    );
   }
 
-  Future<void> _saveAccentPreference(
-    ThemePreferences preferences,
-    AccentPreset preset,
-  ) {
+  Future<void> _changeSkin(SoundSkinPreset preset) async {
+    if (preset.id == _skinPreset.id) return;
+    _skinChangeRevision++;
+    if (mounted) setState(() => _skinPreset = preset);
+    final preferences = _themePrefs;
+    if (preferences == null) return;
+    await _saveThemePreference(
+      preferences,
+      accentPreset: _accentPreset,
+      skinPreset: preset,
+    );
+  }
+
+  Future<void> _saveThemePreference(
+    ThemePreferences preferences, {
+    required AccentPreset accentPreset,
+    required SoundSkinPreset skinPreset,
+  }) {
     _themeWriteTail = _themeWriteTail.then((_) async {
       try {
-        await preferences.save(preset);
+        await preferences.save(
+          accentPreset: accentPreset,
+          skinPreset: skinPreset,
+        );
       } catch (error, stackTrace) {
         FlutterError.reportError(
           FlutterErrorDetails(
             exception: error,
             stack: stackTrace,
             library: 'sound theme preferences',
-            context: ErrorDescription(
-              'while saving the selected accent color',
-            ),
+            context: ErrorDescription('while saving the selected appearance'),
           ),
         );
       }
@@ -361,20 +395,22 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final playback = _playback;
+    final dark = _skinPreset.brightness == Brightness.dark;
     return MaterialApp(
       title: 'Reverie',
       debugShowCheckedModeBanner: false,
-      theme: SoundTheme.light,
-      darkTheme: SoundTheme.dark,
-      themeMode: ThemeMode.light,
+      theme: SoundTheme.forSkin(_skinPreset),
+      themeAnimationDuration: const Duration(milliseconds: 220),
+      themeAnimationCurve: Curves.easeOutCubic,
       builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.dark.copyWith(
-          statusBarColor: Colors.transparent,
-          systemNavigationBarColor: Colors.transparent,
-          systemNavigationBarDividerColor: Colors.transparent,
-          systemStatusBarContrastEnforced: false,
-          systemNavigationBarContrastEnforced: false,
-        ),
+        value: (dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+            .copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+              systemNavigationBarDividerColor: Colors.transparent,
+              systemStatusBarContrastEnforced: false,
+              systemNavigationBarContrastEnforced: false,
+            ),
         child: AppFailureOverlayHost(
           controller: _failureOverlayController,
           child: child ?? const SizedBox.shrink(),
@@ -392,6 +428,8 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
                   widget.enableFirstRunGuide ?? widget.repository == null,
               accentPreset: _accentPreset,
               onAccentChanged: _changeAccent,
+              skinPreset: _skinPreset,
+              onSkinChanged: _changeSkin,
               failureOverlayController: _failureOverlayController,
             ),
     );
@@ -404,7 +442,7 @@ class _PlaybackBootstrapScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFAF5EE),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Center(
         child: Semantics(
           label: 'Reverie 正在启动',
@@ -426,10 +464,10 @@ class _PlaybackBootstrapScreen extends StatelessWidget {
                 ),
                 Transform.translate(
                   offset: const Offset(0, 58),
-                  child: const Text(
+                  child: Text(
                     'Reverie',
                     style: TextStyle(
-                      color: Color(0xFF1C1C22),
+                      color: context.soundPrimaryText,
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.2,
