@@ -362,9 +362,10 @@ class _SearchResultRow extends StatelessWidget {
           ),
         ],
       ),
-      compactTrailing: PopupMenuButton<_SearchResultAction>(
+      compactTrailing: SoundMenuButton<_SearchResultAction>(
         key: ValueKey('search-result-menu-${hit.track.id}'),
         tooltip: '更多操作 ${hit.track.title}',
+        menuTitle: hit.track.title,
         icon: const Icon(Icons.more_horiz_rounded, size: 21),
         onSelected: (action) {
           switch (action) {
@@ -376,20 +377,26 @@ class _SearchResultRow extends StatelessWidget {
               onAddToPlaylist?.call();
           }
         },
-        itemBuilder: (context) => [
-          const PopupMenuItem(
+        actions: [
+          const SoundMenuAction(
             value: _SearchResultAction.openAlbum,
-            child: Text('打开专辑'),
+            label: '打开专辑',
+            icon: Icons.album_outlined,
           ),
           if (onToggleFavorite != null)
-            PopupMenuItem(
+            SoundMenuAction(
               value: _SearchResultAction.favorite,
-              child: Text(favorite ? '取消收藏' : '收藏'),
+              label: favorite ? '取消收藏' : '收藏',
+              icon: favorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              selected: favorite,
             ),
           if (onAddToPlaylist != null)
-            const PopupMenuItem(
+            const SoundMenuAction(
               value: _SearchResultAction.addToPlaylist,
-              child: Text('添加到播放列表'),
+              label: '添加到播放列表',
+              icon: Icons.playlist_add_rounded,
             ),
         ],
       ),
@@ -443,14 +450,18 @@ class _SearchControls extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        PopupMenuButton<LibrarySearchSort>(
+        SoundMenuButton<LibrarySearchSort>(
           key: const ValueKey('compact-search-sort'),
           tooltip: '排序方式',
-          initialValue: sort,
           onSelected: onSortChanged,
-          itemBuilder: (context) => [
+          actions: [
             for (final item in LibrarySearchSort.values)
-              PopupMenuItem(value: item, child: Text(item.label)),
+              SoundMenuAction(
+                value: item,
+                label: item.label,
+                icon: Icons.sort_rounded,
+                selected: item == sort,
+              ),
           ],
           child: SoundToolbarButton(
             icon: Icons.sort_rounded,

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/sound_theme.dart';
 import '../../core/now_playing_style.dart';
@@ -14,6 +15,7 @@ import '../../sources/local/local_source_service.dart';
 import '../../sources/webdav/webdav_connection_service.dart';
 import '../controllers/app_diagnostics_controller.dart';
 import '../controllers/offline_download_controller.dart';
+import '../widgets/settings_components.dart';
 import '../widgets/sound_components.dart';
 import 'source_settings_screen.dart';
 
@@ -21,13 +23,11 @@ enum SettingsDestination { overview, sources, offline, diagnostics }
 
 enum _SettingsGroup { playback, library, appearance, operation, about }
 
-Color _settingsPrimaryText(BuildContext context) => context.soundPrimaryText;
+Color _settingsPrimaryText(BuildContext context) => context.settingsPrimary;
 
-Color _settingsSecondaryText(BuildContext context) =>
-    context.soundSecondaryText;
+Color _settingsSecondaryText(BuildContext context) => context.settingsSecondary;
 
-Color _settingsHairline(BuildContext context) =>
-    context.soundDivider.withValues(alpha: context.soundDivider.a * 0.68);
+Color _settingsHairline(BuildContext context) => context.settingsHairline;
 
 extension on _SettingsGroup {
   String get label => switch (this) {
@@ -92,11 +92,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _skinExpanded = false;
   bool _accentColorExpanded = false;
   bool _nowPlayingStyleExpanded = false;
+  String _appVersion = '—';
 
   @override
   void initState() {
     super.initState();
     _overviewScrollController.addListener(_scheduleGroupSync);
+    unawaited(_loadAppVersion());
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _appVersion = packageInfo.version);
+    } on MissingPluginException {
+      // Widget tests and custom embedders may not provide package metadata.
+    } on PlatformException {
+      // Keep the neutral placeholder if the platform cannot read its package.
+    }
   }
 
   @override
@@ -208,221 +221,247 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, _) {
         final compact = context.soundIsCompact;
         if (compact) return _buildCompactOverview(context);
-        return CustomScrollView(
-          key: const ValueKey('settings-overview'),
-          controller: _overviewScrollController,
-          slivers: [
-            SliverPersistentHeader(
-              pinned: false,
-              delegate: _SettingsTabsHeader(
-                selected: _selectedGroup,
-                onSelected: (group) => unawaited(_scrollToGroup(group)),
-              ),
-            ),
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                context.soundPageGutter,
-                14,
-                context.soundPageGutter,
-                context.soundContentBottomPadding,
-              ),
-              sliver: SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    _SettingsSection(
-                      key: _groupKeys[_SettingsGroup.playback],
-                      title: '播放',
-                      flat: true,
-                      children: [
-                        _SettingsRow(
-                          flat: true,
-                          icon: _playbackModeIcon(widget.playback.playbackMode),
-                          iconColor: SoundColors.accent,
-                          title: '播放模式',
-                          subtitle: '控制队列结束和切歌时的行为',
-                          value: widget.playback.playbackMode.label,
-                          expanded: _playbackModesExpanded,
-                          onTap: () => setState(
-                            () => _playbackModesExpanded =
-                                !_playbackModesExpanded,
-                          ),
-                        ),
-                        if (_playbackModesExpanded)
-                          _PlaybackModeSelector(
-                            selected: widget.playback.playbackMode,
-                            onSelected: (mode) {
-                              widget.playback.setPlaybackMode(mode);
-                              setState(() => _playbackModesExpanded = false);
-                            },
-                          ),
-                        _SettingsRow(
-                          key: const ValueKey('settings-sleep-timer-row'),
-                          flat: true,
-                          icon: Icons.bedtime_outlined,
-                          iconColor: SoundColors.webDav,
-                          title: '睡眠定时',
-                          subtitle: '定时暂停，或在当前歌曲播放结束后停止',
-                          value: _sleepTimerLabel(widget.sleepTimer),
-                          expanded: _sleepTimerExpanded,
-                          onTap: () => setState(
-                            () => _sleepTimerExpanded = !_sleepTimerExpanded,
-                          ),
-                        ),
-                        if (_sleepTimerExpanded)
-                          _SleepTimerSelector(
-                            timer: widget.sleepTimer,
-                            hasTrack: widget.playback.displayTrack != null,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    _SettingsSection(
-                      key: _groupKeys[_SettingsGroup.library],
-                      title: '资料库',
-                      flat: true,
-                      children: [
-                        _SettingsRow(
-                          key: const ValueKey('settings-sources-row'),
-                          flat: true,
-                          icon: Icons.library_music_rounded,
-                          iconColor: SoundColors.local,
-                          title: '音乐来源',
-                          subtitle: '管理本地文件夹、WebDAV 服务器和扫描目录',
-                          onTap: () => setState(
-                            () => _destination = SettingsDestination.sources,
-                          ),
-                        ),
-                        if (widget.offline != null)
-                          _SettingsRow(
-                            key: const ValueKey('settings-offline-row'),
-                            flat: true,
-                            icon: Icons.download_for_offline_outlined,
-                            iconColor: SoundColors.webDav,
-                            title: '离线与缓存',
-                            subtitle: '管理远程来源的离线歌曲、临时缓存和存储空间',
-                            value: _formatBytes(
-                              widget.offline!.stats.totalBytes,
-                            ),
-                            onTap: () => setState(
-                              () => _destination = SettingsDestination.offline,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    _SettingsSection(
-                      key: _groupKeys[_SettingsGroup.appearance],
-                      title: '外观',
-                      children: [
-                        _SettingsRow(
-                          key: const ValueKey('settings-skin-row'),
-                          icon: Icons.layers_outlined,
-                          iconColor: SoundColors.accent,
-                          title: '皮肤',
-                          subtitle: '调整背景、表面和整体材质',
-                          value: widget.skinPreset.name,
-                          expanded: _skinExpanded,
-                          onTap: () =>
-                              setState(() => _skinExpanded = !_skinExpanded),
-                        ),
-                        if (_skinExpanded)
-                          _SkinPresetSelector(
-                            selected: widget.skinPreset,
-                            onSelected: widget.onSkinChanged,
-                          ),
-                        _SettingsRow(
-                          key: const ValueKey('settings-player-style-row'),
-                          icon: Icons.now_wallpaper_outlined,
-                          iconColor: SoundColors.accent,
-                          title: '播放器样式',
-                          subtitle: '调整正在播放页在不同设备上的构图',
-                          value: widget.nowPlayingStyle.label,
-                          expanded: _nowPlayingStyleExpanded,
-                          onTap: () => setState(
-                            () => _nowPlayingStyleExpanded =
-                                !_nowPlayingStyleExpanded,
-                          ),
-                        ),
-                        if (_nowPlayingStyleExpanded)
-                          _NowPlayingStyleSelector(
-                            selected: widget.nowPlayingStyle,
-                            onSelected:
-                                widget.onNowPlayingStyleChanged ?? (_) {},
-                          ),
-                        _SettingsRow(
-                          key: const ValueKey('settings-accent-row'),
-                          icon: Icons.palette_outlined,
-                          iconColor: SoundColors.accent,
-                          title: '主题色',
-                          subtitle: '调整应用按钮和图标的强调色',
-                          value: widget.accentPreset.name,
-                          expanded: _accentColorExpanded,
-                          onTap: () => setState(
-                            () => _accentColorExpanded = !_accentColorExpanded,
-                          ),
-                        ),
-                        if (_accentColorExpanded)
-                          _AccentPresetSelector(
-                            selected: widget.accentPreset,
-                            onSelected: widget.onAccentChanged,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    _SettingsSection(
-                      key: _groupKeys[_SettingsGroup.operation],
-                      title: '操作',
-                      flat: true,
-                      children: [
-                        if (soundUsesDesktopPlatform)
-                          _SettingsRow(
-                            flat: true,
-                            icon: Icons.keyboard_alt_outlined,
-                            iconColor: context.soundSecondaryText,
-                            title: '键盘快捷键',
-                            subtitle: '查看播放、导航和搜索快捷键',
-                            onTap: widget.onShowKeyboardShortcuts,
-                          ),
-                        _SettingsRow(
-                          key: const ValueKey('settings-diagnostics-row'),
-                          flat: true,
-                          icon: Icons.health_and_safety_outlined,
-                          iconColor: widget.diagnostics.problemCount == 0
-                              ? context.soundSecondaryText
-                              : SoundColors.accent,
-                          title: '问题与诊断',
-                          subtitle: '查看播放、来源和资料库的最近错误',
-                          value: widget.diagnostics.problemCount == 0
-                              ? '没有问题'
-                              : '${widget.diagnostics.problemCount} 条',
-                          onTap: () => setState(
-                            () =>
-                                _destination = SettingsDestination.diagnostics,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    _SettingsSection(
-                      key: _groupKeys[_SettingsGroup.about],
-                      title: '关于',
-                      flat: true,
-                      children: const [
-                        _SettingsRow(
-                          flat: true,
-                          icon: Icons.graphic_eq_rounded,
-                          iconColor: SoundColors.webDav,
-                          title: 'Reverie',
-                          subtitle: '跨平台本地与远程音乐播放器',
-                          value: '开发版本',
-                        ),
-                      ],
-                    ),
-                  ],
+        return ColoredBox(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: CustomScrollView(
+            key: const ValueKey('settings-overview'),
+            controller: _overviewScrollController,
+            slivers: [
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _SettingsTabsHeader(
+                  selected: _selectedGroup,
+                  onSelected: (group) => unawaited(_scrollToGroup(group)),
                 ),
               ),
-            ),
-          ],
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  context.soundPageGutter,
+                  14,
+                  context.soundPageGutter,
+                  context.soundContentBottomPadding,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: SoundSettingsContent(
+                    child: Column(
+                      children: [
+                        _SettingsSection(
+                          key: _groupKeys[_SettingsGroup.playback],
+                          title: '播放',
+                          flat: true,
+                          children: [
+                            _SettingsRow(
+                              key: const ValueKey('settings-about-row'),
+                              flat: true,
+                              icon: _playbackModeIcon(
+                                widget.playback.playbackMode,
+                              ),
+                              iconColor: SoundColors.accent,
+                              title: '播放模式',
+                              subtitle: '控制队列结束和切歌时的行为',
+                              value: widget.playback.playbackMode.label,
+                              expanded: _playbackModesExpanded,
+                              onTap: () => setState(
+                                () => _playbackModesExpanded =
+                                    !_playbackModesExpanded,
+                              ),
+                            ),
+                            if (_playbackModesExpanded)
+                              SoundSettingsInlinePanel(
+                                child: _PlaybackModeSelector(
+                                  selected: widget.playback.playbackMode,
+                                  onSelected: (mode) {
+                                    widget.playback.setPlaybackMode(mode);
+                                    setState(
+                                      () => _playbackModesExpanded = false,
+                                    );
+                                  },
+                                ),
+                              ),
+                            _SettingsRow(
+                              key: const ValueKey('settings-sleep-timer-row'),
+                              flat: true,
+                              icon: Icons.bedtime_outlined,
+                              iconColor: SoundColors.webDav,
+                              title: '睡眠定时',
+                              subtitle: '定时暂停，或在当前歌曲播放结束后停止',
+                              value: _sleepTimerLabel(widget.sleepTimer),
+                              expanded: _sleepTimerExpanded,
+                              onTap: () => setState(
+                                () =>
+                                    _sleepTimerExpanded = !_sleepTimerExpanded,
+                              ),
+                            ),
+                            if (_sleepTimerExpanded)
+                              SoundSettingsInlinePanel(
+                                child: _SleepTimerSelector(
+                                  timer: widget.sleepTimer,
+                                  hasTrack:
+                                      widget.playback.displayTrack != null,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: SoundSettingsMetrics.sectionGap),
+                        _SettingsSection(
+                          key: _groupKeys[_SettingsGroup.library],
+                          title: '资料库',
+                          flat: true,
+                          children: [
+                            _SettingsRow(
+                              key: const ValueKey('settings-sources-row'),
+                              flat: true,
+                              icon: Icons.library_music_rounded,
+                              iconColor: SoundColors.local,
+                              title: '音乐来源',
+                              subtitle: '管理本地文件夹、WebDAV 服务器和扫描目录',
+                              onTap: () => setState(
+                                () =>
+                                    _destination = SettingsDestination.sources,
+                              ),
+                            ),
+                            if (widget.offline != null)
+                              _SettingsRow(
+                                key: const ValueKey('settings-offline-row'),
+                                flat: true,
+                                icon: Icons.download_for_offline_outlined,
+                                iconColor: SoundColors.webDav,
+                                title: '离线与缓存',
+                                subtitle: '管理远程来源的离线歌曲、临时缓存和存储空间',
+                                value: _formatBytes(
+                                  widget.offline!.stats.totalBytes,
+                                ),
+                                onTap: () => setState(
+                                  () => _destination =
+                                      SettingsDestination.offline,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: SoundSettingsMetrics.sectionGap),
+                        _SettingsSection(
+                          key: _groupKeys[_SettingsGroup.appearance],
+                          title: '外观',
+                          children: [
+                            _SettingsRow(
+                              key: const ValueKey('settings-skin-row'),
+                              icon: Icons.layers_outlined,
+                              iconColor: SoundColors.accent,
+                              title: '皮肤',
+                              subtitle: '调整背景、表面和整体材质',
+                              value: widget.skinPreset.name,
+                              expanded: _skinExpanded,
+                              onTap: () => setState(
+                                () => _skinExpanded = !_skinExpanded,
+                              ),
+                            ),
+                            if (_skinExpanded)
+                              SoundSettingsInlinePanel(
+                                child: _SkinPresetSelector(
+                                  selected: widget.skinPreset,
+                                  onSelected: widget.onSkinChanged,
+                                ),
+                              ),
+                            _SettingsRow(
+                              key: const ValueKey('settings-player-style-row'),
+                              icon: Icons.now_wallpaper_outlined,
+                              iconColor: SoundColors.accent,
+                              title: '播放器样式',
+                              subtitle: '调整正在播放页在不同设备上的构图',
+                              value: widget.nowPlayingStyle.label,
+                              expanded: _nowPlayingStyleExpanded,
+                              onTap: () => setState(
+                                () => _nowPlayingStyleExpanded =
+                                    !_nowPlayingStyleExpanded,
+                              ),
+                            ),
+                            if (_nowPlayingStyleExpanded)
+                              SoundSettingsInlinePanel(
+                                child: _NowPlayingStyleSelector(
+                                  selected: widget.nowPlayingStyle,
+                                  onSelected:
+                                      widget.onNowPlayingStyleChanged ?? (_) {},
+                                ),
+                              ),
+                            _SettingsRow(
+                              key: const ValueKey('settings-accent-row'),
+                              icon: Icons.palette_outlined,
+                              iconColor: SoundColors.accent,
+                              title: '主题色',
+                              subtitle: '调整应用按钮和图标的强调色',
+                              value: widget.accentPreset.name,
+                              expanded: _accentColorExpanded,
+                              onTap: () => setState(
+                                () => _accentColorExpanded =
+                                    !_accentColorExpanded,
+                              ),
+                            ),
+                            if (_accentColorExpanded)
+                              SoundSettingsInlinePanel(
+                                child: _AccentPresetSelector(
+                                  selected: widget.accentPreset,
+                                  onSelected: widget.onAccentChanged,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: SoundSettingsMetrics.sectionGap),
+                        _SettingsSection(
+                          key: _groupKeys[_SettingsGroup.operation],
+                          title: '操作',
+                          flat: true,
+                          children: [
+                            if (soundUsesDesktopPlatform)
+                              _SettingsRow(
+                                flat: true,
+                                icon: Icons.keyboard_alt_outlined,
+                                iconColor: context.soundSecondaryText,
+                                title: '键盘快捷键',
+                                subtitle: '查看播放、导航和搜索快捷键',
+                                onTap: widget.onShowKeyboardShortcuts,
+                              ),
+                            _SettingsRow(
+                              key: const ValueKey('settings-diagnostics-row'),
+                              flat: true,
+                              icon: Icons.health_and_safety_outlined,
+                              iconColor: widget.diagnostics.problemCount == 0
+                                  ? context.soundSecondaryText
+                                  : SoundColors.accent,
+                              title: '问题与诊断',
+                              subtitle: '查看播放、来源和资料库的最近错误',
+                              value: widget.diagnostics.problemCount == 0
+                                  ? '没有问题'
+                                  : '${widget.diagnostics.problemCount} 条',
+                              onTap: () => setState(
+                                () => _destination =
+                                    SettingsDestination.diagnostics,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: SoundSettingsMetrics.sectionGap),
+                        _SettingsSection(
+                          key: _groupKeys[_SettingsGroup.about],
+                          title: '关于',
+                          flat: true,
+                          children: [
+                            _SettingsRow(
+                              flat: true,
+                              icon: Icons.graphic_eq_rounded,
+                              iconColor: SoundColors.webDav,
+                              title: 'Reverie',
+                              subtitle: '跨平台本地与远程音乐播放器',
+                              value: _appVersion,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -457,17 +496,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '设置',
-                  key: const ValueKey('compact-settings-title'),
-                  style: TextStyle(
-                    color: _settingsPrimaryText(context),
-                    fontSize: context.soundPageTitleSize,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 22),
                 _SettingsSection(
                   key: _groupKeys[_SettingsGroup.playback],
                   title: '播放',
@@ -540,9 +568,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           setState(() => _skinExpanded = !_skinExpanded),
                     ),
                     if (_skinExpanded)
-                      _SkinPresetSelector(
-                        selected: widget.skinPreset,
-                        onSelected: widget.onSkinChanged,
+                      SoundSettingsInlinePanel(
+                        child: _SkinPresetSelector(
+                          selected: widget.skinPreset,
+                          onSelected: widget.onSkinChanged,
+                        ),
                       ),
                     _SettingsRow(
                       key: const ValueKey('settings-player-style-row'),
@@ -558,9 +588,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     if (_nowPlayingStyleExpanded)
-                      _NowPlayingStyleSelector(
-                        selected: widget.nowPlayingStyle,
-                        onSelected: widget.onNowPlayingStyleChanged ?? (_) {},
+                      SoundSettingsInlinePanel(
+                        child: _NowPlayingStyleSelector(
+                          selected: widget.nowPlayingStyle,
+                          onSelected: widget.onNowPlayingStyleChanged ?? (_) {},
+                        ),
                       ),
                     _SettingsRow(
                       key: const ValueKey('settings-accent-row'),
@@ -575,9 +607,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     if (_accentColorExpanded)
-                      _AccentPresetSelector(
-                        selected: widget.accentPreset,
-                        onSelected: widget.onAccentChanged,
+                      SoundSettingsInlinePanel(
+                        child: _AccentPresetSelector(
+                          selected: widget.accentPreset,
+                          onSelected: widget.onAccentChanged,
+                        ),
                       ),
                   ],
                 ),
@@ -607,13 +641,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _SettingsSection(
                   key: _groupKeys[_SettingsGroup.about],
                   title: '关于',
-                  children: const [
+                  children: [
                     _SettingsRow(
+                      key: const ValueKey('settings-about-row'),
                       icon: Icons.graphic_eq_rounded,
                       iconColor: SoundColors.webDav,
                       title: 'Reverie',
                       subtitle: '本地与远程音乐播放器',
-                      value: '开发版本',
+                      value: _appVersion,
                     ),
                   ],
                 ),
@@ -703,10 +738,10 @@ class _SettingsTabsHeader extends SliverPersistentHeaderDelegate {
   final ValueChanged<_SettingsGroup> onSelected;
 
   @override
-  double get minExtent => 46;
+  double get minExtent => 48;
 
   @override
-  double get maxExtent => 46;
+  double get maxExtent => 48;
 
   @override
   Widget build(
@@ -714,18 +749,34 @@ class _SettingsTabsHeader extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: EdgeInsets.symmetric(horizontal: context.soundPageGutter),
-      child: Row(
-        children: [
-          for (final group in _SettingsGroup.values)
-            _SettingsGroupTab(
-              group: group,
-              selected: group == selected,
-              onTap: () => onSelected(group),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(bottom: BorderSide(color: _settingsHairline(context))),
+      ),
+      child: SoundSettingsContent(
+        padding: EdgeInsets.symmetric(horizontal: context.soundPageGutter),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (
+                  var index = 0;
+                  index < _SettingsGroup.values.length;
+                  index++
+                )
+                  _SettingsGroupTab(
+                    group: _SettingsGroup.values[index],
+                    selected: _SettingsGroup.values[index] == selected,
+                    first: index == 0,
+                    onTap: () => onSelected(_SettingsGroup.values[index]),
+                  ),
+              ],
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -741,11 +792,13 @@ class _SettingsGroupTab extends StatelessWidget {
   const _SettingsGroupTab({
     required this.group,
     required this.selected,
+    required this.first,
     required this.onTap,
   });
 
   final _SettingsGroup group;
   final bool selected;
+  final bool first;
   final VoidCallback onTap;
 
   @override
@@ -756,11 +809,10 @@ class _SettingsGroupTab extends StatelessWidget {
       child: InkWell(
         key: ValueKey('settings-group-${group.name}'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
         child: SizedBox(
-          height: 46,
+          height: 48,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: EdgeInsets.only(left: first ? 0 : 16, right: 16),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -770,14 +822,14 @@ class _SettingsGroupTab extends StatelessWidget {
                     color: selected
                         ? SoundColors.accent
                         : _settingsSecondaryText(context),
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 9),
+                const SizedBox(height: 8),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
-                  width: selected ? 20 : 0,
+                  width: selected ? 26 : 0,
                   height: 2,
                   decoration: BoxDecoration(
                     color: SoundColors.accent,
@@ -937,40 +989,49 @@ class _SleepTimerSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const durations = [15, 30, 45, 60];
+    final selected = timer.mode == SleepTimerMode.endOfTrack
+        ? -1
+        : timer.mode == SleepTimerMode.duration
+        ? durations.firstWhere(
+            (minutes) =>
+                timer.remaining.inMinutes <= minutes &&
+                timer.remaining.inMinutes >= minutes - 1,
+            orElse: () => 0,
+          )
+        : 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(38, 4, 0, 14),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final minutes in durations)
-            ChoiceChip(
-              key: ValueKey('sleep-timer-$minutes'),
-              label: Text('$minutes 分钟'),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              selected:
-                  timer.mode == SleepTimerMode.duration &&
-                  timer.remaining.inMinutes <= minutes &&
-                  timer.remaining.inMinutes >= minutes - 1,
-              onSelected: (_) => timer.start(Duration(minutes: minutes)),
-            ),
-          ChoiceChip(
-            key: const ValueKey('sleep-timer-end-of-track'),
-            label: const Text('播完当前歌曲'),
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            selected: timer.mode == SleepTimerMode.endOfTrack,
-            onSelected: hasTrack ? (_) => timer.stopAfterCurrentTrack() : null,
+          SoundChoiceStrip<int>(
+            wrap: true,
+            selected: selected,
+            onSelected: (value) => value == -1
+                ? timer.stopAfterCurrentTrack()
+                : timer.start(Duration(minutes: value)),
+            options: [
+              for (final minutes in durations)
+                SoundChoiceOption(
+                  key: ValueKey('sleep-timer-$minutes'),
+                  value: minutes,
+                  label: '$minutes 分钟',
+                ),
+              SoundChoiceOption(
+                key: const ValueKey('sleep-timer-end-of-track'),
+                value: -1,
+                label: '播完当前歌曲',
+                enabled: hasTrack,
+              ),
+            ],
           ),
           if (timer.isActive)
-            ActionChip(
+            TextButton.icon(
               key: const ValueKey('sleep-timer-cancel'),
-              avatar: const Icon(Icons.close_rounded, size: 15),
-              label: const Text('取消定时'),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               onPressed: timer.cancel,
+              style: context.soundDestructiveButtonStyle,
+              icon: const Icon(Icons.close_rounded, size: 16),
+              label: const Text('取消定时'),
             ),
         ],
       ),
@@ -992,7 +1053,7 @@ class DiagnosticsSettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: diagnostics,
-      builder: (context, _) => ListView(
+      builder: (context, _) => SoundSettingsScrollView(
         key: const ValueKey('diagnostics-settings'),
         padding: EdgeInsets.fromLTRB(
           context.soundPageGutter,
@@ -1001,28 +1062,12 @@ class DiagnosticsSettingsView extends StatelessWidget {
           context.soundContentBottomPadding,
         ),
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: IconButton(
-              key: const ValueKey('diagnostics-settings-back'),
-              onPressed: onBack,
-              tooltip: '返回设置',
-              icon: const Icon(Icons.arrow_back_rounded),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '问题与诊断',
-                  style: TextStyle(
-                    fontSize: context.soundPageTitleSize,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.45,
-                  ),
-                ),
-              ),
+          SoundSettingsPageHeader(
+            title: '问题与诊断',
+            subtitle: '仅记录本次运行中的错误类型和技术信息，不记录 WebDAV 密码。',
+            onBack: onBack,
+            backButtonKey: const ValueKey('diagnostics-settings-back'),
+            actions: [
               TextButton.icon(
                 key: const ValueKey('copy-diagnostics'),
                 onPressed: () async {
@@ -1047,15 +1092,7 @@ class DiagnosticsSettingsView extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            '仅记录本次运行中的错误类型和技术信息，不记录 WebDAV 密码。',
-            style: TextStyle(
-              color: _settingsSecondaryText(context),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: SoundSettingsMetrics.sectionGap),
           if (diagnostics.events.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 28),
@@ -1173,7 +1210,7 @@ class OfflineSettingsView extends StatelessWidget {
       builder: (context, _) {
         final stats = offline.stats;
         final offlineItems = offline.offlineItems;
-        return ListView(
+        return SoundSettingsScrollView(
           key: const ValueKey('offline-settings'),
           padding: EdgeInsets.fromLTRB(
             context.soundPageGutter,
@@ -1182,33 +1219,13 @@ class OfflineSettingsView extends StatelessWidget {
             context.soundContentBottomPadding,
           ),
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                key: const ValueKey('offline-settings-back'),
-                onPressed: onBack,
-                tooltip: '返回设置',
-                icon: const Icon(Icons.arrow_back_rounded),
-              ),
+            SoundSettingsPageHeader(
+              title: '离线与缓存',
+              subtitle: '主动保存的歌曲不会被临时缓存清理。',
+              onBack: onBack,
+              backButtonKey: const ValueKey('offline-settings-back'),
             ),
-            const SizedBox(height: 10),
-            Text(
-              '离线与缓存',
-              style: TextStyle(
-                fontSize: context.soundPageTitleSize,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.45,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '主动保存的歌曲不会被临时缓存清理。',
-              style: TextStyle(
-                color: _settingsSecondaryText(context),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 22),
+            const SizedBox(height: SoundSettingsMetrics.sectionGap),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Column(
@@ -1579,9 +1596,10 @@ class _OfflineDownloadRow extends StatelessWidget {
         title: item.title,
         subtitle: subtitle,
         titleColor: failed ? context.soundColors.error : null,
-        trailing: PopupMenuButton<String>(
+        trailing: SoundMenuButton<String>(
           key: ValueKey('offline-actions-${item.reference.storageKey}'),
           tooltip: '更多操作 ${item.title}',
+          menuTitle: item.title,
           padding: EdgeInsets.zero,
           icon: const Icon(Icons.more_horiz_rounded, size: 21),
           onSelected: (value) {
@@ -1589,15 +1607,35 @@ class _OfflineDownloadRow extends StatelessWidget {
             if (value == 'retry') onRetry(item);
             if (value == 'remove') onRemove(item);
           },
-          itemBuilder: (_) => [
+          actions: [
             if (downloading)
-              const PopupMenuItem(value: 'cancel', child: Text('取消下载')),
+              const SoundMenuAction(
+                value: 'cancel',
+                label: '取消下载',
+                icon: Icons.close_rounded,
+                destructive: true,
+              ),
             if (failed && item.canRetry)
-              const PopupMenuItem(value: 'retry', child: Text('重试下载')),
+              const SoundMenuAction(
+                value: 'retry',
+                label: '重试下载',
+                icon: Icons.refresh_rounded,
+              ),
             if (failed)
-              const PopupMenuItem(value: 'remove', child: Text('移除失败记录')),
+              const SoundMenuAction(
+                value: 'remove',
+                label: '移除失败记录',
+                icon: Icons.delete_outline_rounded,
+                destructive: true,
+                dividerBefore: true,
+              ),
             if (!downloading && !failed)
-              const PopupMenuItem(value: 'remove', child: Text('移除离线下载')),
+              const SoundMenuAction(
+                value: 'remove',
+                label: '移除离线下载',
+                icon: Icons.cloud_off_outlined,
+                destructive: true,
+              ),
           ],
         ),
       );
@@ -1842,20 +1880,18 @@ class _SettingsSection extends StatelessWidget {
         ],
       ],
     );
-    if (flat) {
-      return rows;
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          padding: const EdgeInsets.only(left: 2, bottom: 9),
           child: Text(
             title,
             style: TextStyle(
-              color: _settingsSecondaryText(context),
-              fontSize: 11.5,
+              color: context.settingsMuted,
+              fontSize: 12.5,
               fontWeight: FontWeight.w600,
+              letterSpacing: 0.15,
             ),
           ),
         ),
@@ -1867,8 +1903,8 @@ class _SettingsSection extends StatelessWidget {
 
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
-    required this.icon,
-    required this.iconColor,
+    required IconData icon,
+    required Color iconColor,
     required this.title,
     required this.subtitle,
     this.flat = false,
@@ -1878,8 +1914,6 @@ class _SettingsRow extends StatelessWidget {
     super.key,
   });
 
-  final IconData icon;
-  final Color iconColor;
   final String title;
   final String subtitle;
   final bool flat;
@@ -1894,69 +1928,94 @@ class _SettingsRow extends StatelessWidget {
       button: onTap != null,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: flat ? 0 : 4, vertical: 11),
-          child: Row(
-            children: [
-              if (!compact) ...[
-                SizedBox(
-                  width: 24,
-                  child: Icon(
-                    icon,
-                    size: 17,
-                    color: flat
-                        ? _settingsSecondaryText(context)
-                        : iconColor.withValues(alpha: iconColor.a * 0.78),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: compact
+                ? SoundSettingsMetrics.compactRowMinHeight
+                : SoundSettingsMetrics.rowMinHeight,
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: flat ? 2 : 4,
+              vertical: compact ? 10 : 12,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: compact
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              style: TextStyle(
+                                color: _settingsPrimaryText(context),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _settingsSecondaryText(context),
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: title,
+                                style: TextStyle(
+                                  color: _settingsPrimaryText(context),
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(
+                                text: '  $subtitle',
+                                style: TextStyle(
+                                  color: _settingsSecondaryText(context),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                            ],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                ),
+                if (value != null) ...[
+                  const SizedBox(width: 18),
+                  Text(
+                    value!,
+                    style: TextStyle(
+                      color: _settingsSecondaryText(context),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: _settingsPrimaryText(context),
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _settingsSecondaryText(context),
-                        fontSize: 11.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (value != null) ...[
-                const SizedBox(width: 12),
-                Text(
-                  value!,
-                  style: TextStyle(
+                ],
+                if (onTap != null) ...[
+                  const SizedBox(width: 10),
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.chevron_right_rounded,
+                    size: 19,
                     color: _settingsSecondaryText(context),
-                    fontSize: 11.5,
                   ),
-                ),
+                ],
               ],
-              if (onTap != null) ...[
-                const SizedBox(width: 8),
-                Icon(
-                  expanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.chevron_right_rounded,
-                  size: 18,
-                  color: _settingsSecondaryText(context),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),
@@ -2460,6 +2519,20 @@ class _AccentPresetSelector extends StatelessWidget {
               selected: preset.id == selected.id,
               onTap: () => onSelected(preset),
             ),
+          _CustomAccentSwatch(
+            selected: selected.id == 'custom',
+            color: selected.id == 'custom'
+                ? selected.accent
+                : SoundColors.accent,
+            onTap: () async {
+              final custom = await showDialog<AccentPreset>(
+                context: context,
+                builder: (context) =>
+                    _CustomAccentDialog(initialColor: selected.accent),
+              );
+              if (custom != null) onSelected(custom);
+            },
+          ),
         ],
       ),
     );
@@ -2517,6 +2590,222 @@ class _AccentPresetSwatch extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CustomAccentSwatch extends StatelessWidget {
+  const _CustomAccentSwatch({
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '自定义主题色',
+      child: Tooltip(
+        message: '自定义主题色',
+        child: InkWell(
+          key: const ValueKey('custom-accent-swatch'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: selected
+                  ? null
+                  : const SweepGradient(
+                      colors: [
+                        Color(0xFFFF5A4D),
+                        Color(0xFFC7842F),
+                        Color(0xFF3F9E98),
+                        Color(0xFF6673C7),
+                        Color(0xFF8067BC),
+                        Color(0xFFD95770),
+                        Color(0xFFFF5A4D),
+                      ],
+                    ),
+              color: selected ? color : null,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected
+                    ? _settingsPrimaryText(context)
+                    : context.soundDivider,
+                width: selected ? 3 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Icon(
+              selected ? Icons.check_rounded : Icons.add_rounded,
+              size: 20,
+              color: selected
+                  ? AccentPreset.readableForeground(color)
+                  : Colors.white,
+              shadows: selected
+                  ? null
+                  : const [Shadow(color: Color(0x66000000), blurRadius: 4)],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CustomAccentDialog extends StatefulWidget {
+  const _CustomAccentDialog({required this.initialColor});
+
+  final Color initialColor;
+
+  @override
+  State<_CustomAccentDialog> createState() => _CustomAccentDialogState();
+}
+
+class _CustomAccentDialogState extends State<_CustomAccentDialog> {
+  late double _hue;
+  late double _saturation;
+  late double _brightness;
+
+  Color get _color =>
+      HSVColor.fromAHSV(1, _hue, _saturation, _brightness).toColor();
+
+  @override
+  void initState() {
+    super.initState();
+    final hsv = HSVColor.fromColor(widget.initialColor);
+    _hue = hsv.hue;
+    _saturation = hsv.saturation.clamp(0.30, 1);
+    _brightness = hsv.value.clamp(0.40, 0.88);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget slider({
+      required Key key,
+      required String label,
+      required double value,
+      required double min,
+      required double max,
+      required ValueChanged<double> onChanged,
+    }) {
+      return Row(
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: _settingsSecondaryText(context),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Slider(
+              key: key,
+              value: value,
+              min: min,
+              max: max,
+              activeColor: _color,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return SoundDialog(
+      title: const Text('自定义主题色'),
+      maxWidth: 440,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AnimatedContainer(
+            key: const ValueKey('custom-accent-preview'),
+            duration: const Duration(milliseconds: 100),
+            height: 86,
+            decoration: BoxDecoration(
+              color: _color,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            alignment: Alignment.center,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AccentPreset.readableForeground(_color),
+                foregroundColor: _color,
+              ),
+              onPressed: () {},
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('主题色预览'),
+            ),
+          ),
+          const SizedBox(height: 18),
+          slider(
+            key: const ValueKey('custom-accent-hue'),
+            label: '色相',
+            value: _hue,
+            min: 0,
+            max: 360,
+            onChanged: (value) => setState(() => _hue = value),
+          ),
+          slider(
+            key: const ValueKey('custom-accent-saturation'),
+            label: '饱和度',
+            value: _saturation,
+            min: 0.30,
+            max: 1,
+            onChanged: (value) => setState(() => _saturation = value),
+          ),
+          slider(
+            key: const ValueKey('custom-accent-brightness'),
+            label: '明度',
+            value: _brightness,
+            min: 0.40,
+            max: 0.88,
+            onChanged: (value) => setState(() => _brightness = value),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '为保证按钮和图标清晰可读，饱和度与明度限制在安全范围内。',
+            style: TextStyle(
+              color: _settingsSecondaryText(context),
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const ValueKey('apply-custom-accent'),
+          onPressed: () =>
+              Navigator.of(context).pop(AccentPreset.custom(_color)),
+          child: const Text('使用此颜色'),
+        ),
+      ],
     );
   }
 }

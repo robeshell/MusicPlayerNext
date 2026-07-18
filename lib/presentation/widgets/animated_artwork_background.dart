@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
 import 'artwork_image_provider.dart';
 
@@ -97,8 +98,9 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
     _motionController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 14),
-      value: _positionPhase(widget.position),
+      value: 0,
     );
+    _motionController.value = _positionPhase(widget.position);
     _paletteController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
@@ -110,8 +112,11 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final brightness = Theme.of(context).brightness;
+    final effects = context.soundSkinEffects;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     _reduceMotion = reduceMotion;
+    _motionController.duration = effects.motionDuration;
+    _paletteController.duration = effects.paletteTransitionDuration;
     if (_brightness != brightness) {
       _brightness = brightness;
       _loadArtworkColors();
@@ -150,7 +155,10 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
   }
 
   double _positionPhase(Duration position) =>
-      position.inMilliseconds.remainder(14000) / 14000;
+      position.inMilliseconds.remainder(
+        _motionController.duration?.inMilliseconds ?? 14000,
+      ) /
+      (_motionController.duration?.inMilliseconds ?? 14000);
 
   Future<void> _loadArtworkColors() async {
     final brightness = _brightness ?? Theme.of(context).brightness;
@@ -241,6 +249,7 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
   @override
   Widget build(BuildContext context) {
     final brightness = _brightness ?? Theme.of(context).brightness;
+    final effects = context.soundSkinEffects;
 
     return RepaintBoundary(
       key: const ValueKey('now-playing-artwork-background'),
@@ -253,6 +262,11 @@ class _AnimatedArtworkBackgroundState extends State<AnimatedArtworkBackground>
             motion: _motionController,
             reduceMotion: _reduceMotion,
             brightness: brightness,
+            motionStrength: effects.motionStrength,
+            primaryGlowOpacity: effects.primaryGlowOpacity,
+            secondaryGlowOpacity: effects.secondaryGlowOpacity,
+            lightVeilOpacity: effects.lightVeilOpacity,
+            darkVeilOpacity: effects.darkVeilOpacity,
           ),
         ),
       ),
@@ -279,12 +293,22 @@ class ArtworkGradientPainter extends CustomPainter {
     required this.motion,
     required this.reduceMotion,
     required this.brightness,
+    this.motionStrength = 1,
+    this.primaryGlowOpacity = 0.90,
+    this.secondaryGlowOpacity = 0.72,
+    this.lightVeilOpacity = 0.04,
+    this.darkVeilOpacity = 0.12,
   }) : super(repaint: motion);
 
   final List<Color> colors;
   final Animation<double> motion;
   final bool reduceMotion;
   final Brightness brightness;
+  final double motionStrength;
+  final double primaryGlowOpacity;
+  final double secondaryGlowOpacity;
+  final double lightVeilOpacity;
+  final double darkVeilOpacity;
 
   double get phase => reduceMotion ? 0 : motion.value * math.pi * 2;
 
@@ -293,12 +317,12 @@ class ArtworkGradientPainter extends CustomPainter {
     final rect = Offset.zero & size;
     final base = LinearGradient(
       begin: Alignment(
-        -0.82 + math.sin(phase * 0.72) * 0.34,
-        -0.9 + math.cos(phase * 0.58) * 0.22,
+        -0.82 + math.sin(phase * 0.72) * 0.34 * motionStrength,
+        -0.9 + math.cos(phase * 0.58) * 0.22 * motionStrength,
       ),
       end: Alignment(
-        0.82 + math.cos(phase * 0.68) * 0.34,
-        0.9 + math.sin(phase * 0.52) * 0.22,
+        0.82 + math.cos(phase * 0.68) * 0.34 * motionStrength,
+        0.9 + math.sin(phase * 0.52) * 0.22 * motionStrength,
       ),
       colors: colors,
       stops: const [0, 0.52, 1],
@@ -307,12 +331,12 @@ class ArtworkGradientPainter extends CustomPainter {
 
     final first = RadialGradient(
       center: Alignment(
-        -0.48 + math.sin(phase) * 0.46,
-        -0.52 + math.cos(phase * 0.83) * 0.38,
+        -0.48 + math.sin(phase) * 0.46 * motionStrength,
+        -0.52 + math.cos(phase * 0.83) * 0.38 * motionStrength,
       ),
       radius: 0.86,
       colors: [
-        colors[2].withValues(alpha: 0.90),
+        colors[2].withValues(alpha: primaryGlowOpacity),
         colors[2].withValues(alpha: 0),
       ],
     );
@@ -320,12 +344,12 @@ class ArtworkGradientPainter extends CustomPainter {
 
     final second = RadialGradient(
       center: Alignment(
-        0.54 + math.cos(phase * 0.71) * 0.42,
-        0.42 + math.sin(phase * 0.91) * 0.44,
+        0.54 + math.cos(phase * 0.71) * 0.42 * motionStrength,
+        0.42 + math.sin(phase * 0.91) * 0.44 * motionStrength,
       ),
       radius: 0.96,
       colors: [
-        colors[0].withValues(alpha: 0.72),
+        colors[0].withValues(alpha: secondaryGlowOpacity),
         colors[0].withValues(alpha: 0),
       ],
     );
@@ -335,8 +359,8 @@ class ArtworkGradientPainter extends CustomPainter {
       rect,
       Paint()
         ..color = brightness == Brightness.light
-            ? Colors.white.withValues(alpha: 0.04)
-            : Colors.black.withValues(alpha: 0.12),
+            ? Colors.white.withValues(alpha: lightVeilOpacity)
+            : Colors.black.withValues(alpha: darkVeilOpacity),
     );
   }
 
@@ -344,6 +368,11 @@ class ArtworkGradientPainter extends CustomPainter {
   bool shouldRepaint(ArtworkGradientPainter oldDelegate) {
     return oldDelegate.brightness != brightness ||
         oldDelegate.reduceMotion != reduceMotion ||
+        oldDelegate.motionStrength != motionStrength ||
+        oldDelegate.primaryGlowOpacity != primaryGlowOpacity ||
+        oldDelegate.secondaryGlowOpacity != secondaryGlowOpacity ||
+        oldDelegate.lightVeilOpacity != lightVeilOpacity ||
+        oldDelegate.darkVeilOpacity != darkVeilOpacity ||
         oldDelegate.motion != motion ||
         !listEquals(oldDelegate.colors, colors);
   }

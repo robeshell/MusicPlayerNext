@@ -18,6 +18,9 @@ extension SoundThemeContext on BuildContext {
   SoundGlassTheme get soundGlass =>
       Theme.of(this).extension<SoundGlassTheme>() ?? SoundGlassTheme.light;
 
+  SoundSkinEffects get soundSkinEffects =>
+      Theme.of(this).extension<SoundSkinEffects>() ?? SoundSkinEffects.standard;
+
   Color get soundPrimaryText => soundGlass.primaryText;
 
   Color get soundSecondaryText => soundGlass.secondaryText;
@@ -127,6 +130,17 @@ class AccentPreset {
   final Color accent;
   final Color accentHover;
   final Color accentPressed;
+
+  factory AccentPreset.custom(Color color) {
+    final opaque = color.withValues(alpha: 1);
+    return AccentPreset(
+      id: 'custom',
+      name: '自定义',
+      accent: opaque,
+      accentHover: Color.lerp(opaque, Colors.white, 0.14)!,
+      accentPressed: Color.lerp(opaque, Colors.black, 0.13)!,
+    );
+  }
 
   static Color readableForeground(Color color) =>
       ThemeData.estimateBrightnessForColor(color) == Brightness.dark
@@ -309,6 +323,99 @@ class SoundGlassTheme extends ThemeExtension<SoundGlassTheme> {
   }
 }
 
+/// Material and motion characteristics that belong to a skin without changing
+/// page structure. Components consume these semantic values instead of
+/// branching on a skin identifier.
+@immutable
+class SoundSkinEffects extends ThemeExtension<SoundSkinEffects> {
+  const SoundSkinEffects({
+    required this.motionDuration,
+    required this.paletteTransitionDuration,
+    required this.motionStrength,
+    required this.primaryGlowOpacity,
+    required this.secondaryGlowOpacity,
+    required this.lightVeilOpacity,
+    required this.darkVeilOpacity,
+    required this.shadowScale,
+  });
+
+  static const standard = SoundSkinEffects(
+    motionDuration: Duration(seconds: 14),
+    paletteTransitionDuration: Duration(milliseconds: 420),
+    motionStrength: 1,
+    primaryGlowOpacity: 0.90,
+    secondaryGlowOpacity: 0.72,
+    lightVeilOpacity: 0.04,
+    darkVeilOpacity: 0.12,
+    shadowScale: 1,
+  );
+
+  final Duration motionDuration;
+  final Duration paletteTransitionDuration;
+  final double motionStrength;
+  final double primaryGlowOpacity;
+  final double secondaryGlowOpacity;
+  final double lightVeilOpacity;
+  final double darkVeilOpacity;
+  final double shadowScale;
+
+  @override
+  SoundSkinEffects copyWith({
+    Duration? motionDuration,
+    Duration? paletteTransitionDuration,
+    double? motionStrength,
+    double? primaryGlowOpacity,
+    double? secondaryGlowOpacity,
+    double? lightVeilOpacity,
+    double? darkVeilOpacity,
+    double? shadowScale,
+  }) {
+    return SoundSkinEffects(
+      motionDuration: motionDuration ?? this.motionDuration,
+      paletteTransitionDuration:
+          paletteTransitionDuration ?? this.paletteTransitionDuration,
+      motionStrength: motionStrength ?? this.motionStrength,
+      primaryGlowOpacity: primaryGlowOpacity ?? this.primaryGlowOpacity,
+      secondaryGlowOpacity: secondaryGlowOpacity ?? this.secondaryGlowOpacity,
+      lightVeilOpacity: lightVeilOpacity ?? this.lightVeilOpacity,
+      darkVeilOpacity: darkVeilOpacity ?? this.darkVeilOpacity,
+      shadowScale: shadowScale ?? this.shadowScale,
+    );
+  }
+
+  @override
+  SoundSkinEffects lerp(covariant SoundSkinEffects? other, double t) {
+    if (other == null) return this;
+    int lerpDuration(Duration from, Duration to) =>
+        (from.inMicroseconds + (to.inMicroseconds - from.inMicroseconds) * t)
+            .round();
+    return SoundSkinEffects(
+      motionDuration: Duration(
+        microseconds: lerpDuration(motionDuration, other.motionDuration),
+      ),
+      paletteTransitionDuration: Duration(
+        microseconds: lerpDuration(
+          paletteTransitionDuration,
+          other.paletteTransitionDuration,
+        ),
+      ),
+      motionStrength:
+          motionStrength + (other.motionStrength - motionStrength) * t,
+      primaryGlowOpacity:
+          primaryGlowOpacity +
+          (other.primaryGlowOpacity - primaryGlowOpacity) * t,
+      secondaryGlowOpacity:
+          secondaryGlowOpacity +
+          (other.secondaryGlowOpacity - secondaryGlowOpacity) * t,
+      lightVeilOpacity:
+          lightVeilOpacity + (other.lightVeilOpacity - lightVeilOpacity) * t,
+      darkVeilOpacity:
+          darkVeilOpacity + (other.darkVeilOpacity - darkVeilOpacity) * t,
+      shadowScale: shadowScale + (other.shadowScale - shadowScale) * t,
+    );
+  }
+}
+
 abstract final class SoundRadii {
   static const control = 10.0;
   static const card = 14.0;
@@ -330,6 +437,7 @@ class SoundSkinPreset {
     required this.elevated,
     required this.overlay,
     required this.glass,
+    required this.effects,
   });
 
   final String id;
@@ -341,6 +449,7 @@ class SoundSkinPreset {
   final Color elevated;
   final Color overlay;
   final SoundGlassTheme glass;
+  final SoundSkinEffects effects;
 }
 
 abstract final class SoundSkins {
@@ -356,29 +465,40 @@ abstract final class SoundSkins {
     elevated: SoundColors.lightElevated,
     overlay: SoundColors.lightOverlay,
     glass: SoundGlassTheme.light,
+    effects: SoundSkinEffects.standard,
   );
 
   static const pure = SoundSkinPreset(
     id: 'pure',
     name: '纯净',
-    description: '更清晰的中性表面与轻量层次',
+    description: '冷静通透的实色表面与清晰层次',
     brightness: Brightness.light,
-    canvas: Color(0xFFF4F5F7),
-    surface: Color(0xFFFAFBFC),
+    canvas: Color(0xFFF1F4F8),
+    surface: Color(0xFFFAFCFF),
     elevated: Color(0xFFFFFFFF),
-    overlay: Color(0xFFEAEDF1),
+    overlay: Color(0xFFE5EBF2),
     glass: SoundGlassTheme(
-      canvasHighlight: Color(0xFFFFFFFF),
-      surface: Color(0xFAFFFFFF),
+      canvasHighlight: Color(0xFFF8FBFF),
+      surface: Color(0xFFFFFFFF),
       strongSurface: Color(0xFFFFFFFF),
-      border: Color(0x140F172A),
+      border: Color(0x1F526174),
       innerHighlight: Color(0xFFFFFFFF),
-      shadow: Color(0x12000000),
-      primaryText: Color(0xFF171A21),
-      secondaryText: Color(0xFF555B66),
-      mutedText: Color(0xFF737A86),
+      shadow: Color(0x00000000),
+      primaryText: Color(0xFF18202A),
+      secondaryText: Color(0xFF536171),
+      mutedText: Color(0xFF718092),
       blur: 0,
       strongBlur: 0,
+    ),
+    effects: SoundSkinEffects(
+      motionDuration: Duration(seconds: 26),
+      paletteTransitionDuration: Duration(milliseconds: 240),
+      motionStrength: 0.22,
+      primaryGlowOpacity: 0.38,
+      secondaryGlowOpacity: 0.24,
+      lightVeilOpacity: 0.015,
+      darkVeilOpacity: 0.08,
+      shadowScale: 0,
     ),
   );
 
@@ -392,6 +512,16 @@ abstract final class SoundSkins {
     elevated: SoundColors.darkElevated,
     overlay: SoundColors.darkOverlay,
     glass: SoundGlassTheme.dark,
+    effects: SoundSkinEffects(
+      motionDuration: Duration(seconds: 18),
+      paletteTransitionDuration: Duration(milliseconds: 520),
+      motionStrength: 0.68,
+      primaryGlowOpacity: 0.76,
+      secondaryGlowOpacity: 0.54,
+      lightVeilOpacity: 0.04,
+      darkVeilOpacity: 0.22,
+      shadowScale: 1.12,
+    ),
   );
 
   static const defaultPreset = standard;
@@ -425,6 +555,7 @@ abstract final class SoundTheme {
     final elevated = skin.elevated;
     final overlay = skin.overlay;
     final glass = skin.glass;
+    final effects = skin.effects;
     final foreground = glass.primaryText;
     final secondary = glass.secondaryText;
     final border = dark
@@ -581,7 +712,7 @@ abstract final class SoundTheme {
       disabledColor: secondary.withValues(alpha: 0.38),
       visualDensity: VisualDensity.standard,
       materialTapTargetSize: MaterialTapTargetSize.padded,
-      extensions: <ThemeExtension<dynamic>>[glass],
+      extensions: <ThemeExtension<dynamic>>[glass, effects],
       appBarTheme: AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,

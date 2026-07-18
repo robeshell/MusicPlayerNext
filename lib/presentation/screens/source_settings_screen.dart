@@ -16,6 +16,7 @@ import '../../sources/webdav/webdav_folder_scanner.dart';
 import '../../sources/webdav/webdav_source_connection_provider.dart';
 import '../../sources/webdav/webdav_source_scan_provider.dart';
 import '../widgets/sound_components.dart';
+import '../widgets/settings_components.dart';
 import 'webdav_add_dialog.dart';
 import 'webdav_folder_picker.dart';
 
@@ -30,14 +31,11 @@ typedef SourceDirectoryScanCallback =
       List<String> directoryIds,
     );
 
-Color _sourcePrimaryText(BuildContext context) => context.soundPrimaryText
-    .withValues(alpha: context.soundPrimaryText.a * 0.88);
+Color _sourcePrimaryText(BuildContext context) => context.settingsPrimary;
 
-Color _sourceSecondaryText(BuildContext context) =>
-    context.soundMutedText.withValues(alpha: context.soundMutedText.a * 0.76);
+Color _sourceSecondaryText(BuildContext context) => context.settingsSecondary;
 
-Color _sourceHairline(BuildContext context) =>
-    context.soundDivider.withValues(alpha: context.soundDivider.a * 0.68);
+Color _sourceHairline(BuildContext context) => context.settingsHairline;
 
 class RemoteSourceSettingsAdapter {
   const RemoteSourceSettingsAdapter({
@@ -571,89 +569,83 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
     final localProvider = _sourceProviders.providerFor(LibrarySourceType.local);
     return ListView(
       key: const ValueKey('source-settings'),
-      padding: EdgeInsets.fromLTRB(
-        context.soundPageGutter,
-        28,
-        context.soundPageGutter,
-        context.soundContentBottomPadding,
-      ),
+      padding: EdgeInsets.zero,
       children: [
-        Row(
-          children: [
-            if (widget.onBack != null) ...[
-              IconButton(
-                key: const ValueKey('source-settings-back'),
-                onPressed: widget.onBack,
-                tooltip: '返回设置',
-                icon: const Icon(Icons.arrow_back_rounded),
+        SoundSettingsContent(
+          padding: EdgeInsets.fromLTRB(
+            context.soundPageGutter,
+            28,
+            context.soundPageGutter,
+            context.soundContentBottomPadding,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SoundSettingsPageHeader(
+                title: '音乐来源',
+                subtitle: '管理本地文件夹、远程连接和已加入资料库的目录。',
+                onBack: widget.onBack,
               ),
-              const SizedBox(width: 6),
-            ],
-            Expanded(
-              child: Text(
-                '音乐来源',
-                style: TextStyle(
-                  fontSize: context.soundPageTitleSize,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.45,
+              const SizedBox(height: SoundSettingsMetrics.sectionGap),
+              _SourceSection(
+                title: '本机',
+                actionLabel: _addingSource ? '正在添加…' : '添加文件夹',
+                onAction: _addingSource || localProvider == null
+                    ? null
+                    : _addLocalSource,
+                child: StreamBuilder<List<LibrarySourceRecord>>(
+                  stream: widget.localSources.watchLocalSources(),
+                  builder: (context, snapshot) {
+                    final sources = snapshot.data ?? const [];
+                    if (snapshot.hasError) {
+                      return _SourceMessage(
+                        message: '无法读取本机来源：${snapshot.error}',
+                      );
+                    }
+                    if (sources.isEmpty) {
+                      return const _SourceMessage(message: '还没有添加本机文件夹');
+                    }
+                    return _SourceGroup(
+                      children: [
+                        for (final source in sources)
+                          Builder(
+                            builder: (context) {
+                              final scanning = _scanningSourceIds.contains(
+                                source.id,
+                              );
+                              return _SourceRow(
+                                key: ValueKey('local-source-${source.id}'),
+                                icon: Icons.folder_outlined,
+                                iconColor: SoundColors.local,
+                                title: source.displayName,
+                                location: formatSourceLocation(source.rootUri),
+                                status: _sourceStatus(source),
+                                statusColor: _sourceStatusColor(source),
+                                primaryActionLabel: scanning ? '取消扫描' : '重新扫描',
+                                primaryActionIcon: scanning
+                                    ? Icons.close_rounded
+                                    : Icons.sync_rounded,
+                                onPrimaryAction: scanning
+                                    ? () => _localScanProvider.cancel(source.id)
+                                    : () => _scanSource(source.type, source.id),
+                                onRemove: scanning
+                                    ? null
+                                    : () => _removeLocalSource(source),
+                              );
+                            },
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 30),
-        _SourceSection(
-          title: '本机',
-          actionLabel: _addingSource ? '正在添加…' : '添加文件夹',
-          onAction: _addingSource || localProvider == null
-              ? null
-              : _addLocalSource,
-          child: StreamBuilder<List<LibrarySourceRecord>>(
-            stream: widget.localSources.watchLocalSources(),
-            builder: (context, snapshot) {
-              final sources = snapshot.data ?? const [];
-              if (snapshot.hasError) {
-                return _SourceMessage(message: '无法读取本机来源：${snapshot.error}');
-              }
-              if (sources.isEmpty) {
-                return const _SourceMessage(message: '还没有添加本机文件夹');
-              }
-              return _SourceGroup(
-                children: [
-                  for (final source in sources)
-                    Builder(
-                      builder: (context) {
-                        final scanning = _scanningSourceIds.contains(source.id);
-                        return _SourceRow(
-                          key: ValueKey('local-source-${source.id}'),
-                          icon: Icons.folder_outlined,
-                          iconColor: SoundColors.local,
-                          title: source.displayName,
-                          location: formatSourceLocation(source.rootUri),
-                          status: _sourceStatus(source),
-                          statusColor: _sourceStatusColor(source),
-                          primaryActionLabel: scanning ? '取消扫描' : '重新扫描',
-                          primaryActionIcon: scanning
-                              ? Icons.close_rounded
-                              : Icons.sync_rounded,
-                          onPrimaryAction: scanning
-                              ? () => _localScanProvider.cancel(source.id)
-                              : () => _scanSource(source.type, source.id),
-                          onRemove: scanning
-                              ? null
-                              : () => _removeLocalSource(source),
-                        );
-                      },
-                    ),
-                ],
-              );
-            },
+              for (final adapter in _remoteAdapters) ...[
+                const SizedBox(height: SoundSettingsMetrics.sectionGap),
+                _remoteSection(adapter),
+              ],
+            ],
           ),
         ),
-        for (final adapter in _remoteAdapters) ...[
-          const SizedBox(height: 30),
-          _remoteSection(adapter),
-        ],
       ],
     );
   }
@@ -675,9 +667,9 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       LibrarySourceStatus.idle ||
       LibrarySourceStatus.scanning ||
       LibrarySourceStatus.available => SoundColors.local,
-      LibrarySourceStatus.permissionRequired => Colors.orangeAccent,
+      LibrarySourceStatus.permissionRequired => context.soundColors.tertiary,
       LibrarySourceStatus.unavailable ||
-      LibrarySourceStatus.error => Colors.redAccent,
+      LibrarySourceStatus.error => context.soundColors.error,
     };
   }
 }
@@ -919,7 +911,7 @@ class _SourceRow extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
               ),
               if (onEdit != null || onRemove != null)
-                PopupMenuButton<_SourceMenuAction>(
+                SoundMenuButton<_SourceMenuAction>(
                   tooltip: '更多操作',
                   icon: const Icon(Icons.more_horiz_rounded, size: 20),
                   padding: const EdgeInsets.all(8),
@@ -931,24 +923,20 @@ class _SourceRow extends StatelessWidget {
                         onRemove?.call();
                     }
                   },
-                  itemBuilder: (context) => [
+                  actions: [
                     if (onEdit != null)
-                      const PopupMenuItem(
+                      const SoundMenuAction(
                         value: _SourceMenuAction.edit,
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.edit_outlined),
-                          title: Text('编辑'),
-                        ),
+                        label: '编辑',
+                        icon: Icons.edit_outlined,
                       ),
                     if (onRemove != null)
-                      const PopupMenuItem(
+                      const SoundMenuAction(
                         value: _SourceMenuAction.remove,
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.delete_outline_rounded),
-                          title: Text('移除'),
-                        ),
+                        label: '移除',
+                        icon: Icons.delete_outline_rounded,
+                        destructive: true,
+                        dividerBefore: true,
                       ),
                   ],
                 ),

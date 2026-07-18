@@ -510,9 +510,10 @@ class _Hero extends StatelessWidget {
                             ),
                     ),
                   const SizedBox(width: 8),
-                  PopupMenuButton<String>(
+                  SoundMenuButton<String>(
                     key: const ValueKey('desktop-album-actions'),
                     tooltip: '更多专辑操作',
+                    menuTitle: album.title,
                     icon: const Icon(Icons.more_horiz_rounded),
                     onSelected: (value) {
                       if (value == 'shuffle' && album.tracks.isNotEmpty) {
@@ -530,15 +531,19 @@ class _Hero extends StatelessWidget {
                         );
                       }
                     },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
+                    actions: [
+                      const SoundMenuAction(
                         value: 'shuffle',
-                        child: Text('随机播放'),
+                        label: '随机播放',
+                        icon: Icons.shuffle_rounded,
                       ),
                       if (supportedTracks.isNotEmpty)
-                        PopupMenuItem(
+                        SoundMenuAction(
                           value: 'offline',
-                          child: Text(offlineLabel),
+                          label: offlineLabel,
+                          icon: allOffline
+                              ? Icons.cloud_done_rounded
+                              : Icons.download_for_offline_outlined,
                         ),
                     ],
                   ),
@@ -934,9 +939,10 @@ class _TrackRow extends StatelessWidget {
     required bool failed,
     required Color? iconColor,
   }) {
-    return PopupMenuButton<String>(
+    return SoundMenuButton<String>(
       key: ValueKey('track-actions-${track.id}'),
       tooltip: '更多操作 ${track.title}',
+      menuTitle: track.title,
       padding: EdgeInsets.zero,
       icon: Icon(Icons.more_horiz_rounded, size: 21, color: iconColor),
       onSelected: (value) {
@@ -945,27 +951,46 @@ class _TrackRow extends StatelessWidget {
         if (value == 'playlist') onAddToPlaylist?.call();
         if (value == 'offline') onToggleOffline?.call();
       },
-      itemBuilder: (_) => [
-        const PopupMenuItem(value: 'play-next', child: Text('下一首播放')),
+      actions: [
+        const SoundMenuAction(
+          value: 'play-next',
+          label: '下一首播放',
+          icon: Icons.playlist_play_rounded,
+        ),
         if (onToggleFavorite != null)
-          PopupMenuItem(
+          SoundMenuAction(
             value: 'favorite',
-            child: Text(favorite ? '取消收藏' : '收藏'),
+            label: favorite ? '取消收藏' : '收藏',
+            icon: favorite
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            selected: favorite,
           ),
         if (onAddToPlaylist != null)
-          const PopupMenuItem(value: 'playlist', child: Text('添加到播放列表')),
+          const SoundMenuAction(
+            value: 'playlist',
+            label: '添加到播放列表',
+            icon: Icons.playlist_add_rounded,
+          ),
         if (onToggleOffline != null)
-          PopupMenuItem(
+          SoundMenuAction(
             value: 'offline',
-            child: Text(
-              downloading
-                  ? '取消下载'
-                  : offline!.isPinned(track)
-                  ? '移除离线下载'
-                  : failed
-                  ? '重试下载'
-                  : '离线保存',
-            ),
+            label: downloading
+                ? '取消下载'
+                : offline!.isPinned(track)
+                ? '移除离线下载'
+                : failed
+                ? '重试下载'
+                : '离线保存',
+            icon: downloading
+                ? Icons.close_rounded
+                : offline!.isPinned(track)
+                ? Icons.cloud_off_outlined
+                : failed
+                ? Icons.refresh_rounded
+                : Icons.download_for_offline_outlined,
+            destructive: downloading || offline!.isPinned(track),
+            dividerBefore: true,
           ),
       ],
     );

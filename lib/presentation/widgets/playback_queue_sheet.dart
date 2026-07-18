@@ -201,7 +201,7 @@ class PlaybackQueuePanel extends StatelessWidget {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    PopupMenuButton<String>(
+                                    SoundMenuButton<String>(
                                       key: ValueKey(
                                         'queue-track-actions-${track.id}',
                                       ),
@@ -211,15 +211,18 @@ class PlaybackQueuePanel extends StatelessWidget {
                                         Icons.more_horiz_rounded,
                                         size: 21,
                                       ),
+                                      menuTitle: track.title,
                                       onSelected: (value) {
                                         if (value == 'remove') {
                                           playback.removeQueueItemAt(index);
                                         }
                                       },
-                                      itemBuilder: (_) => const [
-                                        PopupMenuItem(
+                                      actions: const [
+                                        SoundMenuAction(
                                           value: 'remove',
-                                          child: Text('从队列移除'),
+                                          label: '从队列移除',
+                                          icon: Icons.playlist_remove_rounded,
+                                          destructive: true,
                                         ),
                                       ],
                                     ),
@@ -240,16 +243,9 @@ class PlaybackQueuePanel extends StatelessWidget {
                             ),
                           );
                         }
-                        return ListTile(
+                        return SoundListRow(
                           key: ValueKey(track.id),
                           selected: active,
-                          selectedTileColor: SoundColors.accent.withValues(
-                            alpha: 0.035,
-                          ),
-                          shape: const RoundedRectangleBorder(),
-                          hoverColor: context.soundTint(0.035),
-                          focusColor: context.soundTint(0.045),
-                          splashColor: Colors.transparent,
                           onTap: () => playback.playQueueIndex(index),
                           leading: SizedBox(
                             width: 30,

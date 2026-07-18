@@ -1653,36 +1653,24 @@ class _SidebarRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.zero,
-      child: ListTile(
-        dense: true,
-        minTileHeight: 38,
-        minVerticalPadding: 2,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-        visualDensity: const VisualDensity(horizontal: -1, vertical: -3),
-        minLeadingWidth: 20,
-        horizontalTitleGap: 8,
-        shape: const RoundedRectangleBorder(),
-        selected: active,
-        selectedTileColor: SoundColors.accent.withValues(alpha: 0.035),
-        leading: Icon(
-          icon,
-          size: 18,
-          color: active ? SoundColors.accent : context.soundSecondaryText,
-        ),
-        title: Text(
-          label,
-          style: TextStyle(
-            color: active
-                ? context.soundPrimaryText
-                : context.soundSecondaryText,
-            fontSize: 13,
-            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-        onTap: onTap,
+    return SoundListRow(
+      minHeight: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      selected: active,
+      leading: Icon(
+        icon,
+        size: 18,
+        color: active ? SoundColors.accent : context.soundSecondaryText,
       ),
+      title: Text(
+        label,
+        style: TextStyle(
+          color: active ? context.soundPrimaryText : context.soundSecondaryText,
+          fontSize: 13,
+          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+      onTap: onTap,
     );
   }
 }

@@ -188,12 +188,11 @@ class _AddToPlaylistSheet extends StatelessWidget {
                               playlist.id,
                               track.id,
                             );
-                            return CheckboxListTile(
+                            return SoundCheckRow(
                               key: ValueKey(
                                 'playlist-membership-${playlist.id}-${track.id}',
                               ),
                               value: included,
-                              controlAffinity: ListTileControlAffinity.leading,
                               title: Text(playlist.name),
                               subtitle: Text(
                                 '${userState.playlistTrackCount(playlist.id)} 首歌',
@@ -202,7 +201,7 @@ class _AddToPlaylistSheet extends StatelessWidget {
                                 userState.setTrackInPlaylist(
                                   playlist.id,
                                   track,
-                                  included: value ?? false,
+                                  included: value,
                                 ),
                               ),
                             );

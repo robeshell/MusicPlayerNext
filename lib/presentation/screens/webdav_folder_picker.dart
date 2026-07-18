@@ -280,17 +280,13 @@ class _FolderEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
+    return SoundListRow(
       leading: Icon(
         entry.isDirectory ? Icons.folder_rounded : Icons.audio_file_rounded,
         color: context.soundSecondaryText,
         size: 20,
       ),
-      title: Text(
-        entry.displayName,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-      ),
+      title: Text(entry.displayName),
       trailing: entry.isDirectory
           ? IconButton(
               onPressed: onToggle,

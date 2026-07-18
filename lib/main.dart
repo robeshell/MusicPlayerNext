@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app/sound_app.dart';
+import 'app/reverie_launch_screen.dart';
 import 'app/theme_preferences.dart';
 import 'core/sound_theme.dart';
 import 'library/persistence/drift_library_repository.dart';
@@ -22,6 +23,73 @@ import 'sources/webdav/webdav_playback_media_provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  SoundColors.defaultAccentPreset.apply();
+
+  // Android already owns the launch surface through the system SplashScreen
+  // API. Keep that one surface visible until initialization completes so the
+  // first Flutter frame is the ready app shell, not a second splash screen.
+  if (!kIsWeb && Platform.isAndroid) {
+    final result = await _initializeReverie();
+    runApp(_readyReverieApp(result));
+    return;
+  }
+
+  // Other targets hand their native window off to the shared Flutter launch
+  // surface while slower initialization continues in the background.
+  runApp(const _ReverieBootstrap());
+
+  if (!kIsWeb && Platform.isMacOS) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_dismissMacOSLaunchScreen());
+    });
+  }
+}
+
+class _ReverieBootstrap extends StatefulWidget {
+  const _ReverieBootstrap();
+
+  @override
+  State<_ReverieBootstrap> createState() => _ReverieBootstrapState();
+}
+
+class _ReverieBootstrapState extends State<_ReverieBootstrap> {
+  late final Future<_ReverieBootstrapResult> _initialization =
+      _initializeReverie();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<_ReverieBootstrapResult>(
+      future: _initialization,
+      builder: (context, snapshot) {
+        final result = snapshot.data;
+        if (result == null) return const ReverieLaunchApp();
+        return _readyReverieApp(result);
+      },
+    );
+  }
+}
+
+Widget _readyReverieApp(_ReverieBootstrapResult result) {
+  return SoundApp(
+    engine: JustAudioPlaybackEngine(
+      mediaProviders: PlaybackMediaProviderRegistry([
+        WebDavPlaybackMediaProvider(cache: result.cache),
+        const DirectPlaybackMediaProvider(),
+      ]),
+    ),
+    repository: result.libraryRepository,
+    initialCatalog: result.initialCatalog,
+    ownsRepository: true,
+    sessionStore: result.playbackSessionStore,
+    initialSession: result.initialPlaybackSession,
+    initialThemePreferences: result.themePreferences,
+    sessionIsPreloaded: true,
+    audioHandler: result.audioHandler,
+    webDavCache: result.cache,
+  );
+}
+
+Future<_ReverieBootstrapResult> _initializeReverie() async {
   ThemePreferences? themePreferences;
   var initialAccent = SoundColors.defaultAccentPreset;
   try {
@@ -89,31 +157,35 @@ Future<void> main() async {
   final playbackSessionStore = await _createPlaybackSessionStore();
   final initialPlaybackSession = await playbackSessionStore.load();
 
-  runApp(
-    SoundApp(
-      engine: JustAudioPlaybackEngine(
-        mediaProviders: PlaybackMediaProviderRegistry([
-          WebDavPlaybackMediaProvider(cache: cache),
-          const DirectPlaybackMediaProvider(),
-        ]),
-      ),
-      repository: libraryRepository,
-      initialCatalog: initialCatalog,
-      ownsRepository: true,
-      sessionStore: playbackSessionStore,
-      initialSession: initialPlaybackSession,
-      initialThemePreferences: themePreferences,
-      sessionIsPreloaded: true,
-      audioHandler: audioHandler,
-      webDavCache: cache,
-    ),
+  return _ReverieBootstrapResult(
+    themePreferences: themePreferences,
+    libraryRepository: libraryRepository,
+    initialCatalog: initialCatalog,
+    audioHandler: audioHandler,
+    cache: cache,
+    playbackSessionStore: playbackSessionStore,
+    initialPlaybackSession: initialPlaybackSession,
   );
+}
 
-  if (!kIsWeb && Platform.isMacOS) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_dismissMacOSLaunchScreen());
-    });
-  }
+class _ReverieBootstrapResult {
+  const _ReverieBootstrapResult({
+    required this.themePreferences,
+    required this.libraryRepository,
+    required this.initialCatalog,
+    required this.audioHandler,
+    required this.cache,
+    required this.playbackSessionStore,
+    required this.initialPlaybackSession,
+  });
+
+  final ThemePreferences? themePreferences;
+  final DriftLibraryRepository libraryRepository;
+  final LibraryCatalogSnapshot? initialCatalog;
+  final SoundAudioHandler audioHandler;
+  final WebDavCache? cache;
+  final PlaybackSessionStore playbackSessionStore;
+  final PlaybackSession? initialPlaybackSession;
 }
 
 Future<PlaybackSessionStore> _createPlaybackSessionStore() async {

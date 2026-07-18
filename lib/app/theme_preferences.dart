@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -36,6 +37,11 @@ class ThemePreferences {
             ? SoundSkins.defaultPreset.id
             : storedSkinPresetId;
         AccentPreset? accentPreset;
+        if (accentPresetId == 'custom' && json['customAccent'] is int) {
+          accentPreset = AccentPreset.custom(
+            Color(json['customAccent'] as int),
+          );
+        }
         for (final p in SoundColors.accentPresets) {
           if (p.id == accentPresetId) {
             accentPreset = p;
@@ -79,6 +85,8 @@ class ThemePreferences {
     await _file.writeAsString(
       jsonEncode({
         'accentPreset': nextAccent.id,
+        if (nextAccent.id == 'custom')
+          'customAccent': nextAccent.accent.toARGB32(),
         'skinPreset': nextSkin.id,
         'nowPlayingStyle': nextNowPlayingStyle.id,
       }),

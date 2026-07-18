@@ -14,6 +14,7 @@ import '../../library/scanning/album_grouping.dart';
 import '../../library/scanning/artwork_store.dart';
 import '../../library/scanning/audio_format_registry.dart';
 import '../../library/scanning/audio_metadata_extractor.dart';
+import '../../library/scanning/scan_task_pool.dart';
 import 'webdav_connection_service.dart';
 import 'webdav_credentials.dart';
 import 'webdav_discovery.dart';
@@ -231,6 +232,14 @@ class WebDavFolderScanner {
         if (entry.isCollection) {
           pending.add(childUrl);
         } else {
+          // A server may use an opaque or rewritten download URL whose path
+          // looks like a normal audio file while `displayname` reveals that
+          // the resource is actually a macOS AppleDouble sidecar. Check both
+          // identities before considering the extension.
+          if (isSystemMetadataPath(childUrl) ||
+              isSystemMetadataPath(entry.displayName)) {
+            continue;
+          }
           // Some WebDAV servers expose a friendly `displayname` without the
           // original extension. Prefer the canonical href for format
           // detection, while retaining displayName as a compatibility
@@ -346,7 +355,47 @@ class WebDavFolderScanner {
     var unchangedTracks = 0;
     final warnings = <String>[];
 
+    final filesNeedingMetadata = files
+        .where((file) {
+          final existing = existingTracksByUrl[file.url];
+          return existing == null || !_sameRemoteFingerprint(existing, file);
+        })
+        .toList(growable: false);
+    final httpClient = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15)
+      ..maxConnectionsPerHost = 4;
+    if (allowBadCertificate) {
+      httpClient.badCertificateCallback = (_, _, _) => true;
+    }
+
     try {
+      final metadataReads =
+          await mapScanTasks<_RemoteAudioFile, _RemoteMetadataReadResult>(
+            filesNeedingMetadata,
+            maxConcurrency: 4,
+            task: (file) async {
+              cancellationToken.throwIfCancelled();
+              try {
+                final metadata = await _readRemoteMetadata(
+                  file,
+                  credentials: credentials,
+                  httpClient: httpClient,
+                );
+                cancellationToken.throwIfCancelled();
+                return _RemoteMetadataReadResult.success(metadata);
+              } on _RejectedRemoteAudioException {
+                return const _RemoteMetadataReadResult.rejected();
+              } catch (error, stackTrace) {
+                if (error is ScanCancelledException) rethrow;
+                return _RemoteMetadataReadResult.failure(error, stackTrace);
+              }
+            },
+          );
+      final metadataByUrl = <String, _RemoteMetadataReadResult>{
+        for (var index = 0; index < filesNeedingMetadata.length; index++)
+          filesNeedingMetadata[index].url: metadataReads[index],
+      };
+
       for (final file in files) {
         cancellationToken.throwIfCancelled();
         final existing = existingTracksByUrl[file.url];
@@ -365,11 +414,15 @@ class WebDavFolderScanner {
 
         final movedFrom = movedTracksByNewUrl[file.url];
         try {
-          final metadata = await _readRemoteMetadata(
-            file,
-            credentials: credentials,
-            allowBadCertificate: allowBadCertificate,
-          );
+          final metadataRead = metadataByUrl[file.url]!;
+          if (metadataRead.rejected) continue;
+          if (metadataRead.error != null) {
+            Error.throwWithStackTrace(
+              metadataRead.error!,
+              metadataRead.stackTrace!,
+            );
+          }
+          final metadata = metadataRead.metadata!;
           cancellationToken.throwIfCancelled();
 
           final title = metadata.title.isNotEmpty
@@ -477,7 +530,7 @@ class WebDavFolderScanner {
         }
       }
     } finally {
-      // Client closed per-file.
+      httpClient.close(force: true);
     }
 
     cancellationToken.throwIfCancelled();
@@ -555,50 +608,40 @@ class WebDavFolderScanner {
   Future<_RemoteMetadata> _readRemoteMetadata(
     _RemoteAudioFile file, {
     required WebDavCredentials credentials,
-    bool allowBadCertificate = false,
+    required HttpClient httpClient,
   }) async {
     final uri = Uri.parse(file.url);
-
-    final httpClient = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 15);
-    if (allowBadCertificate) {
-      httpClient.badCertificateCallback = (_, _, _) => true;
-    }
-
+    final tempFile = File(
+      '${Directory.systemTemp.path}/sound_webdav_scan_'
+      '${DateTime.now().microsecondsSinceEpoch}_${file.url.hashCode}.tmp',
+    );
     try {
-      final tempFile = File(
-        '${Directory.systemTemp.path}/sound_webdav_scan_${DateTime.now().microsecondsSinceEpoch}.tmp',
+      // Try 256 KiB first; retry with 512 KiB if FLAC blocks extend further.
+      var parsed = await _tryParseHeader(
+        httpClient,
+        uri,
+        credentials,
+        256 * 1024,
+        tempFile,
       );
-      try {
-        // Try 256 KiB first; retry with 512 KiB if FLAC blocks extend further.
-        var parsed = await _tryParseHeader(
+      if (parsed == null && file.extension == '.flac') {
+        parsed = await _tryParseHeader(
           httpClient,
           uri,
           credentials,
-          256 * 1024,
+          512 * 1024,
           tempFile,
         );
-        if (parsed == null && file.extension == '.flac') {
-          parsed = await _tryParseHeader(
-            httpClient,
-            uri,
-            credentials,
-            512 * 1024,
-            tempFile,
-          );
-        }
-        // Discovery already established that this is a supported audio path.
-        // Metadata is optional: truncated range reads, large embedded artwork,
-        // or tail-positioned MP4 atoms must not make an otherwise playable
-        // track disappear from the library.
-        return parsed ?? _filenameOnlyRemoteMetadata;
-      } finally {
-        try {
-          await tempFile.delete();
-        } catch (_) {}
       }
+      // Discovery already established that this is a supported audio path.
+      // Metadata is optional: truncated range reads, large embedded artwork,
+      // or tail-positioned MP4 atoms must not make an otherwise playable
+      // track disappear from the library.
+      return parsed ?? _filenameOnlyRemoteMetadata;
     } finally {
-      httpClient.close(force: true);
+      try {
+        await tempFile.delete();
+      } catch (_) {}
     }
   }
 
@@ -641,6 +684,9 @@ class WebDavFolderScanner {
       }
       final bytes = bytesBuilder.takeBytes();
       if (bytes.isEmpty) return null;
+      if (hasAppleMetadataHeader(bytes)) {
+        throw const _RejectedRemoteAudioException();
+      }
 
       await tempFile.writeAsBytes(bytes);
       final metadata = await metadataExtractor.extract(tempFile);
@@ -659,6 +705,8 @@ class WebDavFolderScanner {
         artworkBytes: metadata.artwork?.bytes,
         artworkMimeType: metadata.artwork?.mimeType,
       );
+    } on _RejectedRemoteAudioException {
+      rethrow;
     } catch (_) {
       return null;
     }
@@ -834,6 +882,32 @@ class _RemoteAudioFile {
   final String extension;
   final int contentLength;
   final DateTime? modifiedAt;
+}
+
+class _RemoteMetadataReadResult {
+  const _RemoteMetadataReadResult.success(this.metadata)
+    : error = null,
+      stackTrace = null,
+      rejected = false;
+
+  const _RemoteMetadataReadResult.failure(this.error, this.stackTrace)
+    : metadata = null,
+      rejected = false;
+
+  const _RemoteMetadataReadResult.rejected()
+    : metadata = null,
+      error = null,
+      stackTrace = null,
+      rejected = true;
+
+  final _RemoteMetadata? metadata;
+  final Object? error;
+  final StackTrace? stackTrace;
+  final bool rejected;
+}
+
+class _RejectedRemoteAudioException implements Exception {
+  const _RejectedRemoteAudioException();
 }
 
 class _RemoteFileFingerprint {

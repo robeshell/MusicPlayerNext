@@ -632,23 +632,35 @@ class _PlaylistTile extends StatelessWidget {
                   ],
                 ),
               ),
-              PopupMenuButton<String>(
+              SoundMenuButton<String>(
                 key: ValueKey('playlist-actions-${playlist.id}'),
                 tooltip: '播放列表操作',
+                menuTitle: playlist.name,
                 icon: const Icon(Icons.more_horiz_rounded, size: 20),
                 onSelected: (value) {
                   if (value == 'play') onPlay();
                   if (value == 'rename') onRename();
                   if (value == 'delete') onDelete();
                 },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
+                actions: [
+                  SoundMenuAction(
                     value: 'play',
                     enabled: trackCount > missingTrackCount,
-                    child: const Text('播放'),
+                    label: '播放',
+                    icon: Icons.play_arrow_rounded,
                   ),
-                  const PopupMenuItem(value: 'rename', child: Text('重命名')),
-                  const PopupMenuItem(value: 'delete', child: Text('删除')),
+                  const SoundMenuAction(
+                    value: 'rename',
+                    label: '重命名',
+                    icon: Icons.edit_outlined,
+                  ),
+                  const SoundMenuAction(
+                    value: 'delete',
+                    label: '删除',
+                    icon: Icons.delete_outline_rounded,
+                    destructive: true,
+                    dividerBefore: true,
+                  ),
                 ],
               ),
             ],
@@ -764,14 +776,11 @@ class _PlaylistTrackRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compact = context.soundIsCompact;
-    return SoundTrackActivation(
-      onActivate: onTap,
-      semanticLabel: track.title,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Material(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          child: DecoratedBox(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Material(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: DecoratedBox(
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
@@ -781,91 +790,61 @@ class _PlaylistTrackRow extends StatelessWidget {
               ),
             ),
           ),
-          child: compact
-              ? SizedBox(
-                  key: ValueKey('playlist-track-row-${track.id}'),
-                  height: 64,
-                  child: Row(
-                    children: [
-                      SizedBox.square(
-                        dimension: 44,
-                        child: AlbumArt(album: album, borderRadius: 8),
-                      ),
-                      const SizedBox(width: 11),
-                      Expanded(
-                        child: _PlaylistTrackLabels(track: track, album: album),
-                      ),
-                      _playlistActions(),
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Icon(
-                            Icons.drag_handle_rounded,
-                            size: 20,
-                            color: context.soundMutedText,
+          child: SizedBox(
+            key: ValueKey('playlist-track-row-${track.id}'),
+            height: compact ? 64 : 68,
+            child: Row(
+              children: [
+                Expanded(
+                  child: SoundTrackActivation(
+                    onActivate: onTap,
+                    semanticLabel: track.title,
+                    child: Row(
+                      children: [
+                        SizedBox.square(
+                          dimension: compact ? 44 : 48,
+                          child: AlbumArt(
+                            album: album,
+                            borderRadius: compact ? 8 : 6,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                )
-              : ListTile(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 5),
-                  leading: SizedBox.square(
-                    dimension: 48,
-                    child: AlbumArt(album: album, borderRadius: 6),
-                  ),
-                  title: Text(
-                    track.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: context.soundPrimaryText.withValues(
-                        alpha: context.soundPrimaryText.a * 0.92,
-                      ),
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '${track.artist} · ${album.title}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: context.soundMutedText.withValues(
-                        alpha: context.soundMutedText.a * 0.82,
-                      ),
-                    ),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _playlistActions(),
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Icon(
-                            Icons.drag_handle_rounded,
-                            color: context.soundMutedText,
+                        SizedBox(width: compact ? 11 : 12),
+                        Expanded(
+                          child: _PlaylistTrackLabels(
+                            track: track,
+                            album: album,
                           ),
                         ),
-                      ),
-                    ],
+                        _playlistActions(),
+                      ],
+                    ),
                   ),
                 ),
+                ReorderableDragStartListener(
+                  key: ValueKey('playlist-drag-${track.id}'),
+                  index: index,
+                  child: Padding(
+                    padding: EdgeInsets.all(compact ? 8 : 10),
+                    child: Icon(
+                      Icons.drag_handle_rounded,
+                      size: compact ? 20 : 24,
+                      color: context.soundMutedText,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
       ),
     );
   }
 
   Widget _playlistActions() {
-    return PopupMenuButton<String>(
+    return SoundMenuButton<String>(
       key: ValueKey('playlist-track-actions-${track.id}'),
       tooltip: '歌曲操作',
+      menuTitle: track.title,
       icon: const Icon(Icons.more_horiz_rounded, size: 21),
       onSelected: (value) {
         if (value == 'play-next') onPlayNext();
@@ -874,15 +853,37 @@ class _PlaylistTrackRow extends StatelessWidget {
         if (value == 'album') onOpenAlbum();
         if (value == 'remove') onRemove();
       },
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'play-next', child: Text('下一首播放')),
-        PopupMenuItem(
-          value: 'favorite',
-          child: Text(favorite ? '取消收藏' : '收藏歌曲'),
+      actions: [
+        const SoundMenuAction(
+          value: 'play-next',
+          label: '下一首播放',
+          icon: Icons.playlist_play_rounded,
         ),
-        const PopupMenuItem(value: 'add', child: Text('添加到其他播放列表')),
-        const PopupMenuItem(value: 'album', child: Text('打开专辑')),
-        const PopupMenuItem(value: 'remove', child: Text('从此列表移除')),
+        SoundMenuAction(
+          value: 'favorite',
+          label: favorite ? '取消收藏' : '收藏歌曲',
+          icon: favorite
+              ? Icons.favorite_rounded
+              : Icons.favorite_border_rounded,
+          selected: favorite,
+        ),
+        const SoundMenuAction(
+          value: 'add',
+          label: '添加到其他播放列表',
+          icon: Icons.playlist_add_rounded,
+        ),
+        const SoundMenuAction(
+          value: 'album',
+          label: '打开专辑',
+          icon: Icons.album_outlined,
+        ),
+        const SoundMenuAction(
+          value: 'remove',
+          label: '从此列表移除',
+          icon: Icons.playlist_remove_rounded,
+          destructive: true,
+          dividerBefore: true,
+        ),
       ],
     );
   }
@@ -1053,22 +1054,35 @@ class _UserTrackRow extends StatelessWidget {
           ),
         ],
       ),
-      compactTrailing: PopupMenuButton<String>(
+      compactTrailing: SoundMenuButton<String>(
         key: ValueKey('user-track-actions-${track.id}'),
         tooltip: '更多操作 ${track.title}',
+        menuTitle: track.title,
         icon: const Icon(Icons.more_horiz_rounded, size: 21),
         onSelected: (value) {
           if (value == 'favorite') onToggleFavorite();
           if (value == 'playlist') onAddToPlaylist();
           if (value == 'album') onOpenAlbum();
         },
-        itemBuilder: (context) => [
-          PopupMenuItem(
+        actions: [
+          SoundMenuAction(
             value: 'favorite',
-            child: Text(favorite ? '取消收藏' : '收藏'),
+            label: favorite ? '取消收藏' : '收藏',
+            icon: favorite
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            selected: favorite,
           ),
-          const PopupMenuItem(value: 'playlist', child: Text('添加到播放列表')),
-          const PopupMenuItem(value: 'album', child: Text('打开专辑')),
+          const SoundMenuAction(
+            value: 'playlist',
+            label: '添加到播放列表',
+            icon: Icons.playlist_add_rounded,
+          ),
+          const SoundMenuAction(
+            value: 'album',
+            label: '打开专辑',
+            icon: Icons.album_outlined,
+          ),
         ],
       ),
     );

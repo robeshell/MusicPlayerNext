@@ -185,23 +185,12 @@ class _WebDavAddDialogState extends State<WebDavAddDialog> {
             onFieldSubmitted: (_) => _submit(),
           ),
           const SizedBox(height: 12),
-          CheckboxListTile(
+          SoundCheckRow(
             value: _allowBadCertificate,
-            onChanged: _probing
-                ? null
-                : (value) =>
-                      setState(() => _allowBadCertificate = value ?? false),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              '允许自签名证书',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '适用于使用自签名 SSL 证书的家庭 NAS',
-              style: TextStyle(fontSize: 12, color: context.soundSecondaryText),
-            ),
-            controlAffinity: ListTileControlAffinity.leading,
+            enabled: !_probing,
+            onChanged: (value) => setState(() => _allowBadCertificate = value),
+            title: const Text('允许自签名证书'),
+            subtitle: Text('适用于使用自签名 SSL 证书的家庭 NAS'),
           ),
           if (_errorMessage != null) ...[
             const SizedBox(height: 14),

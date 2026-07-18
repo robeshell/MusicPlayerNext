@@ -91,7 +91,7 @@ class NowPlayingScreen extends StatelessWidget {
     final snapshot = playback.snapshot;
     final compactChrome = context.soundIsCompact;
     final foldableChrome = context.soundUsesMobileShell && !compactChrome;
-    final desktopIntegratedQueue = soundUsesDesktopPlatform && !compactChrome;
+    final wideIntegratedQueue = MediaQuery.sizeOf(context).width >= 680;
     return Scaffold(
       backgroundColor: album.palette.last,
       body: Stack(
@@ -129,7 +129,7 @@ class NowPlayingScreen extends StatelessWidget {
                           icon: const Icon(Icons.keyboard_arrow_down_rounded),
                         ),
                         const Spacer(),
-                        if (!desktopIntegratedQueue)
+                        if (!wideIntegratedQueue)
                           IconButton.filledTonal(
                             onPressed: () =>
                                 showPlaybackQueueSheet(context, playback),
@@ -167,7 +167,6 @@ class NowPlayingScreen extends StatelessWidget {
                         playback: playback,
                         userState: userState,
                         style: style,
-                        integratedQueue: desktopIntegratedQueue,
                       );
                     },
                   ),
@@ -235,12 +234,13 @@ class _NoTrackPlaying extends StatelessWidget {
 
 enum _WideNowPlayingView { lyrics, queue }
 
+enum _LyricsMenuAction { resumeFollow, delay, reset, advance }
+
 class _WideNowPlaying extends StatefulWidget {
   const _WideNowPlaying({
     required this.album,
     required this.track,
     required this.playback,
-    required this.integratedQueue,
     required this.style,
     this.userState,
   });
@@ -248,7 +248,6 @@ class _WideNowPlaying extends StatefulWidget {
   final Album album;
   final Track track;
   final SoundPlaybackController playback;
-  final bool integratedQueue;
   final NowPlayingStyle style;
   final LibraryUserStateController? userState;
 
@@ -317,18 +316,21 @@ class _WideNowPlayingState extends State<_WideNowPlaying> {
             children: [
               Expanded(
                 flex: playerFlex,
-                child: Align(
-                  key: const ValueKey('wide-now-playing-player'),
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: playerWidthLimit),
-                    child: SingleChildScrollView(
-                      child: _PlayerColumn(
-                        album: widget.album,
-                        track: widget.track,
-                        playback: widget.playback,
-                        userState: widget.userState,
-                        artSize: artSize,
+                child: Padding(
+                  padding: EdgeInsets.only(top: foldableWidth ? 18 : 0),
+                  child: Align(
+                    key: const ValueKey('wide-now-playing-player'),
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: playerWidthLimit),
+                      child: SingleChildScrollView(
+                        child: _PlayerColumn(
+                          album: widget.album,
+                          track: widget.track,
+                          playback: widget.playback,
+                          userState: widget.userState,
+                          artSize: artSize,
+                        ),
                       ),
                     ),
                   ),
@@ -345,20 +347,12 @@ class _WideNowPlayingState extends State<_WideNowPlaying> {
                     0,
                     foldableWidth ? 24 : 32,
                   ),
-                  child: widget.integratedQueue
-                      ? _DesktopNowPlayingPane(
-                          view: _view,
-                          track: widget.track,
-                          playback: widget.playback,
-                          onViewChanged: (view) => setState(() => _view = view),
-                        )
-                      : _LyricsPanel(
-                          track: widget.track,
-                          position: widget.playback.displayPosition,
-                          discontinuityRevision:
-                              widget.playback.positionDiscontinuityRevision,
-                          onSeek: widget.playback.seek,
-                        ),
+                  child: _WideNowPlayingPane(
+                    view: _view,
+                    track: widget.track,
+                    playback: widget.playback,
+                    onViewChanged: (view) => setState(() => _view = view),
+                  ),
                 ),
               ),
             ],
@@ -369,8 +363,8 @@ class _WideNowPlayingState extends State<_WideNowPlaying> {
   }
 }
 
-class _DesktopNowPlayingPane extends StatelessWidget {
-  const _DesktopNowPlayingPane({
+class _WideNowPlayingPane extends StatelessWidget {
+  const _WideNowPlayingPane({
     required this.view,
     required this.track,
     required this.playback,
@@ -385,7 +379,7 @@ class _DesktopNowPlayingPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      key: const ValueKey('desktop-now-playing-pane'),
+      key: const ValueKey('wide-now-playing-pane'),
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
@@ -393,7 +387,7 @@ class _DesktopNowPlayingPane extends StatelessWidget {
             index: view.index,
             children: [
               _LyricsPanel(
-                key: const ValueKey('desktop-lyrics-panel'),
+                key: const ValueKey('wide-lyrics-panel'),
                 track: track,
                 position: playback.displayPosition,
                 discontinuityRevision: playback.positionDiscontinuityRevision,
@@ -401,7 +395,7 @@ class _DesktopNowPlayingPane extends StatelessWidget {
                 verticalControls: true,
               ),
               PlaybackQueuePanel(
-                key: const ValueKey('desktop-playback-queue'),
+                key: const ValueKey('wide-playback-queue'),
                 playback: playback,
                 embedded: true,
               ),
@@ -409,7 +403,7 @@ class _DesktopNowPlayingPane extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        _DesktopPaneIconSwitch(
+        _WidePaneIconSwitch(
           key: const ValueKey('now-playing-view-switch'),
           view: view,
           onChanged: onViewChanged,
@@ -419,8 +413,8 @@ class _DesktopNowPlayingPane extends StatelessWidget {
   }
 }
 
-class _DesktopPaneIconSwitch extends StatelessWidget {
-  const _DesktopPaneIconSwitch({
+class _WidePaneIconSwitch extends StatelessWidget {
+  const _WidePaneIconSwitch({
     required this.view,
     required this.onChanged,
     super.key,
@@ -480,7 +474,7 @@ class _DesktopPaneIconSwitch extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         button(
-          key: const ValueKey('show-desktop-lyrics'),
+          key: const ValueKey('show-wide-lyrics'),
           value: _WideNowPlayingView.lyrics,
           tooltip: '显示歌词',
           icon: Icons.lyrics_rounded,
@@ -488,7 +482,7 @@ class _DesktopPaneIconSwitch extends StatelessWidget {
           opticalOffsetY: 1.5,
         ),
         button(
-          key: const ValueKey('show-desktop-queue'),
+          key: const ValueKey('show-wide-queue'),
           value: _WideNowPlayingView.queue,
           tooltip: '显示播放清单',
           icon: Icons.queue_music_rounded,
@@ -1382,7 +1376,7 @@ class _LyricsPanelState extends State<_LyricsPanel> {
       if (lineContext == null) return;
       Scrollable.ensureVisible(
         lineContext,
-        alignment: 0.45,
+        alignment: 0.40,
         duration: snap ? Duration.zero : _followDuration,
         curve: Curves.easeOutCubic,
       );
@@ -1439,6 +1433,74 @@ class _LyricsPanelState extends State<_LyricsPanel> {
   String get _offsetLabel {
     final seconds = _offset.inMilliseconds / 1000;
     return '${seconds >= 0 ? '+' : ''}${seconds.toStringAsFixed(1)}s';
+  }
+
+  void _handleLyricsMenuAction(_LyricsMenuAction action) {
+    switch (action) {
+      case _LyricsMenuAction.resumeFollow:
+        _resumeAutoFollow();
+        return;
+      case _LyricsMenuAction.delay:
+        _changeOffset(-_offsetStep);
+        return;
+      case _LyricsMenuAction.reset:
+        setState(() {
+          _offset = Duration.zero;
+          _lastActiveIndex = null;
+          _snapNextFollow = true;
+        });
+        return;
+      case _LyricsMenuAction.advance:
+        _changeOffset(_offsetStep);
+        return;
+    }
+  }
+
+  Widget _buildCompactLyricsMenu() {
+    return SoundMenuButton<_LyricsMenuAction>(
+      key: const ValueKey('compact-lyrics-more'),
+      tooltip: '歌词设置',
+      menuTitle: '歌词设置',
+      actions: [
+        if (_autoFollowPaused)
+          const SoundMenuAction(
+            value: _LyricsMenuAction.resumeFollow,
+            label: '回到当前歌词',
+            subtitle: '恢复自动跟随',
+            icon: Icons.my_location_rounded,
+          ),
+        SoundMenuAction(
+          value: _LyricsMenuAction.delay,
+          label: '歌词延后 0.5 秒',
+          subtitle: '当前偏移 $_offsetLabel',
+          icon: Icons.remove_rounded,
+        ),
+        SoundMenuAction(
+          value: _LyricsMenuAction.reset,
+          label: '重置歌词偏移',
+          subtitle: '恢复到 +0.0s',
+          icon: Icons.refresh_rounded,
+          enabled: _offset != Duration.zero,
+        ),
+        SoundMenuAction(
+          value: _LyricsMenuAction.advance,
+          label: '歌词提前 0.5 秒',
+          subtitle: '当前偏移 $_offsetLabel',
+          icon: Icons.add_rounded,
+        ),
+      ],
+      onSelected: _handleLyricsMenuAction,
+      child: SizedBox.square(
+        dimension: 32,
+        child: Center(
+          child: Icon(
+            Icons.more_horiz_rounded,
+            size: 20,
+            color: context.soundMutedText.withValues(alpha: 0.72),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildVerticalControls() {
@@ -1521,9 +1583,16 @@ class _LyricsPanelState extends State<_LyricsPanel> {
           child: SingleChildScrollView(
             controller: _scrollController,
             padding: EdgeInsets.only(
+              top: widget.verticalControls
+                  ? math.max(88, constraints.maxHeight * 0.36)
+                  : 0,
               bottom: widget.compact
                   ? math.max(72, constraints.maxHeight * 0.66)
-                  : math.max(110, constraints.maxHeight * 0.55),
+                  : math.max(
+                      110,
+                      constraints.maxHeight *
+                          (widget.verticalControls ? 0.62 : 0.55),
+                    ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1630,6 +1699,25 @@ class _LyricsPanelState extends State<_LyricsPanel> {
           ),
           if (synchronized && _timeline.hasTimedContent)
             Positioned(top: 2, right: 0, child: _buildVerticalControls()),
+        ],
+      );
+    }
+    if (widget.compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (synchronized && _timeline.hasTimedContent)
+            Align(
+              alignment: Alignment.centerRight,
+              child: _buildCompactLyricsMenu(),
+            ),
+          Expanded(
+            child: _buildLyricsScroller(
+              lyrics,
+              active: active,
+              synchronized: synchronized,
+            ),
+          ),
         ],
       );
     }

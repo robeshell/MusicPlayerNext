@@ -18,6 +18,7 @@ import '../playback/sound_audio_handler.dart';
 import '../presentation/app_shell.dart';
 import '../presentation/controllers/library_catalog_controller.dart';
 import '../sources/webdav/webdav_cache.dart';
+import 'reverie_launch_screen.dart';
 
 class SoundApp extends StatefulWidget {
   const SoundApp({
@@ -446,7 +447,7 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
         ),
       ),
       home: playback == null
-          ? const _PlaybackBootstrapScreen()
+          ? const ReverieLaunchScreen()
           : AppShell(
               playback: playback,
               audioHandler: widget.audioHandler,
@@ -463,53 +464,6 @@ class _SoundAppState extends State<SoundApp> with WidgetsBindingObserver {
               onNowPlayingStyleChanged: _changeNowPlayingStyle,
               failureOverlayController: _failureOverlayController,
             ),
-    );
-  }
-}
-
-class _PlaybackBootstrapScreen extends StatelessWidget {
-  const _PlaybackBootstrapScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Center(
-        child: Semantics(
-          label: 'Reverie 正在启动',
-          child: SizedBox(
-            width: 220,
-            height: 220,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Transform.translate(
-                  offset: const Offset(0, -24),
-                  child: Image.asset(
-                    'assets/branding/launch_mark.png',
-                    width: 180,
-                    height: 180,
-                    filterQuality: FilterQuality.high,
-                    excludeFromSemantics: true,
-                  ),
-                ),
-                Transform.translate(
-                  offset: const Offset(0, 58),
-                  child: Text(
-                    'Reverie',
-                    style: TextStyle(
-                      color: context.soundPrimaryText,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

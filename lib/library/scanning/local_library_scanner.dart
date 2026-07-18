@@ -10,9 +10,11 @@ import 'album_grouping.dart';
 import 'artwork_store.dart';
 import 'audio_metadata_fallback.dart';
 import 'audio_metadata_extractor.dart';
+import 'audio_format_registry.dart';
 import 'embedded_lyrics_parser.dart';
 import 'local_media_catalog.dart';
 import 'scan_cancellation.dart';
+import 'scan_task_pool.dart';
 
 typedef ScannerUtcClock = DateTime Function();
 
@@ -86,7 +88,14 @@ class LocalLibraryScanner {
     await repository.markSourceScanning(source.id, startedAt: startedAt);
     try {
       token.throwIfCancelled();
-      final files = await catalog.listAudioFiles(source.rootUri);
+      final discoveredFiles = await catalog.listAudioFiles(source.rootUri);
+      final files = discoveredFiles
+          .where(
+            (file) =>
+                isSupportedAudioPath(file.relativePath) &&
+                !isSystemMetadataPath(file.relativePath),
+          )
+          .toList(growable: false);
       token.throwIfCancelled();
       final existingTracks = await repository.getTracks(sourceId: source.id);
       final existingAlbums = await repository.getAlbums(sourceId: source.id);
@@ -122,6 +131,24 @@ class LocalLibraryScanner {
       var movedTracks = 0;
       var unchangedTracks = 0;
 
+      final filesNeedingMetadata = files
+          .where((audioFile) {
+            final existing = existingTracksByPath[audioFile.relativePath];
+            return existing == null ||
+                !_sameFileFingerprint(existing, audioFile);
+          })
+          .toList(growable: false);
+      final metadataReads =
+          await mapScanTasks<LocalAudioFile, _LocalMetadataReadResult>(
+            filesNeedingMetadata,
+            maxConcurrency: 2,
+            task: (audioFile) => _readLocalMetadata(audioFile, token),
+          );
+      final metadataByPath = <String, _LocalMetadataReadResult>{
+        for (var index = 0; index < filesNeedingMetadata.length; index++)
+          filesNeedingMetadata[index].relativePath: metadataReads[index],
+      };
+
       for (final audioFile in files) {
         token.throwIfCancelled();
         final existing = existingTracksByPath[audioFile.relativePath];
@@ -139,19 +166,21 @@ class LocalLibraryScanner {
         }
 
         final movedFrom = movedTracksByNewPath[audioFile.relativePath];
-        PreparedLocalAudioFile? prepared;
         try {
-          prepared = await catalog.prepareForMetadata(audioFile);
-          ExtractedAudioMetadata metadata;
-          try {
-            metadata = await metadataExtractor.extract(prepared.file);
-          } catch (_) {
-            final fallback = await readFilenameMetadataFallback(
-              prepared.file,
-              audioFile.relativePath,
+          final metadataRead = metadataByPath[audioFile.relativePath]!;
+          if (metadataRead.releaseError != null) {
+            warnings.add(
+              '${audioFile.relativePath} 临时文件：${metadataRead.releaseError}',
             );
-            if (fallback == null) rethrow;
-            metadata = fallback;
+          }
+          if (metadataRead.error != null) {
+            Error.throwWithStackTrace(
+              metadataRead.error!,
+              metadataRead.stackTrace!,
+            );
+          }
+          final metadata = metadataRead.metadata!;
+          if (metadataRead.usedFilenameFallback) {
             warnings.add('${audioFile.relativePath}: 元数据不可读，已按文件名导入');
           }
           token.throwIfCancelled();
@@ -255,12 +284,6 @@ class LocalLibraryScanner {
           if (error is ScanCancelledException) rethrow;
           firstFailureStack ??= stackTrace;
           warnings.add('${audioFile.relativePath}: $error');
-        } finally {
-          try {
-            await prepared?.release();
-          } catch (error) {
-            warnings.add('${audioFile.relativePath} 临时文件：$error');
-          }
         }
       }
 
@@ -332,9 +355,9 @@ class LocalLibraryScanner {
         ),
       );
       return LocalScanReport(
-        discoveredFiles: files.length,
+        discoveredFiles: discoveredFiles.length,
         indexedTracks: tracks.length,
-        skippedFiles: files.length - tracks.length,
+        skippedFiles: discoveredFiles.length - tracks.length,
         warnings: List.unmodifiable(warnings),
         addedTracks: addedTracks,
         modifiedTracks: modifiedTracks,
@@ -362,6 +385,80 @@ class LocalLibraryScanner {
       _activeScans.remove(source.id);
     }
   }
+
+  Future<_LocalMetadataReadResult> _readLocalMetadata(
+    LocalAudioFile audioFile,
+    ScanCancellationToken token,
+  ) async {
+    PreparedLocalAudioFile? prepared;
+    ExtractedAudioMetadata? metadata;
+    Object? error;
+    StackTrace? stackTrace;
+    Object? releaseError;
+    var usedFilenameFallback = false;
+    try {
+      token.throwIfCancelled();
+      prepared = await catalog.prepareForMetadata(audioFile);
+      try {
+        metadata = await metadataExtractor.extract(prepared.file);
+      } catch (_) {
+        metadata = await readFilenameMetadataFallback(
+          prepared.file,
+          audioFile.relativePath,
+        );
+        if (metadata == null) rethrow;
+        usedFilenameFallback = true;
+      }
+      token.throwIfCancelled();
+    } catch (caughtError, caughtStackTrace) {
+      error = caughtError;
+      stackTrace = caughtStackTrace;
+    } finally {
+      try {
+        await prepared?.release();
+      } catch (caughtError) {
+        releaseError = caughtError;
+      }
+    }
+
+    if (error is ScanCancelledException) {
+      Error.throwWithStackTrace(error, stackTrace!);
+    }
+    if (error != null) {
+      return _LocalMetadataReadResult.failure(
+        error,
+        stackTrace!,
+        releaseError: releaseError,
+      );
+    }
+    return _LocalMetadataReadResult.success(
+      metadata!,
+      usedFilenameFallback: usedFilenameFallback,
+      releaseError: releaseError,
+    );
+  }
+}
+
+class _LocalMetadataReadResult {
+  const _LocalMetadataReadResult.success(
+    this.metadata, {
+    required this.usedFilenameFallback,
+    this.releaseError,
+  }) : error = null,
+       stackTrace = null;
+
+  const _LocalMetadataReadResult.failure(
+    this.error,
+    this.stackTrace, {
+    this.releaseError,
+  }) : metadata = null,
+       usedFilenameFallback = false;
+
+  final ExtractedAudioMetadata? metadata;
+  final bool usedFilenameFallback;
+  final Object? error;
+  final StackTrace? stackTrace;
+  final Object? releaseError;
 }
 
 Map<String, LibraryTrackRecord> _matchMovedTracks(

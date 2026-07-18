@@ -915,9 +915,10 @@ class _LibraryTrackRow extends StatelessWidget {
       title: track.title,
       subtitle: '${track.artist} · ${track.albumTitle}',
       onActivate: onTap,
-      compactTrailing: PopupMenuButton<String>(
+      compactTrailing: SoundMenuButton<String>(
         key: ValueKey('library-track-actions-${track.id}'),
         tooltip: '更多操作 ${track.title}',
+        menuTitle: track.title,
         padding: EdgeInsets.zero,
         icon: const Icon(Icons.more_horiz_rounded, size: 21),
         onSelected: (value) {
@@ -925,15 +926,27 @@ class _LibraryTrackRow extends StatelessWidget {
           if (value == 'playlist') onAddToPlaylist?.call();
           if (value == 'album') onOpenAlbum();
         },
-        itemBuilder: (_) => [
+        actions: [
           if (onToggleFavorite != null)
-            PopupMenuItem(
+            SoundMenuAction(
               value: 'favorite',
-              child: Text(favorite ? '取消收藏' : '收藏'),
+              label: favorite ? '取消收藏' : '收藏',
+              icon: favorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              selected: favorite,
             ),
           if (onAddToPlaylist != null)
-            const PopupMenuItem(value: 'playlist', child: Text('添加到播放列表')),
-          const PopupMenuItem(value: 'album', child: Text('打开专辑')),
+            const SoundMenuAction(
+              value: 'playlist',
+              label: '添加到播放列表',
+              icon: Icons.playlist_add_rounded,
+            ),
+          const SoundMenuAction(
+            value: 'album',
+            label: '打开专辑',
+            icon: Icons.album_outlined,
+          ),
         ],
       ),
       trailing: Row(
@@ -996,21 +1009,16 @@ class _CompactLibraryNavigation extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           if (onOpenUserMode case final openUserMode?)
-            PopupMenuButton<LibraryUserBrowseMode>(
+            SoundMenuButton<LibraryUserBrowseMode>(
               key: const ValueKey('mobile-library-user-menu'),
               tooltip: '我的音乐',
               onSelected: openUserMode,
-              itemBuilder: (_) => [
+              actions: [
                 for (final candidate in LibraryUserBrowseMode.values)
-                  PopupMenuItem(
+                  SoundMenuAction(
                     value: candidate,
-                    child: Row(
-                      children: [
-                        Icon(candidate.icon, size: 18),
-                        const SizedBox(width: 10),
-                        Text(candidate.label),
-                      ],
-                    ),
+                    label: candidate.label,
+                    icon: candidate.icon,
                   ),
               ],
               child: DecoratedBox(
@@ -1172,19 +1180,17 @@ class _LibraryToolbar extends StatelessWidget {
   }
 
   Widget _sortMenu({required Widget child}) {
-    return PopupMenuButton<LibrarySortOrder>(
+    return SoundMenuButton<LibrarySortOrder>(
       key: const ValueKey('library-sort-menu'),
       tooltip: '排序：${sortOrder.label}',
-      initialValue: sortOrder,
       onSelected: onSortChanged,
-      itemBuilder: (context) => [
+      actions: [
         for (final option in sortOptions)
-          PopupMenuItem(
+          SoundMenuAction(
             value: option,
-            child: _MenuItemLabel(
-              label: option.label,
-              selected: option == sortOrder,
-            ),
+            label: option.label,
+            icon: Icons.sort_rounded,
+            selected: option == sortOrder,
           ),
       ],
       child: child,
@@ -1192,27 +1198,17 @@ class _LibraryToolbar extends StatelessWidget {
   }
 
   Widget _sourceMenu({required Widget child}) {
-    return PopupMenuButton<LibrarySourceFilter>(
+    return SoundMenuButton<LibrarySourceFilter>(
       key: const ValueKey('library-source-menu'),
       tooltip: '来源：${sourceFilter.label}',
-      initialValue: sourceFilter,
       onSelected: onSourceChanged,
-      itemBuilder: (context) => [
+      actions: [
         for (final option in sourceOptions)
-          PopupMenuItem(
+          SoundMenuAction(
             value: option,
-            child: Row(
-              children: [
-                Icon(option.icon, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _MenuItemLabel(
-                    label: option.label,
-                    selected: option == sourceFilter,
-                  ),
-                ),
-              ],
-            ),
+            label: option.label,
+            icon: option.icon,
+            selected: option == sourceFilter,
           ),
       ],
       child: child,
@@ -1262,26 +1258,6 @@ class _CompactPlayAllButton extends StatelessWidget {
         foregroundColor: SoundColors.accent,
         textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
       ),
-    );
-  }
-}
-
-class _MenuItemLabel extends StatelessWidget {
-  const _MenuItemLabel({required this.label, required this.selected});
-
-  final String label;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: Text(label)),
-        if (selected) ...[
-          const SizedBox(width: 12),
-          Icon(Icons.check_rounded, size: 18, color: SoundColors.accent),
-        ],
-      ],
     );
   }
 }
@@ -1461,10 +1437,7 @@ class _AlbumCard extends StatelessWidget {
 }
 
 class _CollectionCard extends StatelessWidget {
-  const _CollectionCard({
-    required this.collection,
-    required this.onTap,
-  });
+  const _CollectionCard({required this.collection, required this.onTap});
 
   final LibraryCollection collection;
   final VoidCallback onTap;
