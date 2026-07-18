@@ -47,6 +47,38 @@ flutter build ios --simulator --debug
 > macOS Keychain requires a development-signed app — sign in with an Apple developer account in Xcode first.
 > macOS 钥匙串需要开发签名应用 — 请先在 Xcode 中登录 Apple 开发者账号。
 
+## Versioned releases · 版本发布
+
+`pubspec.yaml` is the single version source. The user-facing version always has
+three parts (`MAJOR.MINOR.PATCH`); the value after `+` is an internal store build
+number and is not shown in the app.
+
+`pubspec.yaml` 是唯一的版本来源。用户可见版本始终为三段式（`MAJOR.MINOR.PATCH`），`+` 后的值为内部构建号，不会在应用中显示。
+
+Use the release wrapper instead of calling `flutter build ... --release`
+directly. A successful invocation increments the patch and internal build
+numbers once, then writes versioned packages to `dist/`. If a build fails, the
+version change is rolled back.
+
+请使用发布包装工具而非直接调用 `flutter build ... --release`。成功执行后会自动递增补丁版本号和内部构建号，并将版本化包写入 `dist/`。若构建失败，版本变更将自动回滚。
+
+```sh
+# Preview the next version without changing files. 预览下个版本号，不修改文件
+dart run tool/release.dart --dry-run
+
+# Build every release target supported by the current host. 构建当前主机支持的全部目标
+dart run tool/release.dart
+
+# Or build selected targets with one shared version bump. 或选择目标构建，共享一次版本升级
+dart run tool/release.dart android macos web
+```
+
+For a rebuild of the current version, pass `--no-bump`. GitHub releases require
+a three-part tag such as `v1.0.2`; the workflow uses that tag as the package
+version and uploads names such as `reverie-1.0.2-android.apk`.
+
+如需重新构建当前版本，请使用 `--no-bump`。GitHub Releases 要求三段式标签（如 `v1.0.2`），工作流将以此标签作为包版本并上传 `reverie-1.0.2-android.apk` 等文件。
+
 ## Website · 网站
 
 The project site is served via GitHub Pages at [robeshell.github.io/MusicPlayerNext](https://robeshell.github.io/MusicPlayerNext/), with the Flutter Web app under `/MusicPlayerNext/app/`.

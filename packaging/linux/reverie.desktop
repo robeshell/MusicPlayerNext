@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Reverie
+Comment=Play local and remote music libraries
+Exec=sound_player
+Icon=reverie
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;audio;player;library;
