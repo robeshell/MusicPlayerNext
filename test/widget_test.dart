@@ -18,6 +18,7 @@ import 'package:sound_player/presentation/controllers/library_catalog_controller
 import 'package:sound_player/presentation/screens/now_playing_screen.dart';
 import 'package:sound_player/presentation/widgets/animated_artwork_background.dart';
 import 'package:sound_player/presentation/widgets/mini_player.dart';
+import 'package:sound_player/presentation/widgets/progress_scrubber.dart';
 import 'package:sound_player/presentation/widgets/sound_components.dart';
 
 void main() {
@@ -1548,6 +1549,97 @@ void main() {
     await _unmountAndFlush(tester);
     playback.dispose();
     engine.dispose();
+  });
+
+  testWidgets('scrubbing the compact progress bar does not arm dismiss', (
+    tester,
+  ) async {
+    _simulatePlatform(TargetPlatform.iOS);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = SimulatedPlaybackEngine();
+    final playback = SoundPlaybackController(engine: engine);
+    await playback.playTrack(_testTrack, queue: const [_testTrack]);
+    var dragStarts = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NowPlayingScreen(
+          playback: playback,
+          onVerticalDragStart: (_) => dragStarts++,
+          onVerticalDragUpdate: (_) {},
+          onVerticalDragEnd: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // A scrub with a vertical component must stay a scrub: the sheet has to
+    // remain expanded instead of following the finger towards the mini
+    // player.
+    await tester.drag(find.byType(Slider), const Offset(40, 120));
+    await tester.pump();
+    expect(dragStarts, 0);
+
+    // The same downward drag anywhere else on the cover view still dismisses.
+    await tester.drag(
+      find.byKey(const ValueKey('compact-now-playing-artwork')),
+      const Offset(0, 120),
+    );
+    await tester.pump();
+    expect(dragStarts, 1);
+    expect(tester.takeException(), isNull);
+
+    await _unmountAndFlush(tester);
+    playback.dispose();
+    engine.dispose();
+  });
+
+  testWidgets('scrubber holds the seek preview until the engine catches up', (
+    tester,
+  ) async {
+    var positionMs = 10000;
+    Duration? sought;
+    late StateSetter rebuild;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return ProgressScrubber(
+                position: Duration(milliseconds: positionMs),
+                duration: const Duration(seconds: 100),
+                onSeek: (target) => sought = target,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    double sliderValue() => tester.widget<Slider>(find.byType(Slider)).value;
+
+    await tester.drag(find.byType(Slider), const Offset(150, 0));
+    await tester.pump();
+    await tester.pump();
+    final target = sought;
+    expect(target, isNotNull);
+
+    // The engine still reports the pre-seek position. The thumb must stay on
+    // the committed target instead of snapping back until the position ticks
+    // catch up.
+    expect(sliderValue(), closeTo(target!.inMilliseconds.toDouble(), 1.0));
+
+    rebuild(() => positionMs = target.inMilliseconds);
+    await tester.pump();
+    expect(sliderValue(), closeTo(target.inMilliseconds.toDouble(), 1.0));
+    expect(tester.takeException(), isNull);
+
+    await _unmountAndFlush(tester);
   });
 
   testWidgets('tapping a synchronized lyric seeks immediately', (tester) async {

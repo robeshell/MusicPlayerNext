@@ -542,6 +542,7 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
   int? _coverPointer;
   double? _coverLastGlobalDy;
   bool _coverDismissGestureActive = false;
+  bool _scrubInteractionActive = false;
 
   @override
   void initState() {
@@ -557,6 +558,15 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
   }
 
   void _handleCoverPointerDown(PointerDownEvent event) {
+    // The scrubber dispatches its notification from a descendant Listener
+    // during this same pointer-down, so by the time this callback runs the
+    // flag already reflects whether the touch started on the scrubber. A
+    // scrub with a vertical component must not arm the dismiss gesture.
+    if (_scrubInteractionActive) {
+      _coverPointer = null;
+      _coverLastGlobalDy = null;
+      return;
+    }
     _coverPointer = event.pointer;
     _coverLastGlobalDy = event.position.dy;
     _coverDismissGestureActive = false;
@@ -609,6 +619,13 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
     _coverLastGlobalDy = null;
   }
 
+  bool _handleScrubInteractionNotification(
+    ProgressScrubInteractionNotification notification,
+  ) {
+    _scrubInteractionActive = notification.active;
+    return false;
+  }
+
   @override
   void dispose() {
     _coverScrollController.dispose();
@@ -638,28 +655,32 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
               onVerticalDragEnd: widget.onVerticalDragEnd,
               onVerticalDragCancel: widget.onVerticalDragCancel,
             )
-          : Listener(
-              key: const ValueKey('now-playing-cover-drag-region'),
-              behavior: HitTestBehavior.translucent,
-              onPointerDown: _handleCoverPointerDown,
-              onPointerMove: _handleCoverPointerMove,
-              onPointerUp: (_) => _finishCoverPointer(),
-              onPointerCancel: _cancelCoverPointer,
-              child: SingleChildScrollView(
-                key: const ValueKey('compact-player'),
-                controller: _coverScrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(28, 8, 28, 40),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 430),
-                    child: _PlayerColumn(
-                      album: widget.album,
-                      track: widget.track,
-                      playback: widget.playback,
-                      userState: widget.userState,
-                      compactLayout: true,
-                      onToggleLyrics: () => setState(() => _showLyrics = true),
+          : NotificationListener<ProgressScrubInteractionNotification>(
+              onNotification: _handleScrubInteractionNotification,
+              child: Listener(
+                key: const ValueKey('now-playing-cover-drag-region'),
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _handleCoverPointerDown,
+                onPointerMove: _handleCoverPointerMove,
+                onPointerUp: (_) => _finishCoverPointer(),
+                onPointerCancel: _cancelCoverPointer,
+                child: SingleChildScrollView(
+                  key: const ValueKey('compact-player'),
+                  controller: _coverScrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(28, 8, 28, 40),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 430),
+                      child: _PlayerColumn(
+                        album: widget.album,
+                        track: widget.track,
+                        playback: widget.playback,
+                        userState: widget.userState,
+                        compactLayout: true,
+                        onToggleLyrics: () =>
+                            setState(() => _showLyrics = true),
+                      ),
                     ),
                   ),
                 ),

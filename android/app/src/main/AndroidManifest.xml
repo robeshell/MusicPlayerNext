@@ -8,7 +8,8 @@
     <application
         android:label="Reverie"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher_reverie">
+        android:icon="@mipmap/ic_launcher_reverie"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

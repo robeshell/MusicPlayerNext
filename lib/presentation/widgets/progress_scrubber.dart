@@ -50,8 +50,18 @@ class ProgressScrubber extends StatefulWidget {
 }
 
 class _ProgressScrubberState extends State<ProgressScrubber> {
+  /// How close the engine-reported position must get to a committed seek
+  /// target before the preview hands the display back to the engine.
+  static const _settleToleranceMs = 800.0;
+
+  /// Upper bound on how long a committed preview may outlive its seek. Covers
+  /// seeks the engine never confirms near the target (failed seek, track
+  /// completion rolling into the next track).
+  static const _settleTimeout = Duration(milliseconds: 1500);
+
   double? _previewMilliseconds;
   final Set<int> _activePointers = <int>{};
+  Timer? _settleTimer;
 
   double get _durationMs =>
       widget.duration.inMilliseconds.toDouble().clamp(1, double.infinity);
@@ -75,10 +85,37 @@ class _ProgressScrubberState extends State<ProgressScrubber> {
     try {
       await widget.onSeek(target);
     } finally {
-      if (mounted && _previewMilliseconds == value) {
-        setState(() => _previewMilliseconds = null);
-      }
+      // Do not clear the preview here: the engine may complete its seek
+      // Future before the confirmed position reaches [widget.position], and
+      // falling back to the stale engine value would snap the thumb back to
+      // the pre-seek position for a few frames. The preview is released in
+      // [didUpdateWidget] once the reported position catches up, or by this
+      // timer if it never does.
+      _settleTimer?.cancel();
+      _settleTimer = Timer(_settleTimeout, () {
+        if (mounted && _previewMilliseconds == value) {
+          setState(() => _previewMilliseconds = null);
+        }
+      });
     }
+  }
+
+  @override
+  void didUpdateWidget(covariant ProgressScrubber oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final preview = _previewMilliseconds;
+    if (preview == null || _activePointers.isNotEmpty) return;
+    final engineValue = widget.position.inMilliseconds.toDouble();
+    if ((engineValue - preview).abs() <= _settleToleranceMs) {
+      _settleTimer?.cancel();
+      setState(() => _previewMilliseconds = null);
+    }
+  }
+
+  @override
+  void dispose() {
+    _settleTimer?.cancel();
+    super.dispose();
   }
 
   @override

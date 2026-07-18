@@ -677,7 +677,7 @@ class _AppShellState extends State<AppShell>
       return;
     }
     final shouldExpand = _dragStartedExpanded
-        ? _nowPlayingExpansion.value >= 0.82
+        ? _nowPlayingExpansion.value >= 0.9
         : _nowPlayingExpansion.value >= 0.18;
     if (shouldExpand) {
       _expandMobileNowPlaying();
