@@ -34,7 +34,7 @@ Future<void> main(List<String> arguments) async {
     final dist = Directory('dist');
     await dist.create(recursive: true);
     for (final platform in platforms) {
-      await _buildPlatform(platform, release, dist);
+      await _buildPlatform(platform, release, dist, options);
     }
   } catch (_) {
     if (options.bump) await pubspec.writeAsString(originalPubspec);
@@ -52,11 +52,15 @@ class _ReleaseOptions {
     required this.bump,
     required this.dryRun,
     required this.platforms,
+    required this.skipMsix,
+    required this.skipSetup,
   });
 
   factory _ReleaseOptions.parse(List<String> arguments) {
     var bump = true;
     var dryRun = false;
+    var skipMsix = false;
+    var skipSetup = false;
     final platforms = <String>[];
     for (final argument in arguments) {
       switch (argument) {
@@ -64,13 +68,24 @@ class _ReleaseOptions {
           bump = false;
         case '--dry-run':
           dryRun = true;
+        case '--skip-msix':
+          skipMsix = true;
+        case '--skip-setup':
+          skipSetup = true;
         case '--help' || '-h':
           stdout.writeln(
             'Usage: dart run tool/release.dart [platform ...] [options]\n'
             'Platforms: android ios macos windows web all\n'
             'Options:\n'
-            '  --no-bump  Build the current version without incrementing it.\n'
-            '  --dry-run  Print the next version without changing or building.',
+            '  --no-bump     Build the current version without incrementing it.\n'
+            '  --dry-run     Print the next version without changing or building.\n'
+            '  --skip-msix   Windows: skip the .msix installer.\n'
+            '  --skip-setup  Windows: skip the Inno Setup .exe installer.\n'
+            '\n'
+            'Windows artifacts (when tools are available):\n'
+            '  dist/reverie-x.y.z-windows.zip         portable\n'
+            '  dist/reverie-x.y.z-windows.msix        MSIX installer\n'
+            '  dist/reverie-x.y.z-windows-setup.exe   classic Setup.exe\n',
           );
           exit(0);
         case 'all':
@@ -84,12 +99,20 @@ class _ReleaseOptions {
           if (!platforms.contains(argument)) platforms.add(argument);
       }
     }
-    return _ReleaseOptions(bump: bump, dryRun: dryRun, platforms: platforms);
+    return _ReleaseOptions(
+      bump: bump,
+      dryRun: dryRun,
+      platforms: platforms,
+      skipMsix: skipMsix,
+      skipSetup: skipSetup,
+    );
   }
 
   final bool bump;
   final bool dryRun;
   final List<String> platforms;
+  final bool skipMsix;
+  final bool skipSetup;
 }
 
 class _ReleaseVersion {
@@ -122,6 +145,9 @@ class _ReleaseVersion {
   final int buildNumber;
 
   String get name => '$major.$minor.$patch';
+
+  /// MSIX requires a.b.c.d (four components).
+  String get msixVersion => '$major.$minor.$patch.$buildNumber';
 
   _ReleaseVersion nextPatch() => _ReleaseVersion(
     major: major,
@@ -163,6 +189,7 @@ Future<void> _buildPlatform(
   String platform,
   _ReleaseVersion version,
   Directory dist,
+  _ReleaseOptions options,
 ) async {
   stdout.writeln('\nBuilding $platform ${version.name}...');
   switch (platform) {
@@ -209,23 +236,7 @@ Future<void> _buildPlatform(
         '${dist.path}/reverie-${version.name}-macos.zip',
       ]);
     case 'windows':
-      await _flutterBuild('windows', version);
-      final output = File(
-        '${dist.path}/reverie-${version.name}-windows.zip',
-      ).absolute.path;
-      if (File(output).existsSync()) await File(output).delete();
-      // Prefer tar (shipped with Windows 10+). Compress-Archive can fail when
-      // the Microsoft.PowerShell.Archive module fails to autoload.
-      await _run('tar', [
-        '-a',
-        '-c',
-        '-f',
-        output,
-        '-C',
-        'build/windows/x64/runner/Release',
-        '.',
-      ]);
-      stdout.writeln('Created $output');
+      await _buildWindows(version, dist, options);
     case 'web':
       await _flutterBuild(
         'web',
@@ -236,12 +247,18 @@ Future<void> _buildPlatform(
         '${dist.path}/reverie-${version.name}-web.zip',
       ).absolute.path;
       if (Platform.isWindows) {
-        await _run('powershell', [
-          '-NoProfile',
-          '-Command',
-          'Compress-Archive -Force -Path "build/web/*" '
-              '-DestinationPath "$output"',
+        // Prefer tar — Compress-Archive module can fail to load.
+        if (File(output).existsSync()) await File(output).delete();
+        await _run('tar', [
+          '-a',
+          '-c',
+          '-f',
+          output,
+          '-C',
+          'build/web',
+          '.',
         ]);
+        stdout.writeln('Created $output');
       } else {
         await _run('zip', [
           '-q',
@@ -250,6 +267,187 @@ Future<void> _buildPlatform(
           'web',
         ], workingDirectory: 'build');
       }
+  }
+}
+
+Future<void> _buildWindows(
+  _ReleaseVersion version,
+  Directory dist,
+  _ReleaseOptions options,
+) async {
+  await _flutterBuild('windows', version);
+
+  final releaseDir = Directory('build/windows/x64/runner/Release');
+  if (!releaseDir.existsSync()) {
+    throw StateError('Missing Windows Release output: ${releaseDir.path}');
+  }
+
+  // 1) Portable zip
+  final zipPath = File(
+    '${dist.path}/reverie-${version.name}-windows.zip',
+  ).absolute.path;
+  if (File(zipPath).existsSync()) await File(zipPath).delete();
+  await _run('tar', [
+    '-a',
+    '-c',
+    '-f',
+    zipPath,
+    '-C',
+    releaseDir.path,
+    '.',
+  ]);
+  stdout.writeln('Created $zipPath');
+
+  // 2) MSIX modern installer
+  if (!options.skipMsix) {
+    await _buildWindowsMsix(version, dist);
+  } else {
+    stdout.writeln('Skipping MSIX (--skip-msix).');
+  }
+
+  // 3) Classic Setup.exe via Inno Setup
+  if (!options.skipSetup) {
+    await _buildWindowsSetup(version, dist);
+  } else {
+    stdout.writeln('Skipping Setup.exe (--skip-setup).');
+  }
+}
+
+Future<void> _buildWindowsMsix(_ReleaseVersion version, Directory dist) async {
+  stdout.writeln('Building MSIX ${version.msixVersion}...');
+  final outputName = 'reverie-${version.name}-windows';
+  // Reuse the Release tree we just built; do not rebuild windows.
+  await _run('dart', [
+    'run',
+    'msix:create',
+    '--build-windows',
+    'false',
+    '--version',
+    version.msixVersion,
+    '--output-path',
+    dist.absolute.path,
+    '--output-name',
+    outputName,
+    '--install-certificate',
+    'false',
+  ]);
+
+  final produced = File('${dist.path}/$outputName.msix');
+  if (!produced.existsSync()) {
+    // msix may place the file under build/windows/... — search and copy.
+    final fallback = await _findNewestMsix();
+    if (fallback == null) {
+      throw StateError('MSIX build finished but no .msix file was found.');
+    }
+    await fallback.copy(produced.path);
+  }
+  stdout.writeln('Created ${produced.path}');
+}
+
+Future<File?> _findNewestMsix() async {
+  final roots = [
+    Directory('dist'),
+    Directory('build/windows'),
+    Directory('.'),
+  ];
+  File? newest;
+  DateTime? newestTime;
+  for (final root in roots) {
+    if (!root.existsSync()) continue;
+    await for (final entity in root.list(recursive: true, followLinks: false)) {
+      if (entity is! File || !entity.path.toLowerCase().endsWith('.msix')) {
+        continue;
+      }
+      final stat = await entity.stat();
+      if (newestTime == null || stat.modified.isAfter(newestTime)) {
+        newest = entity;
+        newestTime = stat.modified;
+      }
+    }
+  }
+  return newest;
+}
+
+Future<void> _buildWindowsSetup(
+  _ReleaseVersion version,
+  Directory dist,
+) async {
+  final iscc = _findInnoSetupCompiler();
+  if (iscc == null) {
+    stderr.writeln('''
+WARNING: Inno Setup 6 (ISCC.exe) not found — Setup.exe was not built.
+
+Install Inno Setup 6, then re-run:
+  winget install --id JRSoftware.InnoSetup -e --accept-package-agreements
+  dart run tool/release.dart windows --no-bump --skip-msix
+
+Script: packaging/windows/reverie.iss
+See:    packaging/windows/README.md
+''');
+    return;
+  }
+
+  stdout.writeln('Building Setup.exe with $iscc ...');
+  final script = File('packaging/windows/reverie.iss').absolute.path;
+  final outputBase = 'reverie-${version.name}-windows-setup';
+  final sourceDir = Directory(
+    'build/windows/x64/runner/Release',
+  ).absolute.path;
+  final outputDir = dist.absolute.path;
+
+  await _run(iscc, [
+    script,
+    '/DMyAppVersion=${version.name}',
+    '/DMyAppPublisher=com.soundplayer',
+    '/DSourceDir=$sourceDir',
+    '/DOutputDir=$outputDir',
+    '/DOutputBaseFilename=$outputBase',
+    '/Q',
+  ]);
+
+  final setup = File('${dist.path}/$outputBase.exe');
+  if (!setup.existsSync()) {
+    throw StateError('Inno Setup finished but missing ${setup.path}');
+  }
+  stdout.writeln('Created ${setup.path}');
+}
+
+/// Locate ISCC.exe from PATH or common install locations.
+String? _findInnoSetupCompiler() {
+  final which = _which('ISCC.exe') ?? _which('iscc.exe') ?? _which('iscc');
+  if (which != null) return which;
+
+  final candidates = <String>[
+    r'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+    r'C:\Program Files\Inno Setup 6\ISCC.exe',
+    if (Platform.environment['LOCALAPPDATA'] case final local?)
+      '$local\\Programs\\Inno Setup 6\\ISCC.exe',
+    if (Platform.environment['ProgramFiles(x86)'] case final pf86?)
+      '$pf86\\Inno Setup 6\\ISCC.exe',
+    if (Platform.environment['ProgramFiles'] case final pf?)
+      '$pf\\Inno Setup 6\\ISCC.exe',
+  ];
+  for (final path in candidates) {
+    if (File(path).existsSync()) return path;
+  }
+  return null;
+}
+
+String? _which(String command) {
+  try {
+    final result = Process.runSync(
+      Platform.isWindows ? 'where.exe' : 'which',
+      [command],
+      runInShell: Platform.isWindows,
+    );
+    if (result.exitCode != 0) return null;
+    final line = (result.stdout as String)
+        .split(RegExp(r'\r?\n'))
+        .map((s) => s.trim())
+        .firstWhere((s) => s.isNotEmpty, orElse: () => '');
+    return line.isEmpty ? null : line;
+  } catch (_) {
+    return null;
   }
 }
 
@@ -304,7 +502,11 @@ Future<void> _run(
 /// Resolve Windows-friendly executable names for Process.start.
 String _resolveExecutable(String executable) {
   if (!Platform.isWindows) return executable;
-  return switch (executable) {
+  // Absolute paths (e.g. ISCC) must be left alone.
+  if (executable.contains('\\') || executable.contains('/')) {
+    return executable;
+  }
+  return switch (executable.toLowerCase()) {
     'flutter' => 'flutter.bat',
     'dart' => 'dart.bat',
     'powershell' => 'powershell.exe',

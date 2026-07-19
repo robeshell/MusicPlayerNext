@@ -71,6 +71,10 @@ dart run tool/release.dart
 
 # Or build selected targets with one shared version bump. 或选择目标构建，共享一次版本升级
 dart run tool/release.dart android macos web
+
+# Windows: portable zip + MSIX + Setup.exe (requires Inno Setup 6 for .exe)
+# Windows：便携 zip + MSIX + Setup.exe（.exe 需要安装 Inno Setup 6）
+dart run tool/release.dart windows
 ```
 
 For a rebuild of the current version, pass `--no-bump`. GitHub releases require
@@ -78,6 +82,29 @@ a three-part tag such as `v1.0.2`; the workflow uses that tag as the package
 version and uploads names such as `reverie-1.0.2-android.apk`.
 
 如需重新构建当前版本，请使用 `--no-bump`。GitHub Releases 要求三段式标签（如 `v1.0.2`），工作流将以此标签作为包版本并上传 `reverie-1.0.2-android.apk` 等文件。
+
+### Windows installers · Windows 安装包
+
+On Windows, `dart run tool/release.dart windows` writes:
+
+Windows 上执行后会在 `dist/` 生成：
+
+| File · 文件 | Kind · 类型 |
+|-------------|-------------|
+| `reverie-x.y.z-windows.zip` | Portable · 绿色版 |
+| `reverie-x.y.z-windows.msix` | MSIX modern installer · 现代安装包 |
+| `reverie-x.y.z-windows-setup.exe` | Classic Setup.exe (Inno) · 传统安装向导 |
+
+MSIX comes from the `msix` dev dependency. Setup.exe needs
+[Inno Setup 6](https://jrsoftware.org/isinfo.php):
+
+MSIX 由 `msix` 开发依赖生成。Setup.exe 需要 [Inno Setup 6](https://jrsoftware.org/isinfo.php)：
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e --accept-package-agreements
+```
+
+Details: `packaging/windows/README.md` · 详见该目录说明。
 
 ## Website · 网站
 

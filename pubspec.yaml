@@ -66,6 +66,21 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+  msix: ^3.16.12
+
+# Windows MSIX packaging (used by `dart run tool/release.dart windows`).
+# Version is overridden at release time from the pubspec version field.
+msix_config:
+  display_name: Reverie
+  publisher_display_name: com.soundplayer
+  identity_name: com.soundplayer.reverie
+  publisher: CN=com.soundplayer
+  msix_version: 1.0.2.0
+  logo_path: assets/branding/app_icon_windows.png
+  capabilities: internetClient, privateNetworkClientServer
+  languages: zh-cn, en-us
+  architecture: x64
+  install_certificate: false
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
