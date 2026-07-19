@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/sound_theme.dart';
@@ -7,10 +6,10 @@ import '../../core/sound_theme.dart';
 /// now-playing.
 ///
 /// Visually identical to plain secondary metadata text — no link color,
-/// underline, or weight change. Users already treat these labels as
-/// navigable; the only difference is hit testing and a click cursor on
-/// desktop.
-class SoundMetadataLine extends StatefulWidget {
+/// underline, or weight change. Navigation is wired with box hit targets
+/// (not [TextSpan] recognizers) so mobile single-tap rows do not swallow
+/// the gesture for the whole track.
+class SoundMetadataLine extends StatelessWidget {
   const SoundMetadataLine({
     required this.artist,
     required this.album,
@@ -33,89 +32,88 @@ class SoundMetadataLine extends StatefulWidget {
   final TextAlign textAlign;
 
   @override
-  State<SoundMetadataLine> createState() => _SoundMetadataLineState();
-}
-
-class _SoundMetadataLineState extends State<SoundMetadataLine> {
-  TapGestureRecognizer? _artistRecognizer;
-  TapGestureRecognizer? _albumRecognizer;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncRecognizers();
-  }
-
-  @override
-  void didUpdateWidget(covariant SoundMetadataLine oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.onOpenArtist != widget.onOpenArtist ||
-        oldWidget.onOpenAlbum != widget.onOpenAlbum) {
-      _disposeRecognizers();
-      _syncRecognizers();
-    }
-  }
-
-  void _syncRecognizers() {
-    if (widget.onOpenArtist != null) {
-      _artistRecognizer = TapGestureRecognizer()..onTap = widget.onOpenArtist;
-    }
-    if (widget.onOpenAlbum != null) {
-      _albumRecognizer = TapGestureRecognizer()..onTap = widget.onOpenAlbum;
-    }
-  }
-
-  void _disposeRecognizers() {
-    _artistRecognizer?.dispose();
-    _albumRecognizer?.dispose();
-    _artistRecognizer = null;
-    _albumRecognizer = null;
-  }
-
-  @override
-  void dispose() {
-    _disposeRecognizers();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final style =
-        widget.style ??
+    final textStyle =
+        style ??
         TextStyle(
           color: context.soundMutedText.withValues(
             alpha: context.soundMutedText.a * 0.82,
           ),
           fontSize: 11.5,
         );
-    final artist =
-        widget.artist.trim().isEmpty ? '未知艺人' : widget.artist.trim();
-    final album = widget.album.trim().isEmpty ? '未知专辑' : widget.album.trim();
+    final artistLabel =
+        artist.trim().isEmpty ? '未知艺人' : artist.trim();
+    final albumLabel = album.trim().isEmpty ? '未知专辑' : album.trim();
 
-    return Text.rich(
-      TextSpan(
-        style: style,
-        children: [
-          TextSpan(
-            text: artist,
-            recognizer: _artistRecognizer,
-            mouseCursor: widget.onOpenArtist == null
-                ? SystemMouseCursors.basic
-                : SystemMouseCursors.click,
+    return Row(
+      children: [
+        Flexible(
+          child: _MetadataSegment(
+            label: artistLabel,
+            style: textStyle,
+            maxLines: maxLines,
+            textAlign: textAlign,
+            onTap: onOpenArtist,
+            semanticLabel: onOpenArtist == null ? null : '打开艺人 $artistLabel',
           ),
-          TextSpan(text: widget.separator),
-          TextSpan(
-            text: album,
-            recognizer: _albumRecognizer,
-            mouseCursor: widget.onOpenAlbum == null
-                ? SystemMouseCursors.basic
-                : SystemMouseCursors.click,
+        ),
+        Text(separator, style: textStyle),
+        Flexible(
+          child: _MetadataSegment(
+            label: albumLabel,
+            style: textStyle,
+            maxLines: maxLines,
+            textAlign: textAlign,
+            onTap: onOpenAlbum,
+            semanticLabel: onOpenAlbum == null ? null : '打开专辑 $albumLabel',
           ),
-        ],
-      ),
-      maxLines: widget.maxLines,
+        ),
+      ],
+    );
+  }
+}
+
+class _MetadataSegment extends StatelessWidget {
+  const _MetadataSegment({
+    required this.label,
+    required this.style,
+    required this.maxLines,
+    required this.textAlign,
+    required this.onTap,
+    this.semanticLabel,
+  });
+
+  final String label;
+  final TextStyle style;
+  final int maxLines;
+  final TextAlign textAlign;
+  final VoidCallback? onTap;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      label,
+      maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
-      textAlign: widget.textAlign,
+      textAlign: textAlign,
+      style: style,
+    );
+    if (onTap == null) return text;
+
+    // Opaque box hit target so parent row InkWell (mobile single-tap play)
+    // loses the gesture arena when the finger is on this label.
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: text,
+        ),
+      ),
     );
   }
 }
