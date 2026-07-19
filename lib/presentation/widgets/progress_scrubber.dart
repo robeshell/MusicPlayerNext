@@ -191,13 +191,21 @@ class _NonInteractiveProgressTrack extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: padding,
-      child: Align(
-        alignment: Alignment.center,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final activeWidth = constraints.maxWidth * fraction;
-            return SizedBox(
-              height: trackHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final activeWidth = constraints.maxWidth * fraction;
+          // Prefer filling the parent height when it matches [trackHeight]
+          // (docked mini player). Centering inside a taller box leaves a
+          // visible hairline of the bar surface above the fill.
+          final height = constraints.maxHeight.isFinite &&
+                  constraints.maxHeight > 0 &&
+                  constraints.maxHeight <= trackHeight + 0.5
+              ? constraints.maxHeight
+              : trackHeight;
+          return Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: height,
               child: Row(
                 children: [
                   if (activeWidth > 0)
@@ -211,9 +219,9 @@ class _NonInteractiveProgressTrack extends StatelessWidget {
                     ),
                 ],
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }

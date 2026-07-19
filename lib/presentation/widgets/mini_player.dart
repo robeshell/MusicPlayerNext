@@ -99,19 +99,29 @@ class MiniPlayer extends StatelessWidget {
                       ),
               );
               if (embedded) return content;
+              // Docked (desktop bottom bar): flush with the shell — no
+              // perimeter border and no upward shadow. Both read as a
+              // "lid" hairline on top of the bar. Mobile's compact dock
+              // already uses a transparent border for the same reason.
+              final retryBorder =
+                  visual.primaryVisual == PlaybackPrimaryVisual.retry
+                  ? visual.color.withValues(alpha: 0.68)
+                  : null;
               return SoundGlassSurface(
                 strong: true,
-                color: context.soundChromeSurface,
-                shadowOffset: docked
-                    ? const Offset(0, -5)
-                    : const Offset(0, 10),
-                shadowBlur: docked ? 18 : null,
+                // Docked bar sits over the extended body gradient; keep the
+                // chrome slightly translucent so the canvas reads continuous
+                // instead of a hard slab of solid surface.
+                color: docked
+                    ? context.soundChromeSurface.withValues(alpha: 0.92)
+                    : context.soundChromeSurface,
+                showShadow: !docked,
+                shadowOffset: const Offset(0, 10),
                 borderRadius: docked
                     ? BorderRadius.zero
                     : BorderRadius.circular(compact ? 16 : 20),
-                borderColor: visual.primaryVisual == PlaybackPrimaryVisual.retry
-                    ? visual.color.withValues(alpha: 0.68)
-                    : null,
+                borderColor: retryBorder ??
+                    (docked ? Colors.transparent : null),
                 child: content,
               );
             },
@@ -197,7 +207,15 @@ class _NowPlayingArtworkWarmupState extends State<_NowPlayingArtworkWarmup> {
     );
     try {
       await Future.wait([
-        if (provider != null) precacheImage(provider, context),
+        if (provider != null)
+          precacheImage(
+            provider,
+            context,
+            // onError swallows PathNotFound / codec errors without the
+            // IMAGE RESOURCE SERVICE red banner; AlbumArt has its own
+            // errorBuilder placeholder.
+            onError: (Object error, StackTrace? stackTrace) {},
+          ),
         AnimatedArtworkBackground.prewarm(album: album, brightness: brightness),
       ]);
     } catch (_) {
@@ -400,18 +418,21 @@ class _DockedMiniPlayer extends StatelessWidget {
                 ),
               ),
             ),
+            // Top progress is active-only and flush to the bar edge.
+            // Container height must match trackHeight: a taller box + center
+            // alignment leaves a white hairline above the accent fill.
             Positioned(
               left: 0,
               right: 0,
               top: 0,
-              height: 6,
+              height: 3,
               child: ProgressScrubber(
                 key: const ValueKey('mini-player-progress'),
                 position: position,
                 duration: duration,
                 onSeek: playback.seek,
                 activeColor: SoundColors.accent,
-                inactiveColor: context.soundTint(0.1),
+                inactiveColor: Colors.transparent,
                 trackHeight: 3,
                 padding: EdgeInsets.zero,
                 interactive: false,
