@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/sound_theme.dart';
@@ -16,7 +17,9 @@ class FirstRunDialog extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '选择音乐来源后，Reverie 会从本机文件夹或 WebDAV 目录建立资料库。',
+            kIsWeb
+                ? '选择音乐来源后，Reverie 会从 WebDAV 目录建立资料库。'
+                : '选择音乐来源后，Reverie 会从本机文件夹或 WebDAV 目录建立资料库。',
             style: TextStyle(color: context.soundSecondaryText, height: 1.55),
           ),
           const SizedBox(height: 14),

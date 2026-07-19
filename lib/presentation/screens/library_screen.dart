@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -1280,11 +1281,14 @@ class _CatalogMessage extends StatelessWidget {
         loading: true,
       );
 
-  const _CatalogMessage.empty({required VoidCallback onAction})
+  // ignore: prefer_const_constructors_in_immutables
+  _CatalogMessage.empty({required VoidCallback onAction})
     : this._(
         icon: Icons.create_new_folder_outlined,
         title: '资料库还是空的',
-        message: '添加一个本地音乐文件夹，扫描完成后歌曲会显示在这里。',
+        message: kIsWeb
+            ? '添加一个 WebDAV 音乐源，扫描完成后歌曲会显示在这里。'
+            : '添加一个本地音乐文件夹，扫描完成后歌曲会显示在这里。',
         actionLabel: '管理音乐来源',
         onAction: onAction,
       );

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/sound_theme.dart';
@@ -583,62 +584,66 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
             children: [
               SoundSettingsPageHeader(
                 title: '音乐来源',
-                subtitle: '管理本地文件夹、远程连接和已加入资料库的目录。',
+                subtitle: kIsWeb
+                    ? '管理远程连接和已加入资料库的目录。'
+                    : '管理本地文件夹、远程连接和已加入资料库的目录。',
                 onBack: widget.onBack,
               ),
-              const SizedBox(height: SoundSettingsMetrics.sectionGap),
-              _SourceSection(
-                title: '本机',
-                actionLabel: _addingSource ? '正在添加…' : '添加文件夹',
-                onAction: _addingSource || localProvider == null
-                    ? null
-                    : _addLocalSource,
-                child: StreamBuilder<List<LibrarySourceRecord>>(
-                  stream: widget.localSources.watchLocalSources(),
-                  builder: (context, snapshot) {
-                    final sources = snapshot.data ?? const [];
-                    if (snapshot.hasError) {
-                      return _SourceMessage(
-                        message: '无法读取本机来源：${snapshot.error}',
+              if (!kIsWeb) ...[
+                const SizedBox(height: SoundSettingsMetrics.sectionGap),
+                _SourceSection(
+                  title: '本机',
+                  actionLabel: _addingSource ? '正在添加…' : '添加文件夹',
+                  onAction: _addingSource || localProvider == null
+                      ? null
+                      : _addLocalSource,
+                  child: StreamBuilder<List<LibrarySourceRecord>>(
+                    stream: widget.localSources.watchLocalSources(),
+                    builder: (context, snapshot) {
+                      final sources = snapshot.data ?? const [];
+                      if (snapshot.hasError) {
+                        return _SourceMessage(
+                          message: '无法读取本机来源：${snapshot.error}',
+                        );
+                      }
+                      if (sources.isEmpty) {
+                        return const _SourceMessage(message: '还没有添加本机文件夹');
+                      }
+                      return _SourceGroup(
+                        children: [
+                          for (final source in sources)
+                            Builder(
+                              builder: (context) {
+                                final scanning = _scanningSourceIds.contains(
+                                  source.id,
+                                );
+                                return _SourceRow(
+                                  key: ValueKey('local-source-${source.id}'),
+                                  icon: Icons.folder_outlined,
+                                  iconColor: SoundColors.local,
+                                  title: source.displayName,
+                                  location: formatSourceLocation(source.rootUri),
+                                  status: _sourceStatus(source),
+                                  statusColor: _sourceStatusColor(source),
+                                  primaryActionLabel: scanning ? '取消扫描' : '重新扫描',
+                                  primaryActionIcon: scanning
+                                      ? Icons.close_rounded
+                                      : Icons.sync_rounded,
+                                  onPrimaryAction: scanning
+                                      ? () => _localScanProvider.cancel(source.id)
+                                      : () => _scanSource(source.type, source.id),
+                                  onRemove: scanning
+                                      ? null
+                                      : () => _removeLocalSource(source),
+                                );
+                              },
+                            ),
+                        ],
                       );
-                    }
-                    if (sources.isEmpty) {
-                      return const _SourceMessage(message: '还没有添加本机文件夹');
-                    }
-                    return _SourceGroup(
-                      children: [
-                        for (final source in sources)
-                          Builder(
-                            builder: (context) {
-                              final scanning = _scanningSourceIds.contains(
-                                source.id,
-                              );
-                              return _SourceRow(
-                                key: ValueKey('local-source-${source.id}'),
-                                icon: Icons.folder_outlined,
-                                iconColor: SoundColors.local,
-                                title: source.displayName,
-                                location: formatSourceLocation(source.rootUri),
-                                status: _sourceStatus(source),
-                                statusColor: _sourceStatusColor(source),
-                                primaryActionLabel: scanning ? '取消扫描' : '重新扫描',
-                                primaryActionIcon: scanning
-                                    ? Icons.close_rounded
-                                    : Icons.sync_rounded,
-                                onPrimaryAction: scanning
-                                    ? () => _localScanProvider.cancel(source.id)
-                                    : () => _scanSource(source.type, source.id),
-                                onRemove: scanning
-                                    ? null
-                                    : () => _removeLocalSource(source),
-                              );
-                            },
-                          ),
-                      ],
-                    );
-                  },
+                    },
+                  ),
                 ),
-              ),
+              ],
               for (final adapter in _remoteAdapters) ...[
                 const SizedBox(height: SoundSettingsMetrics.sectionGap),
                 _remoteSection(adapter),

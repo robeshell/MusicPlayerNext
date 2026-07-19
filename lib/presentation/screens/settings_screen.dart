@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -314,7 +315,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               icon: Icons.library_music_rounded,
                               iconColor: SoundColors.local,
                               title: '音乐来源',
-                              subtitle: '管理本地文件夹、WebDAV 服务器和扫描目录',
+                              subtitle: kIsWeb
+                                  ? '管理 WebDAV 服务器和扫描目录'
+                                  : '管理本地文件夹、WebDAV 服务器和扫描目录',
                               onTap: () => setState(
                                 () =>
                                     _destination = SettingsDestination.sources,
@@ -450,7 +453,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               icon: Icons.graphic_eq_rounded,
                               iconColor: SoundColors.webDav,
                               title: 'Reverie',
-                              subtitle: '跨平台本地与远程音乐播放器',
+                              subtitle: kIsWeb ? '跨平台远程音乐播放器' : '跨平台本地与远程音乐播放器',
                               value: _appVersion,
                             ),
                           ],
@@ -532,7 +535,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.library_music_rounded,
                       iconColor: SoundColors.local,
                       title: '音乐来源',
-                      subtitle: '本地文件夹与远程音乐目录',
+                      subtitle: kIsWeb ? '远程音乐目录' : '本地文件夹与远程音乐目录',
                       onTap: () => setState(
                         () => _destination = SettingsDestination.sources,
                       ),
@@ -647,7 +650,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.graphic_eq_rounded,
                       iconColor: SoundColors.webDav,
                       title: 'Reverie',
-                      subtitle: '本地与远程音乐播放器',
+                      subtitle: kIsWeb ? '远程音乐播放器' : '本地与远程音乐播放器',
                       value: _appVersion,
                     ),
                   ],
