@@ -1,115 +1,139 @@
 # Reverie
 
-A clean, artwork-first cross-platform music player built with Flutter.
-一个简洁、以封面为先的跨平台音乐播放器，基于 Flutter 构建。
+**Reverie** is a clean, artwork-first music player for local folders and WebDAV libraries.  
+**Reverie** 是一款简洁、以封面为先的音乐播放器，支持本地文件夹与 WebDAV 曲库。
 
-| Platform 平台 | Status 状态 |
-|---------------|-------------|
-| Android       | ✓           |
-| iOS/iPadOS    | ✓           |
-| macOS         | ✓           |
-| Windows       | ✓           |
-| Web           | Preview 预览 |
+Built with [Flutter](https://flutter.dev). Current version: **1.0.4**.
 
-## Features · 功能特性
+| | |
+|---|---|
+| **Download · 下载** | [GitHub Releases](https://github.com/robeshell/MusicPlayerNext/releases) |
+| **Website · 官网** | [robeshell.github.io/MusicPlayerNext](https://robeshell.github.io/MusicPlayerNext/) |
+| **Changelog · 更新日志** | [CHANGELOG.md](CHANGELOG.md) |
+| **Repository · 仓库** | [github.com/robeshell/MusicPlayerNext](https://github.com/robeshell/MusicPlayerNext) |
 
-- **Artwork-first UI · 封面优先界面** — library, album detail, now playing with lyrics, and a responsive mini player. 包含音乐库、专辑详情、正在播放（含歌词）和响应式迷你播放器。
-- **Local playback · 本地播放** — MP3 and FLAC via `JustAudioPlaybackEngine` (ExoPlayer on Android, AVPlayer on Apple, WinRT on Windows). 通过 `JustAudioPlaybackEngine` 支持 MP3/FLAC 播放。
-- **Remote playback · 远程播放** — authenticated WebDAV sources with byte-range seeking. 支持带认证的 WebDAV 源，具备字节范围寻址能力。
-- **Library management · 音乐库管理** — albums, artists, genres, songs, favorites, recent plays, playback history, and editable playlists. 专辑、艺术家、流派、歌曲、收藏、最近播放、播放历史和可编辑播放列表。
-- **Smart scanning · 智能扫描** — local folder and WebDAV scanners with shared release grouping, multi-disc merging, and deletion-aware rescanning. 本地文件夹和 WebDAV 扫描支持发行分组、多碟合并和感知删除的重新扫描。
-- **Persistence · 持久化存储** — Drift/SQLite v3 repository; user state survives catalog rescans via stable track IDs. 基于 Drift/SQLite v3，用户状态通过稳定曲目 ID 在目录重新扫描后保持不变。
-- **Desktop shortcuts · 桌面快捷键** — keyboard focus, media keys, Tab/arrow/Enter navigation, and a built-in shortcut reference (`Cmd/Ctrl + /`). 键盘焦点、媒体键、Tab/方向键/Enter 导航及内置快捷键参考。
-- **Session resilience · 会话恢复** — playback position checkpoints, background flush, and restoration without autoplay. 播放位置检查点、后台刷新及无自动播放的恢复。
+## Platforms · 平台
 
-## Quick Start · 快速开始
+| Platform | Status |
+|----------|--------|
+| Android | Supported |
+| iOS / iPadOS | Supported |
+| macOS | Supported |
+| Windows | Supported |
+| Web | Preview |
+| Linux | Scaffold only |
+
+## Features · 功能
+
+- **Library** — albums, artists, genres, songs; favorites, history, and editable playlists  
+  **资料库** — 专辑 / 艺人 / 流派 / 歌曲；收藏、历史、可编辑播放列表
+- **Sources** — local folders and authenticated WebDAV with range seeking  
+  **来源** — 本地目录与带认证的 WebDAV（支持 Range 寻址）
+- **Scanning** — shared release grouping, multi-disc albums, incremental and deletion-aware rescan  
+  **扫描** — 发行分组、多碟专辑、增量扫描与感知删除的重扫
+- **Search** — pinyin / initials for Chinese titles, artist & album sections, match-scope filters  
+  **搜索** — 中文拼音 / 首字母、艺人与专辑分区、匹配范围筛选
+- **Playback** — gapless transitions, queue editing, modes (order / loop / shuffle), session restore  
+  **播放** — 无缝切歌、队列编辑、播放模式、会话位置恢复（不自动续播）
+- **Lyrics** — synchronized lyrics; catalog rehydration after restart  
+  **歌词** — 进度同步；重启后从资料库补全队列歌词
+- **UI** — classic or vinyl now-playing; accent colors and skins; desktop shortcuts  
+  **界面** — 经典 / 黑胶播放页；强调色与皮肤；桌面快捷键
+- **Navigation** — tappable artist and album names across library, search, player, and queue  
+  **导航** — 资料库 / 搜索 / 播放页 / 队列中艺人与专辑可点进
+
+## Download · 安装
+
+Prebuilt packages are published on [Releases](https://github.com/robeshell/MusicPlayerNext/releases).
+
+| Asset | Use |
+|-------|-----|
+| `reverie-x.y.z-android.apk` | Android sideload |
+| `reverie-x.y.z-android.aab` | Play Console |
+| `reverie-x.y.z-windows.zip` | Portable Windows |
+| `reverie-x.y.z-windows.msix` | Windows modern install |
+| `reverie-x.y.z-windows-setup.exe` | Windows classic installer |
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
+## Development · 开发
+
+### Requirements · 环境
+
+- Flutter stable (SDK constraint: see `pubspec.yaml`)
+- Platform toolchains for targets you build (Xcode, Android SDK, etc.)
+
+### Run · 运行
 
 ```sh
 flutter pub get
-flutter run -d macos
+flutter run -d macos   # or chrome / windows / <device-id>
 ```
 
-Add a local folder or WebDAV source in Settings, scan it, and play from the library.
-在设置中添加本地文件夹或 WebDAV 源，扫描后即可从音乐库播放。
+In the app: **Settings →** add a local folder or WebDAV source → scan → play from the library.
 
-## Verify · 验证
+> **macOS:** Keychain / signing needs a development-signed app. Sign in with an Apple developer account in Xcode first.  
+> **macOS：** 钥匙串与签名需要开发证书，请先在 Xcode 登录开发者账号。
+
+### Verify · 验证
 
 ```sh
 dart format --output=none --set-exit-if-changed lib test
 flutter analyze
 flutter test
+```
+
+Optional debug builds:
+
+```sh
 flutter build macos --debug
 flutter build apk --debug
 flutter build web
 flutter build ios --simulator --debug
 ```
 
-> macOS Keychain requires a development-signed app — sign in with an Apple developer account in Xcode first.
-> macOS 钥匙串需要开发签名应用 — 请先在 Xcode 中登录 Apple 开发者账号。
+## Release packaging · 发布打包
 
-## Versioned releases · 版本发布
+Do **not** call `flutter build … --release` directly for shipping artifacts.  
+正式发版请使用仓库脚本，不要直接 `flutter build … --release`。
 
-`pubspec.yaml` is the single version source. The user-facing version always has
-three parts (`MAJOR.MINOR.PATCH`); the value after `+` is an internal store build
-number and is not shown in the app.
-
-`pubspec.yaml` 是唯一的版本来源。用户可见版本始终为三段式（`MAJOR.MINOR.PATCH`），`+` 后的值为内部构建号，不会在应用中显示。
-
-Use the release wrapper instead of calling `flutter build ... --release`
-directly. A successful invocation increments the patch and internal build
-numbers once, then writes versioned packages to `dist/`. If a build fails, the
-version change is rolled back.
-
-请使用发布包装工具而非直接调用 `flutter build ... --release`。成功执行后会自动递增补丁版本号和内部构建号，并将版本化包写入 `dist/`。若构建失败，版本变更将自动回滚。
+`pubspec.yaml` is the single version source: `MAJOR.MINOR.PATCH` is user-facing; `+build` is internal.
 
 ```sh
-# Preview the next version without changing files. 预览下个版本号，不修改文件
+# Preview next version (no file changes)
 dart run tool/release.dart --dry-run
 
-# Build every release target supported by the current host. 构建当前主机支持的全部目标
-dart run tool/release.dart
-
-# Or build selected targets with one shared version bump. 或选择目标构建，共享一次版本升级
+# Bump patch once, build selected targets, write dist/
+dart run tool/release.dart android
 dart run tool/release.dart android macos web
-
-# Windows: portable zip + MSIX + Setup.exe (requires Inno Setup 6 for .exe)
-# Windows：便携 zip + MSIX + Setup.exe（.exe 需要安装 Inno Setup 6）
 dart run tool/release.dart windows
+
+# Rebuild current version without bumping
+dart run tool/release.dart android --no-bump
 ```
 
-For a rebuild of the current version, pass `--no-bump`. GitHub releases require
-a three-part tag such as `v1.0.2`; the workflow uses that tag as the package
-version and uploads names such as `reverie-1.0.2-android.apk`.
+Outputs land in `dist/` (e.g. `reverie-1.0.4-android.apk`). On build failure with bump, `pubspec.yaml` is rolled back.
 
-如需重新构建当前版本，请使用 `--no-bump`。GitHub Releases 要求三段式标签（如 `v1.0.2`），工作流将以此标签作为包版本并上传 `reverie-1.0.2-android.apk` 等文件。
+### Windows installers
 
-### Windows installers · Windows 安装包
+| File | Kind |
+|------|------|
+| `reverie-x.y.z-windows.zip` | Portable |
+| `reverie-x.y.z-windows.msix` | MSIX |
+| `reverie-x.y.z-windows-setup.exe` | Inno Setup |
 
-On Windows, `dart run tool/release.dart windows` writes:
-
-Windows 上执行后会在 `dist/` 生成：
-
-| File · 文件 | Kind · 类型 |
-|-------------|-------------|
-| `reverie-x.y.z-windows.zip` | Portable · 绿色版 |
-| `reverie-x.y.z-windows.msix` | MSIX modern installer · 现代安装包 |
-| `reverie-x.y.z-windows-setup.exe` | Classic Setup.exe (Inno) · 传统安装向导 |
-
-MSIX comes from the `msix` dev dependency. Setup.exe needs
-[Inno Setup 6](https://jrsoftware.org/isinfo.php):
-
-MSIX 由 `msix` 开发依赖生成。Setup.exe 需要 [Inno Setup 6](https://jrsoftware.org/isinfo.php)：
+Setup.exe needs [Inno Setup 6](https://jrsoftware.org/isinfo.php):
 
 ```powershell
 winget install --id JRSoftware.InnoSetup -e --accept-package-agreements
 ```
 
-Details: `packaging/windows/README.md` · 详见该目录说明。
+Details: [`packaging/windows/README.md`](packaging/windows/README.md).
 
 ## Website · 网站
 
-The project site is served via GitHub Pages at [robeshell.github.io/MusicPlayerNext](https://robeshell.github.io/MusicPlayerNext/), with the Flutter Web app under `/MusicPlayerNext/app/`.
-项目网站通过 GitHub Pages 部署，Flutter Web 应用位于 `/MusicPlayerNext/app/` 路径下。
+GitHub Pages: [robeshell.github.io/MusicPlayerNext](https://robeshell.github.io/MusicPlayerNext/)  
+Flutter Web app path: `/MusicPlayerNext/app/`.
 
 ```sh
 flutter build web --release --base-href /MusicPlayerNext/app/
@@ -118,10 +142,19 @@ bash tool/build_pages.sh
 
 ## Documentation · 文档
 
-- [Kanban · 看板](docs/KANBAN.md)
-- [Design Foundation · 设计基础](docs/DESIGN_FOUNDATION.md)
-- [Architecture · 架构](docs/ARCHITECTURE.md)
-- [Playback Validation · 播放验证](docs/PLAYBACK_VALIDATION.md)
-- [Audio Format Matrix · 音频格式矩阵](docs/AUDIO_FORMAT_MATRIX.md)
-- [WebDAV Fixture · WebDAV 测试夹具](docs/WEBDAV_FIXTURE.md)
+| Doc | Description |
+|-----|-------------|
+| [CHANGELOG.md](CHANGELOG.md) | Version history · 更新日志 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture · 架构 |
+| [docs/DESIGN_FOUNDATION.md](docs/DESIGN_FOUNDATION.md) | Design foundation · 设计基础 |
+| [docs/KANBAN.md](docs/KANBAN.md) | Development kanban · 开发看板 |
+| [docs/PLAYBACK_VALIDATION.md](docs/PLAYBACK_VALIDATION.md) | Playback validation · 播放验证 |
+| [docs/AUDIO_FORMAT_MATRIX.md](docs/AUDIO_FORMAT_MATRIX.md) | Format matrix · 音频格式 |
+| [docs/WEBDAV_FIXTURE.md](docs/WEBDAV_FIXTURE.md) | WebDAV test fixture · 测试夹具 |
 
+More design notes live under [`docs/`](docs/).
+
+## License · 许可
+
+No license file is published in this repository yet. All rights reserved unless stated otherwise.  
+仓库尚未放置开源许可证文件；在另行声明前保留所有权利。
