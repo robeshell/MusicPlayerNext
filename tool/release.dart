@@ -213,12 +213,19 @@ Future<void> _buildPlatform(
       final output = File(
         '${dist.path}/reverie-${version.name}-windows.zip',
       ).absolute.path;
-      await _run('powershell', [
-        '-NoProfile',
-        '-Command',
-        'Compress-Archive -Force -Path '
-            '"build/windows/x64/runner/Release/*" -DestinationPath "$output"',
+      if (File(output).existsSync()) await File(output).delete();
+      // Prefer tar (shipped with Windows 10+). Compress-Archive can fail when
+      // the Microsoft.PowerShell.Archive module fails to autoload.
+      await _run('tar', [
+        '-a',
+        '-c',
+        '-f',
+        output,
+        '-C',
+        'build/windows/x64/runner/Release',
+        '.',
       ]);
+      stdout.writeln('Created $output');
     case 'web':
       await _flutterBuild(
         'web',
@@ -273,20 +280,34 @@ Future<void> _run(
   List<String> arguments, {
   String? workingDirectory,
 }) async {
-  stdout.writeln('> $executable ${arguments.join(' ')}');
+  final resolved = _resolveExecutable(executable);
+  stdout.writeln('> $resolved ${arguments.join(' ')}');
+  // On Windows, .bat launchers (flutter.bat) and PATH lookups need a shell.
   final process = await Process.start(
-    executable,
+    resolved,
     arguments,
     workingDirectory: workingDirectory,
     mode: ProcessStartMode.inheritStdio,
+    runInShell: Platform.isWindows,
   );
   final code = await process.exitCode;
   if (code != 0) {
     throw ProcessException(
-      executable,
+      resolved,
       arguments,
       'Exited with code $code',
       code,
     );
   }
+}
+
+/// Resolve Windows-friendly executable names for Process.start.
+String _resolveExecutable(String executable) {
+  if (!Platform.isWindows) return executable;
+  return switch (executable) {
+    'flutter' => 'flutter.bat',
+    'dart' => 'dart.bat',
+    'powershell' => 'powershell.exe',
+    _ => executable,
+  };
 }
