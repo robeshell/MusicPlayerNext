@@ -13,7 +13,6 @@ import 'artwork_image_provider.dart';
 import 'playback_status_badge.dart';
 import 'progress_scrubber.dart';
 import 'sound_components.dart';
-import 'sound_metadata_line.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({
@@ -24,8 +23,6 @@ class MiniPlayer extends StatelessWidget {
     this.docked = false,
     this.embedded = false,
     this.onOpenQueue,
-    this.onOpenAlbum,
-    this.onOpenArtist,
     super.key,
   });
 
@@ -36,8 +33,6 @@ class MiniPlayer extends StatelessWidget {
   final bool docked;
   final bool embedded;
   final VoidCallback? onOpenQueue;
-  final ValueChanged<Album>? onOpenAlbum;
-  final ValueChanged<String>? onOpenArtist;
 
   @override
   Widget build(BuildContext context) {
@@ -74,8 +69,6 @@ class MiniPlayer extends StatelessWidget {
                         userState: userState,
                         onOpen: onOpen,
                         onOpenQueue: onOpenQueue,
-                        onOpenAlbum: onOpenAlbum,
-                        onOpenArtist: onOpenArtist,
                         position: position,
                         duration: duration,
                       )
@@ -88,8 +81,6 @@ class MiniPlayer extends StatelessWidget {
                         userState: userState,
                         onOpen: onOpen,
                         onOpenQueue: onOpenQueue,
-                        onOpenAlbum: onOpenAlbum,
-                        onOpenArtist: onOpenArtist,
                         position: position,
                         duration: duration,
                       )
@@ -100,8 +91,6 @@ class MiniPlayer extends StatelessWidget {
                         playback: playback,
                         onOpen: onOpen,
                         onOpenQueue: onOpenQueue,
-                        onOpenAlbum: onOpenAlbum,
-                        onOpenArtist: onOpenArtist,
                         position: position,
                         duration: duration,
                         compact: compact,
@@ -253,8 +242,6 @@ class _WideMiniPlayer extends StatelessWidget {
     required this.userState,
     required this.onOpen,
     required this.onOpenQueue,
-    this.onOpenAlbum,
-    this.onOpenArtist,
     required this.position,
     required this.duration,
   });
@@ -266,83 +253,84 @@ class _WideMiniPlayer extends StatelessWidget {
   final LibraryUserStateController? userState;
   final VoidCallback onOpen;
   final VoidCallback? onOpenQueue;
-  final ValueChanged<Album>? onOpenAlbum;
-  final ValueChanged<String>? onOpenArtist;
   final Duration position;
   final Duration duration;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _OpenArtwork(album: album, onOpen: onOpen, dimension: 58),
-          const SizedBox(width: 13),
-          Expanded(
-            flex: 34,
-            child: _TrackIdentity(
-              track: track,
-              album: album,
-              visual: visual,
-              onOpen: onOpen,
-              showBadges: true,
-              onOpenAlbum: onOpenAlbum,
-              onOpenArtist: onOpenArtist,
+    // Blank chrome opens now-playing; transport / action buttons keep their
+    // own handlers and win the gesture arena.
+    return GestureDetector(
+      key: const ValueKey('mini-player-open-now-playing'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onOpen,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            _MiniArtwork(album: album, dimension: 58),
+            const SizedBox(width: 13),
+            Expanded(
+              flex: 34,
+              child: _TrackIdentity(
+                track: track,
+                visual: visual,
+                showBadges: true,
+              ),
             ),
-          ),
-          const SizedBox(width: 22),
-          Expanded(
-            flex: 42,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+            const SizedBox(width: 22),
+            Expanded(
+              flex: 42,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _TransportControls(playback: playback, visual: visual),
+                    _MiniProgressRow(
+                      playback: playback,
+                      position: position,
+                      duration: duration,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 18),
+            Container(width: 1, height: 38, color: context.soundDivider),
+            const SizedBox(width: 9),
+            SizedBox(
+              width: 158,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  _TransportControls(playback: playback, visual: visual),
-                  _MiniProgressRow(
-                    playback: playback,
-                    position: position,
-                    duration: duration,
+                  if (userState case final state?)
+                    _MiniIconButton(
+                      icon: state.isFavorite(track.id)
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: state.isFavorite(track.id)
+                          ? SoundColors.accent
+                          : null,
+                      tooltip: state.isFavorite(track.id) ? '取消收藏' : '收藏歌曲',
+                      onTap: () => unawaited(state.toggleFavorite(track)),
+                    ),
+                  _VolumeControl(playback: playback),
+                  _MiniIconButton(
+                    icon: Icons.lyrics_outlined,
+                    tooltip: '打开歌词',
+                    onTap: onOpen,
+                  ),
+                  _MiniIconButton(
+                    icon: Icons.queue_music_rounded,
+                    tooltip: '打开播放队列',
+                    onTap: onOpenQueue ?? onOpen,
                   ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 18),
-          Container(width: 1, height: 38, color: context.soundDivider),
-          const SizedBox(width: 9),
-          SizedBox(
-            width: 158,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (userState case final state?)
-                  _MiniIconButton(
-                    icon: state.isFavorite(track.id)
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    color: state.isFavorite(track.id)
-                        ? SoundColors.accent
-                        : null,
-                    tooltip: state.isFavorite(track.id) ? '取消收藏' : '收藏歌曲',
-                    onTap: () => unawaited(state.toggleFavorite(track)),
-                  ),
-                _VolumeControl(playback: playback),
-                _MiniIconButton(
-                  icon: Icons.lyrics_outlined,
-                  tooltip: '打开歌词',
-                  onTap: onOpen,
-                ),
-                _MiniIconButton(
-                  icon: Icons.queue_music_rounded,
-                  tooltip: '打开播放队列',
-                  onTap: onOpenQueue ?? onOpen,
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -357,8 +345,6 @@ class _DockedMiniPlayer extends StatelessWidget {
     required this.userState,
     required this.onOpen,
     required this.onOpenQueue,
-    this.onOpenAlbum,
-    this.onOpenArtist,
     required this.position,
     required this.duration,
   });
@@ -370,8 +356,6 @@ class _DockedMiniPlayer extends StatelessWidget {
   final LibraryUserStateController? userState;
   final VoidCallback onOpen;
   final VoidCallback? onOpenQueue;
-  final ValueChanged<Album>? onOpenAlbum;
-  final ValueChanged<String>? onOpenArtist;
   final Duration position;
   final Duration duration;
 
@@ -385,51 +369,55 @@ class _DockedMiniPlayer extends StatelessWidget {
         return Stack(
           clipBehavior: Clip.hardEdge,
           children: [
+            // Whole bar opens now-playing; nested buttons win the arena.
             Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 6, 16, 6),
-                child: Row(
-                  children: [
-                    _OpenArtwork(album: album, onOpen: onOpen, dimension: 48),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: identityWidth,
-                      child: _TrackIdentity(
-                        track: track,
-                    album: album,
-                        visual: visual,
-                        onOpen: onOpen,
-                        showBadges: false,
-                    onOpenAlbum: onOpenAlbum,
-                    onOpenArtist: onOpenArtist,
+              child: GestureDetector(
+                key: const ValueKey('mini-player-open-now-playing'),
+                behavior: HitTestBehavior.opaque,
+                onTap: onOpen,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 6, 16, 6),
+                  child: Row(
+                    children: [
+                      _MiniArtwork(album: album, dimension: 48),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: identityWidth,
+                        child: _TrackIdentity(
+                          track: track,
+                          visual: visual,
+                          showBadges: false,
+                        ),
                       ),
-                    ),
-                    if (userState case final state?) ...[
-                      const SizedBox(width: 5),
+                      if (userState case final state?) ...[
+                        const SizedBox(width: 5),
+                        _MiniIconButton(
+                          icon: state.isFavorite(track.id)
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: state.isFavorite(track.id)
+                              ? SoundColors.accent
+                              : null,
+                          tooltip: state.isFavorite(track.id)
+                              ? '取消收藏'
+                              : '收藏歌曲',
+                          onTap: () => unawaited(state.toggleFavorite(track)),
+                        ),
+                      ],
+                      const Spacer(),
+                      _VolumeControl(playback: playback),
                       _MiniIconButton(
-                        icon: state.isFavorite(track.id)
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: state.isFavorite(track.id)
-                            ? SoundColors.accent
-                            : null,
-                        tooltip: state.isFavorite(track.id) ? '取消收藏' : '收藏歌曲',
-                        onTap: () => unawaited(state.toggleFavorite(track)),
+                        icon: Icons.lyrics_outlined,
+                        tooltip: '打开歌词',
+                        onTap: onOpen,
+                      ),
+                      _MiniIconButton(
+                        icon: Icons.queue_music_rounded,
+                        tooltip: '打开播放队列',
+                        onTap: onOpenQueue ?? onOpen,
                       ),
                     ],
-                    const Spacer(),
-                    _VolumeControl(playback: playback),
-                    _MiniIconButton(
-                      icon: Icons.lyrics_outlined,
-                      tooltip: '打开歌词',
-                      onTap: onOpen,
-                    ),
-                    _MiniIconButton(
-                      icon: Icons.queue_music_rounded,
-                      tooltip: '打开播放队列',
-                      onTap: onOpenQueue ?? onOpen,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -478,8 +466,6 @@ class _CondensedMiniPlayer extends StatelessWidget {
     required this.playback,
     required this.onOpen,
     required this.onOpenQueue,
-    this.onOpenAlbum,
-    this.onOpenArtist,
     required this.position,
     required this.duration,
     required this.compact,
@@ -493,8 +479,6 @@ class _CondensedMiniPlayer extends StatelessWidget {
   final SoundPlaybackController playback;
   final VoidCallback onOpen;
   final VoidCallback? onOpenQueue;
-  final ValueChanged<Album>? onOpenAlbum;
-  final ValueChanged<String>? onOpenArtist;
   final Duration position;
   final Duration duration;
   final bool compact;
@@ -508,55 +492,57 @@ class _CondensedMiniPlayer extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: Padding(
-            padding: EdgeInsets.all(compact ? 6 : (availableWidth < 800 ? 8 : 14)),
-            child: Row(
-              children: [
-                _OpenArtwork(
-                  album: album,
-                  onOpen: onOpen,
-                  dimension: compact ? 44 : 50,
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: _TrackIdentity(
-                    track: track,
+          child: GestureDetector(
+            key: const ValueKey('mini-player-open-now-playing'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onOpen,
+            child: Padding(
+              padding: EdgeInsets.all(
+                compact ? 6 : (availableWidth < 800 ? 8 : 14),
+              ),
+              child: Row(
+                children: [
+                  _MiniArtwork(
                     album: album,
-                    visual: visual,
-                    onOpen: onOpen,
-                    showBadges: false,
-                    onOpenAlbum: onOpenAlbum,
-                    onOpenArtist: onOpenArtist,
+                    dimension: compact ? 44 : 50,
                   ),
-                ),
-                if (showPrevious)
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: _TrackIdentity(
+                      track: track,
+                      visual: visual,
+                      showBadges: false,
+                    ),
+                  ),
+                  if (showPrevious)
+                    _MiniIconButton(
+                      icon: Icons.skip_previous_rounded,
+                      tooltip: '上一首',
+                      onTap: playback.previous,
+                    ),
                   _MiniIconButton(
-                    icon: Icons.skip_previous_rounded,
-                    tooltip: '上一首',
-                    onTap: playback.previous,
+                    key: const ValueKey('mini-player-playback-toggle'),
+                    icon: visual.primaryIcon,
+                    tooltip: visual.primaryTooltip,
+                    onTap: visual.primaryEnabled ? playback.toggle : null,
+                    prominent: !embedded,
+                    color: embedded ? SoundColors.accent : null,
+                    size: compact ? (embedded ? 25 : 22) : 23,
                   ),
-                _MiniIconButton(
-                  key: const ValueKey('mini-player-playback-toggle'),
-                  icon: visual.primaryIcon,
-                  tooltip: visual.primaryTooltip,
-                  onTap: visual.primaryEnabled ? playback.toggle : null,
-                  prominent: !embedded,
-                  color: embedded ? SoundColors.accent : null,
-                  size: compact ? (embedded ? 25 : 22) : 23,
-                ),
-                _MiniIconButton(
-                  icon: Icons.skip_next_rounded,
-                  tooltip: '下一首',
-                  onTap: playback.next,
-                  size: 23,
-                ),
-                if (showQueue)
                   _MiniIconButton(
-                    icon: Icons.queue_music_rounded,
-                    tooltip: '打开播放队列',
-                    onTap: onOpenQueue ?? onOpen,
+                    icon: Icons.skip_next_rounded,
+                    tooltip: '下一首',
+                    onTap: playback.next,
+                    size: 23,
                   ),
-              ],
+                  if (showQueue)
+                    _MiniIconButton(
+                      icon: Icons.queue_music_rounded,
+                      tooltip: '打开播放队列',
+                      onTap: onOpenQueue ?? onOpen,
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -583,29 +569,20 @@ class _CondensedMiniPlayer extends StatelessWidget {
   }
 }
 
-class _OpenArtwork extends StatelessWidget {
-  const _OpenArtwork({
+class _MiniArtwork extends StatelessWidget {
+  const _MiniArtwork({
     required this.album,
-    required this.onOpen,
     required this.dimension,
   });
 
   final Album album;
-  final VoidCallback onOpen;
   final double dimension;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: '打开正在播放',
-      child: InkWell(
-        onTap: onOpen,
-        borderRadius: BorderRadius.circular(8),
-        child: SizedBox.square(
-          dimension: dimension,
-          child: AlbumArt(album: album, borderRadius: 7),
-        ),
-      ),
+    return SizedBox.square(
+      dimension: dimension,
+      child: AlbumArt(album: album, borderRadius: 7),
     );
   }
 }
@@ -613,54 +590,38 @@ class _OpenArtwork extends StatelessWidget {
 class _TrackIdentity extends StatelessWidget {
   const _TrackIdentity({
     required this.track,
-    required this.album,
     required this.visual,
-    required this.onOpen,
     required this.showBadges,
-    this.onOpenAlbum,
-    this.onOpenArtist,
   });
 
   final Track track;
-  final Album album;
   final PlaybackVisualState visual;
-  final VoidCallback onOpen;
   final bool showBadges;
-  final ValueChanged<Album>? onOpenAlbum;
-  final ValueChanged<String>? onOpenArtist;
 
   @override
   Widget build(BuildContext context) {
     final metaSize = showBadges ? 12.0 : 11.0;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: onOpen,
-            borderRadius: BorderRadius.circular(6),
-            child: Text(
-              track.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.soundPrimaryText,
-                fontSize: showBadges ? 15 : 13,
-                fontWeight: FontWeight.w800,
-              ),
+          Text(
+            track.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: context.soundPrimaryText,
+              fontSize: showBadges ? 15 : 13,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 2),
-          SoundMetadataLine(
-            artist: track.artist,
-            album: track.albumTitle,
-            separator: ' — ',
-            onOpenArtist: onOpenArtist == null
-                ? null
-                : () => onOpenArtist!(track.artist),
-            onOpenAlbum: onOpenAlbum == null ? null : () => onOpenAlbum!(album),
+          Text(
+            '${track.artist} — ${track.albumTitle}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.soundSecondaryText,
               fontSize: metaSize,

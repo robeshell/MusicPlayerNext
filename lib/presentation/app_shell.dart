@@ -1151,8 +1151,6 @@ class _AppShellState extends State<AppShell>
                         docked: true,
                         onOpen: _openNowPlaying,
                         onOpenQueue: _openQueue,
-                        onOpenAlbum: _openAlbumFromPlayer,
-                        onOpenArtist: _openArtistFromPlayer,
                       ),
                     )
                   : _CompactPlaybackDock(
@@ -1163,8 +1161,6 @@ class _AppShellState extends State<AppShell>
                           _selectSection(AppSection.values[index]),
                       onOpenNowPlaying: _openNowPlaying,
                       onOpenQueue: _openQueue,
-                      onOpenAlbum: _openAlbumFromPlayer,
-                      onOpenArtist: _openArtistFromPlayer,
                     ),
             );
             if (desktop) return shell;
@@ -1899,8 +1895,6 @@ class _CompactPlaybackDock extends StatelessWidget {
     required this.onDestinationSelected,
     required this.onOpenNowPlaying,
     required this.onOpenQueue,
-    this.onOpenAlbum,
-    this.onOpenArtist,
   });
 
   final SoundPlaybackController playback;
@@ -1909,8 +1903,6 @@ class _CompactPlaybackDock extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
   final VoidCallback onOpenNowPlaying;
   final VoidCallback onOpenQueue;
-  final ValueChanged<Album>? onOpenAlbum;
-  final ValueChanged<String>? onOpenArtist;
 
   static const _destinations = [
     SoundNavigationItem(
@@ -1954,8 +1946,6 @@ class _CompactPlaybackDock extends StatelessWidget {
                   embedded: true,
                   onOpen: onOpenNowPlaying,
                   onOpenQueue: onOpenQueue,
-                  onOpenAlbum: onOpenAlbum,
-                  onOpenArtist: onOpenArtist,
                 ),
               ],
               SoundNavigationBar(
