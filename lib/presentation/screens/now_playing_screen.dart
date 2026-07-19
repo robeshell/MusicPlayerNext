@@ -22,6 +22,7 @@ import '../widgets/playback_status_badge.dart';
 import '../widgets/playback_queue_sheet.dart';
 import '../widgets/progress_scrubber.dart';
 import '../widgets/sound_components.dart';
+import '../widgets/sound_metadata_line.dart';
 import '../widgets/vinyl_record_art.dart';
 
 /// Whether now-playing should paint custom window drag chrome.
@@ -40,6 +41,8 @@ class NowPlayingScreen extends StatelessWidget {
     this.openLyricsByDefault = false,
     this.isActive = true,
     this.onClose,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     this.onVerticalDragStart,
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
@@ -60,6 +63,8 @@ class NowPlayingScreen extends StatelessWidget {
   /// position updates and a full-screen repaint on the same frames.
   final bool isActive;
   final VoidCallback? onClose;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
   final GestureDragStartCallback? onVerticalDragStart;
   final GestureDragUpdateCallback? onVerticalDragUpdate;
   final GestureDragEndCallback? onVerticalDragEnd;
@@ -189,6 +194,8 @@ class NowPlayingScreen extends StatelessWidget {
                           style: style,
                           openLyricsByDefault: openLyricsByDefault,
                           isActive: isActive,
+                          onOpenAlbum: onOpenAlbum,
+                          onOpenArtist: onOpenArtist,
                           onVerticalDragStart: onVerticalDragStart,
                           onVerticalDragUpdate: onVerticalDragUpdate,
                           onVerticalDragEnd: onVerticalDragEnd,
@@ -202,6 +209,8 @@ class NowPlayingScreen extends StatelessWidget {
                         userState: userState,
                         style: style,
                         isActive: isActive,
+                        onOpenAlbum: onOpenAlbum,
+                        onOpenArtist: onOpenArtist,
                       );
                     },
                   ),
@@ -309,6 +318,8 @@ class _WideNowPlaying extends StatefulWidget {
     required this.style,
     this.userState,
     this.isActive = true,
+    this.onOpenAlbum,
+    this.onOpenArtist,
   });
 
   final Album album;
@@ -317,6 +328,8 @@ class _WideNowPlaying extends StatefulWidget {
   final NowPlayingStyle style;
   final LibraryUserStateController? userState;
   final bool isActive;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
 
   @override
   State<_WideNowPlaying> createState() => _WideNowPlayingState();
@@ -392,6 +405,8 @@ class _WideNowPlayingState extends State<_WideNowPlaying> {
                           style: widget.style,
                           userState: widget.userState,
                           isActive: widget.isActive,
+                          onOpenAlbum: widget.onOpenAlbum,
+                          onOpenArtist: widget.onOpenArtist,
                           artSize: artSize,
                         ),
                       ),
@@ -581,6 +596,8 @@ class _CompactNowPlaying extends StatefulWidget {
     this.openLyricsByDefault = false,
     this.userState,
     this.isActive = true,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     this.onVerticalDragStart,
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
@@ -594,6 +611,8 @@ class _CompactNowPlaying extends StatefulWidget {
   final bool openLyricsByDefault;
   final LibraryUserStateController? userState;
   final bool isActive;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
   final GestureDragStartCallback? onVerticalDragStart;
   final GestureDragUpdateCallback? onVerticalDragUpdate;
   final GestureDragEndCallback? onVerticalDragEnd;
@@ -721,6 +740,8 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
               playback: widget.playback,
               userState: widget.userState,
               onToggleLyrics: () => setState(() => _showLyrics = false),
+              onOpenAlbum: widget.onOpenAlbum,
+              onOpenArtist: widget.onOpenArtist,
               onVerticalDragStart: widget.onVerticalDragStart,
               onVerticalDragUpdate: widget.onVerticalDragUpdate,
               onVerticalDragEnd: widget.onVerticalDragEnd,
@@ -748,6 +769,8 @@ class _CompactNowPlayingState extends State<_CompactNowPlaying> {
                         track: widget.track,
                         playback: widget.playback,
                         style: widget.style,
+                        onOpenAlbum: widget.onOpenAlbum,
+                        onOpenArtist: widget.onOpenArtist,
                         userState: widget.userState,
                         isActive: widget.isActive,
                         compactLayout: true,
@@ -774,6 +797,8 @@ class _PlayerColumn extends StatelessWidget {
     this.artSize,
     this.compactLayout = false,
     this.onToggleLyrics,
+    this.onOpenAlbum,
+    this.onOpenArtist,
   });
 
   final Album album;
@@ -785,6 +810,8 @@ class _PlayerColumn extends StatelessWidget {
   final double? artSize;
   final bool compactLayout;
   final VoidCallback? onToggleLyrics;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
 
   @override
   Widget build(BuildContext context) {
@@ -862,11 +889,26 @@ class _PlayerColumn extends StatelessWidget {
         SizedBox(height: compactLayout ? 8 : 5),
         _TrackChangeTransition(
           trackId: track.id,
-          child: Text(
-            '${track.artist} — ${track.albumTitle}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          child: SoundMetadataLine(
+            artist: track.artist,
+            album: track.albumTitle,
+            separator: ' — ',
+            onOpenArtist: onOpenArtist == null
+                ? null
+                : () => onOpenArtist!(track.artist),
+            onOpenAlbum: onOpenAlbum == null
+                ? null
+                : () => onOpenAlbum!(album),
             style: TextStyle(color: context.soundSecondaryText, fontSize: 13),
+            linkStyle: TextStyle(
+              color: context.soundSecondaryText,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              decoration: TextDecoration.underline,
+              decorationColor: context.soundSecondaryText.withValues(
+                alpha: 0.32,
+              ),
+            ),
           ),
         ),
         SizedBox(height: compactLayout ? 26 : 20),
@@ -1019,6 +1061,8 @@ class _CompactLyricsPlayer extends StatelessWidget {
     required this.playback,
     required this.userState,
     required this.onToggleLyrics,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     required this.onVerticalDragStart,
     required this.onVerticalDragUpdate,
     required this.onVerticalDragEnd,
@@ -1031,6 +1075,8 @@ class _CompactLyricsPlayer extends StatelessWidget {
   final SoundPlaybackController playback;
   final LibraryUserStateController? userState;
   final VoidCallback onToggleLyrics;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
   final GestureDragStartCallback? onVerticalDragStart;
   final GestureDragUpdateCallback? onVerticalDragUpdate;
   final GestureDragEndCallback? onVerticalDragEnd;
@@ -1080,13 +1126,27 @@ class _CompactLyricsPlayer extends StatelessWidget {
                       const SizedBox(height: 3),
                       _TrackChangeTransition(
                         trackId: track.id,
-                        child: Text(
-                          '${track.artist} — ${track.albumTitle}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: SoundMetadataLine(
+                          artist: track.artist,
+                          album: track.albumTitle,
+                          separator: ' — ',
+                          onOpenArtist: onOpenArtist == null
+                              ? null
+                              : () => onOpenArtist!(track.artist),
+                          onOpenAlbum: onOpenAlbum == null
+                              ? null
+                              : () => onOpenAlbum!(album),
                           style: TextStyle(
                             color: context.soundSecondaryText,
                             fontSize: 12,
+                          ),
+                          linkStyle: TextStyle(
+                            color: context.soundSecondaryText,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            decoration: TextDecoration.underline,
+                            decorationColor: context.soundSecondaryText
+                                .withValues(alpha: 0.32),
                           ),
                         ),
                       ),

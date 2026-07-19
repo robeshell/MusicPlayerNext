@@ -1,19 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:pinyin/pinyin.dart';
 
 import '../../domain/library_models.dart';
 import 'library_catalog_controller.dart';
 
 enum LibrarySearchStatus { idle, searching, ready, error }
 
+/// Match scope for the track query — not result entity types.
 enum LibrarySearchField { all, title, album, trackArtist, albumArtist, genre }
 
 extension LibrarySearchFieldLabel on LibrarySearchField {
   String get label => switch (this) {
     LibrarySearchField.all => '全部',
-    LibrarySearchField.title => '歌曲',
-    LibrarySearchField.album => '专辑',
+    LibrarySearchField.title => '歌名',
+    LibrarySearchField.album => '专辑名',
     LibrarySearchField.trackArtist => '歌曲艺人',
     LibrarySearchField.albumArtist => '专辑艺人',
     LibrarySearchField.genre => '流派',
@@ -34,6 +36,7 @@ extension LibrarySearchSortLabel on LibrarySearchSort {
 class LibrarySearchDocument {
   LibrarySearchDocument({
     required this.trackId,
+    required this.albumId,
     required String title,
     required String trackArtist,
     required String albumTitle,
@@ -43,14 +46,35 @@ class LibrarySearchDocument {
        normalizedTrackArtist = _normalized(trackArtist),
        normalizedAlbumTitle = _normalized(albumTitle),
        normalizedAlbumArtist = _normalized(albumArtist),
-       normalizedGenre = _normalized(genre);
+       normalizedGenre = _normalized(genre),
+       titlePinyin = _pinyinKey(title),
+       titleInitials = _initialsKey(title),
+       trackArtistPinyin = _pinyinKey(trackArtist),
+       trackArtistInitials = _initialsKey(trackArtist),
+       albumTitlePinyin = _pinyinKey(albumTitle),
+       albumTitleInitials = _initialsKey(albumTitle),
+       albumArtistPinyin = _pinyinKey(albumArtist),
+       albumArtistInitials = _initialsKey(albumArtist),
+       genrePinyin = _pinyinKey(genre),
+       genreInitials = _initialsKey(genre);
 
   final String trackId;
+  final String albumId;
   final String normalizedTitle;
   final String normalizedTrackArtist;
   final String normalizedAlbumTitle;
   final String normalizedAlbumArtist;
   final String normalizedGenre;
+  final String titlePinyin;
+  final String titleInitials;
+  final String trackArtistPinyin;
+  final String trackArtistInitials;
+  final String albumTitlePinyin;
+  final String albumTitleInitials;
+  final String albumArtistPinyin;
+  final String albumArtistInitials;
+  final String genrePinyin;
+  final String genreInitials;
 }
 
 class LibrarySearchRequest {
@@ -76,8 +100,40 @@ class LibrarySearchHit {
   final Album album;
 }
 
+class LibrarySearchArtistHit {
+  const LibrarySearchArtistHit({
+    required this.name,
+    required this.collection,
+    required this.trackCount,
+  });
+
+  final String name;
+  final LibraryCollection collection;
+  final int trackCount;
+}
+
+class LibrarySearchAlbumHit {
+  const LibrarySearchAlbumHit({
+    required this.album,
+    required this.trackCount,
+  });
+
+  final Album album;
+  final int trackCount;
+}
+
+class LibrarySearchMatchSet {
+  const LibrarySearchMatchSet({
+    required this.trackIds,
+    required this.truncated,
+  });
+
+  final List<String> trackIds;
+  final bool truncated;
+}
+
 typedef LibrarySearchRunner =
-    Future<List<String>> Function(LibrarySearchRequest request);
+    Future<LibrarySearchMatchSet> Function(LibrarySearchRequest request);
 
 class LibrarySearchController extends ChangeNotifier {
   LibrarySearchController({
@@ -93,14 +149,23 @@ class LibrarySearchController extends ChangeNotifier {
   final Duration debounce;
   final LibrarySearchRunner _runner;
 
+  static const int resultLimit = 200;
+  static const int maxRecentQueries = 8;
+  static const int maxEntityHits = 6;
+
   LibrarySearchStatus _status = LibrarySearchStatus.idle;
   String _query = '';
   LibrarySearchField _field = LibrarySearchField.all;
   LibrarySearchSort _sort = LibrarySearchSort.relevance;
   List<LibrarySearchHit> _hits = const [];
+  List<LibrarySearchArtistHit> _artistHits = const [];
+  List<LibrarySearchAlbumHit> _albumHits = const [];
   List<LibrarySearchDocument> _documents = const [];
   Map<String, LibrarySearchHit> _hitsByTrackId = const {};
+  Map<String, Album> _albumsById = const {};
   List<Album>? _catalogAlbums;
+  final List<String> _recentQueries = [];
+  bool _truncated = false;
   Timer? _timer;
   int _generation = 0;
   String? _errorMessage;
@@ -111,6 +176,10 @@ class LibrarySearchController extends ChangeNotifier {
   LibrarySearchField get field => _field;
   LibrarySearchSort get sort => _sort;
   List<LibrarySearchHit> get hits => _hits;
+  List<LibrarySearchArtistHit> get artistHits => _artistHits;
+  List<LibrarySearchAlbumHit> get albumHits => _albumHits;
+  List<String> get recentQueries => List.unmodifiable(_recentQueries);
+  bool get truncated => _truncated;
   String? get errorMessage => _errorMessage;
 
   void setQuery(String value) {
@@ -133,6 +202,10 @@ class LibrarySearchController extends ChangeNotifier {
     _scheduleSearch();
   }
 
+  void applyRecentQuery(String value) {
+    setQuery(value);
+  }
+
   void _handleCatalogChanged() {
     if (identical(_catalogAlbums, catalog.albums)) return;
     _refreshDocuments();
@@ -144,11 +217,14 @@ class LibrarySearchController extends ChangeNotifier {
     _catalogAlbums = albums;
     final documents = <LibrarySearchDocument>[];
     final hits = <String, LibrarySearchHit>{};
+    final albumsById = <String, Album>{};
     for (final album in albums) {
+      albumsById[album.id] = album;
       for (final track in album.tracks) {
         documents.add(
           LibrarySearchDocument(
             trackId: track.id,
+            albumId: album.id,
             title: track.title,
             trackArtist: track.artist,
             albumTitle: album.title,
@@ -161,6 +237,7 @@ class LibrarySearchController extends ChangeNotifier {
     }
     _documents = List.unmodifiable(documents);
     _hitsByTrackId = Map.unmodifiable(hits);
+    _albumsById = Map.unmodifiable(albumsById);
   }
 
   void _scheduleSearch() {
@@ -169,6 +246,9 @@ class LibrarySearchController extends ChangeNotifier {
     if (_query.trim().isEmpty) {
       _status = LibrarySearchStatus.idle;
       _hits = const [];
+      _artistHits = const [];
+      _albumHits = const [];
+      _truncated = false;
       _errorMessage = null;
       notifyListeners();
       return;
@@ -182,26 +262,151 @@ class LibrarySearchController extends ChangeNotifier {
 
   Future<void> _search(int generation) async {
     try {
-      final ids = await _runner(
+      final matchSet = await _runner(
         LibrarySearchRequest(
           documents: _documents,
           query: _query,
           field: _field,
           sort: _sort,
+          limit: resultLimit,
         ),
       );
       if (_disposed || generation != _generation) return;
-      _hits = List.unmodifiable([for (final id in ids) ?_hitsByTrackId[id]]);
+      final trackHits = <LibrarySearchHit>[
+        for (final id in matchSet.trackIds)
+          if (_hitsByTrackId[id] case final hit?) hit,
+      ];
+      _hits = List.unmodifiable(trackHits);
+      _truncated = matchSet.truncated;
+      _artistHits = List.unmodifiable(
+        _buildArtistHits(trackHits, _query),
+      );
+      _albumHits = List.unmodifiable(
+        _buildAlbumHits(trackHits, _query),
+      );
       _status = LibrarySearchStatus.ready;
       _errorMessage = null;
+      _rememberQuery(_query);
       notifyListeners();
     } catch (error) {
       if (_disposed || generation != _generation) return;
       _hits = const [];
+      _artistHits = const [];
+      _albumHits = const [];
+      _truncated = false;
       _status = LibrarySearchStatus.error;
       _errorMessage = error.toString();
       notifyListeners();
     }
+  }
+
+  void _rememberQuery(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return;
+    _recentQueries.removeWhere(
+      (item) => item.toLowerCase() == value.toLowerCase(),
+    );
+    _recentQueries.insert(0, value);
+    if (_recentQueries.length > maxRecentQueries) {
+      _recentQueries.removeRange(maxRecentQueries, _recentQueries.length);
+    }
+  }
+
+  List<LibrarySearchArtistHit> _buildArtistHits(
+    List<LibrarySearchHit> trackHits,
+    String query,
+  ) {
+    final albums = catalog.albums;
+    final terms = _normalized(query).split(' ').where((t) => t.isNotEmpty);
+    final counts = <String, int>{};
+    final names = <String, String>{};
+    for (final hit in trackHits) {
+      for (final name in {hit.track.artist, hit.album.artist}) {
+        final cleaned = name.trim();
+        if (cleaned.isEmpty) continue;
+        if (!_textMatchesAny(cleaned, terms)) continue;
+        final key = cleaned.toLowerCase();
+        counts[key] = (counts[key] ?? 0) + 1;
+        names.putIfAbsent(key, () => cleaned);
+      }
+    }
+    // Also surface pure artist-name matches even if field filter is narrow —
+    // when the filter is trackArtist/albumArtist/all and catalogs have them.
+    if (_field == LibrarySearchField.all ||
+        _field == LibrarySearchField.trackArtist ||
+        _field == LibrarySearchField.albumArtist) {
+      for (final collection in buildArtistCollections(albums)) {
+        if (!_textMatchesAny(collection.title, terms)) continue;
+        final key = collection.title.toLowerCase();
+        counts.putIfAbsent(key, () => collection.tracks.length);
+        names.putIfAbsent(key, () => collection.title);
+      }
+    }
+
+    final ranked = counts.entries.toList()
+      ..sort((left, right) {
+        final byCount = right.value.compareTo(left.value);
+        if (byCount != 0) return byCount;
+        return left.key.compareTo(right.key);
+      });
+
+    final results = <LibrarySearchArtistHit>[];
+    for (final entry in ranked) {
+      if (results.length >= maxEntityHits) break;
+      final name = names[entry.key]!;
+      final collection = findArtistCollection(albums, name);
+      if (collection == null) continue;
+      results.add(
+        LibrarySearchArtistHit(
+          name: collection.title,
+          collection: collection,
+          trackCount: entry.value,
+        ),
+      );
+    }
+    return results;
+  }
+
+  List<LibrarySearchAlbumHit> _buildAlbumHits(
+    List<LibrarySearchHit> trackHits,
+    String query,
+  ) {
+    final terms = _normalized(query).split(' ').where((t) => t.isNotEmpty);
+    final counts = <String, int>{};
+    for (final hit in trackHits) {
+      if (!_textMatchesAny(hit.album.title, terms) &&
+          !_textMatchesAny(hit.album.artist, terms)) {
+        // Still count albums that contributed matches via track title etc.
+        // Only promote albums whose *name* matches for the entity strip.
+        continue;
+      }
+      counts[hit.album.id] = (counts[hit.album.id] ?? 0) + 1;
+    }
+    if (_field == LibrarySearchField.all ||
+        _field == LibrarySearchField.album) {
+      for (final album in _albumsById.values) {
+        if (!_textMatchesAny(album.title, terms)) continue;
+        counts.putIfAbsent(album.id, () => album.tracks.length);
+      }
+    }
+    final ranked = counts.entries.toList()
+      ..sort((left, right) {
+        final byCount = right.value.compareTo(left.value);
+        if (byCount != 0) return byCount;
+        final leftTitle = _albumsById[left.key]?.title ?? '';
+        final rightTitle = _albumsById[right.key]?.title ?? '';
+        return leftTitle.toLowerCase().compareTo(rightTitle.toLowerCase());
+      });
+    final results = <LibrarySearchAlbumHit>[];
+    for (final entry in ranked) {
+      if (results.length >= maxEntityHits) break;
+      final album = _albumsById[entry.key];
+      if (album == null) continue;
+      results.add(
+        LibrarySearchAlbumHit(album: album, trackCount: entry.value),
+      );
+    }
+    return results;
   }
 
   @override
@@ -214,7 +419,9 @@ class LibrarySearchController extends ChangeNotifier {
   }
 }
 
-Future<List<String>> _runSearchOffMainIsolate(LibrarySearchRequest request) {
+Future<LibrarySearchMatchSet> _runSearchOffMainIsolate(
+  LibrarySearchRequest request,
+) {
   return compute(
     searchLibraryDocuments,
     request,
@@ -222,10 +429,16 @@ Future<List<String>> _runSearchOffMainIsolate(LibrarySearchRequest request) {
   );
 }
 
-List<String> searchLibraryDocuments(LibrarySearchRequest request) {
+/// Pure search worker (also used directly in tests).
+LibrarySearchMatchSet searchLibraryDocuments(LibrarySearchRequest request) {
   final normalizedQuery = _normalized(request.query);
-  if (normalizedQuery.isEmpty || request.limit <= 0) return const [];
-  final terms = normalizedQuery.split(' ');
+  if (normalizedQuery.isEmpty || request.limit <= 0) {
+    return const LibrarySearchMatchSet(trackIds: [], truncated: false);
+  }
+  final terms = normalizedQuery
+      .split(' ')
+      .where((term) => term.isNotEmpty)
+      .toList(growable: false);
   final matches = <({LibrarySearchDocument document, int relevance})>[];
 
   for (final document in request.documents) {
@@ -261,9 +474,13 @@ List<String> searchLibraryDocuments(LibrarySearchRequest request) {
     return left.document.trackId.compareTo(right.document.trackId);
   });
 
-  return [
-    for (final match in matches.take(request.limit)) match.document.trackId,
-  ];
+  final truncated = matches.length > request.limit;
+  return LibrarySearchMatchSet(
+    trackIds: [
+      for (final match in matches.take(request.limit)) match.document.trackId,
+    ],
+    truncated: truncated,
+  );
 }
 
 bool _documentContains(
@@ -273,31 +490,120 @@ bool _documentContains(
 ) {
   return switch (field) {
     LibrarySearchField.all =>
-      document.normalizedTitle.contains(term) ||
-          document.normalizedAlbumTitle.contains(term) ||
-          document.normalizedTrackArtist.contains(term) ||
-          document.normalizedAlbumArtist.contains(term) ||
-          document.normalizedGenre.contains(term),
-    LibrarySearchField.title => document.normalizedTitle.contains(term),
-    LibrarySearchField.album => document.normalizedAlbumTitle.contains(term),
-    LibrarySearchField.trackArtist => document.normalizedTrackArtist.contains(
+      _fieldMatches(document.normalizedTitle, document.titlePinyin,
+              document.titleInitials, term) ||
+          _fieldMatches(
+            document.normalizedAlbumTitle,
+            document.albumTitlePinyin,
+            document.albumTitleInitials,
+            term,
+          ) ||
+          _fieldMatches(
+            document.normalizedTrackArtist,
+            document.trackArtistPinyin,
+            document.trackArtistInitials,
+            term,
+          ) ||
+          _fieldMatches(
+            document.normalizedAlbumArtist,
+            document.albumArtistPinyin,
+            document.albumArtistInitials,
+            term,
+          ) ||
+          _fieldMatches(
+            document.normalizedGenre,
+            document.genrePinyin,
+            document.genreInitials,
+            term,
+          ),
+    LibrarySearchField.title => _fieldMatches(
+      document.normalizedTitle,
+      document.titlePinyin,
+      document.titleInitials,
       term,
     ),
-    LibrarySearchField.albumArtist => document.normalizedAlbumArtist.contains(
+    LibrarySearchField.album => _fieldMatches(
+      document.normalizedAlbumTitle,
+      document.albumTitlePinyin,
+      document.albumTitleInitials,
       term,
     ),
-    LibrarySearchField.genre => document.normalizedGenre.contains(term),
+    LibrarySearchField.trackArtist => _fieldMatches(
+      document.normalizedTrackArtist,
+      document.trackArtistPinyin,
+      document.trackArtistInitials,
+      term,
+    ),
+    LibrarySearchField.albumArtist => _fieldMatches(
+      document.normalizedAlbumArtist,
+      document.albumArtistPinyin,
+      document.albumArtistInitials,
+      term,
+    ),
+    LibrarySearchField.genre => _fieldMatches(
+      document.normalizedGenre,
+      document.genrePinyin,
+      document.genreInitials,
+      term,
+    ),
   };
+}
+
+bool _fieldMatches(
+  String normalized,
+  String pinyin,
+  String initials,
+  String term,
+) {
+  if (normalized.contains(term)) return true;
+  if (pinyin.isNotEmpty && pinyin.contains(term)) return true;
+  if (initials.isNotEmpty && initials.contains(term)) return true;
+  return false;
+}
+
+bool _textMatchesAny(String value, Iterable<String> terms) {
+  final normalized = _normalized(value);
+  final pinyin = _pinyinKey(value);
+  final initials = _initialsKey(value);
+  for (final term in terms) {
+    if (_fieldMatches(normalized, pinyin, initials, term)) return true;
+  }
+  return false;
 }
 
 int _relevance(LibrarySearchDocument document, List<String> terms) {
   final query = terms.join(' ');
   final rankedValues = [
-    (value: document.normalizedTitle, weight: 0),
-    (value: document.normalizedTrackArtist, weight: 10),
-    (value: document.normalizedAlbumTitle, weight: 20),
-    (value: document.normalizedAlbumArtist, weight: 30),
-    (value: document.normalizedGenre, weight: 40),
+    (
+      value: document.normalizedTitle,
+      pinyin: document.titlePinyin,
+      initials: document.titleInitials,
+      weight: 0,
+    ),
+    (
+      value: document.normalizedTrackArtist,
+      pinyin: document.trackArtistPinyin,
+      initials: document.trackArtistInitials,
+      weight: 10,
+    ),
+    (
+      value: document.normalizedAlbumTitle,
+      pinyin: document.albumTitlePinyin,
+      initials: document.albumTitleInitials,
+      weight: 20,
+    ),
+    (
+      value: document.normalizedAlbumArtist,
+      pinyin: document.albumArtistPinyin,
+      initials: document.albumArtistInitials,
+      weight: 30,
+    ),
+    (
+      value: document.normalizedGenre,
+      pinyin: document.genrePinyin,
+      initials: document.genreInitials,
+      weight: 40,
+    ),
   ];
   var score = 100;
   for (final ranked in rankedValues) {
@@ -308,6 +614,12 @@ int _relevance(LibrarySearchDocument document, List<String> terms) {
         ? ranked.weight + 1
         : value.contains(query)
         ? ranked.weight + 2
+        : ranked.pinyin == query || ranked.initials == query
+        ? ranked.weight + 3
+        : ranked.pinyin.startsWith(query) || ranked.initials.startsWith(query)
+        ? ranked.weight + 4
+        : ranked.pinyin.contains(query) || ranked.initials.contains(query)
+        ? ranked.weight + 5
         : 100;
     if (candidate < score) score = candidate;
   }
@@ -320,4 +632,20 @@ int _compareText(String left, String right) {
 
 String _normalized(String value) {
   return value.trim().toLowerCase().split(RegExp(r'\s+')).join(' ');
+}
+
+String _pinyinKey(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+  return PinyinHelper.getPinyinE(
+    trimmed,
+    separator: '',
+    defPinyin: '',
+  ).toLowerCase().replaceAll(RegExp(r'\s+'), '');
+}
+
+String _initialsKey(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+  return PinyinHelper.getShortPinyin(trimmed).toLowerCase();
 }

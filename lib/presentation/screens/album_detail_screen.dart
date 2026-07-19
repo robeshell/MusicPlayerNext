@@ -24,6 +24,7 @@ class AlbumDetailScreen extends StatefulWidget {
     this.userState,
     this.offline,
     required this.onBack,
+    this.onOpenArtist,
     super.key,
   });
 
@@ -32,6 +33,7 @@ class AlbumDetailScreen extends StatefulWidget {
   final LibraryUserStateController? userState;
   final OfflineDownloadController? offline;
   final VoidCallback onBack;
+  final ValueChanged<String>? onOpenArtist;
 
   @override
   State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
@@ -149,6 +151,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   playback: playback,
                   offline: offline,
                   onBack: onBack,
+                  onOpenArtist: widget.onOpenArtist,
                   pagePalette: pagePalette,
                 ),
               ),
@@ -258,6 +261,7 @@ class _Hero extends StatelessWidget {
     required this.offline,
     required this.onBack,
     required this.pagePalette,
+    this.onOpenArtist,
   });
 
   final Album album;
@@ -265,6 +269,7 @@ class _Hero extends StatelessWidget {
   final OfflineDownloadController? offline;
   final VoidCallback onBack;
   final ArtworkPagePalette? pagePalette;
+  final ValueChanged<String>? onOpenArtist;
 
   @override
   Widget build(BuildContext context) {
@@ -387,16 +392,29 @@ class _Hero extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 7),
-                Text(
-                  album.artist,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: 15,
-                    height: 1.22,
-                    fontWeight: FontWeight.w600,
+                InkWell(
+                  onTap: onOpenArtist == null
+                      ? null
+                      : () => onOpenArtist!(album.artist),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Text(
+                    key: const ValueKey('album-detail-artist'),
+                    album.artist,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: palette.secondaryText,
+                      fontSize: 15,
+                      height: 1.22,
+                      fontWeight: FontWeight.w600,
+                      decoration: onOpenArtist == null
+                          ? TextDecoration.none
+                          : TextDecoration.underline,
+                      decorationColor: palette.secondaryText.withValues(
+                        alpha: 0.35,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -578,16 +596,29 @@ class _Hero extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Text(
-                            album.artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: SoundColors.accent,
-                              fontSize: 28,
-                              height: 1.08,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.45,
+                          InkWell(
+                            onTap: onOpenArtist == null
+                                ? null
+                                : () => onOpenArtist!(album.artist),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Text(
+                              key: const ValueKey('album-detail-artist-desktop'),
+                              album.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: SoundColors.accent,
+                                fontSize: 28,
+                                height: 1.08,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.45,
+                                decoration: onOpenArtist == null
+                                    ? TextDecoration.none
+                                    : TextDecoration.underline,
+                                decorationColor: SoundColors.accent.withValues(
+                                  alpha: 0.35,
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 14),

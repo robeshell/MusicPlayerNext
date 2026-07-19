@@ -13,6 +13,7 @@ import 'artwork_image_provider.dart';
 import 'playback_status_badge.dart';
 import 'progress_scrubber.dart';
 import 'sound_components.dart';
+import 'sound_metadata_line.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({
@@ -23,6 +24,8 @@ class MiniPlayer extends StatelessWidget {
     this.docked = false,
     this.embedded = false,
     this.onOpenQueue,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     super.key,
   });
 
@@ -33,6 +36,8 @@ class MiniPlayer extends StatelessWidget {
   final bool docked;
   final bool embedded;
   final VoidCallback? onOpenQueue;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +74,8 @@ class MiniPlayer extends StatelessWidget {
                         userState: userState,
                         onOpen: onOpen,
                         onOpenQueue: onOpenQueue,
+                        onOpenAlbum: onOpenAlbum,
+                        onOpenArtist: onOpenArtist,
                         position: position,
                         duration: duration,
                       )
@@ -81,6 +88,8 @@ class MiniPlayer extends StatelessWidget {
                         userState: userState,
                         onOpen: onOpen,
                         onOpenQueue: onOpenQueue,
+                        onOpenAlbum: onOpenAlbum,
+                        onOpenArtist: onOpenArtist,
                         position: position,
                         duration: duration,
                       )
@@ -91,6 +100,8 @@ class MiniPlayer extends StatelessWidget {
                         playback: playback,
                         onOpen: onOpen,
                         onOpenQueue: onOpenQueue,
+                        onOpenAlbum: onOpenAlbum,
+                        onOpenArtist: onOpenArtist,
                         position: position,
                         duration: duration,
                         compact: compact,
@@ -242,6 +253,8 @@ class _WideMiniPlayer extends StatelessWidget {
     required this.userState,
     required this.onOpen,
     required this.onOpenQueue,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     required this.position,
     required this.duration,
   });
@@ -253,6 +266,8 @@ class _WideMiniPlayer extends StatelessWidget {
   final LibraryUserStateController? userState;
   final VoidCallback onOpen;
   final VoidCallback? onOpenQueue;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
   final Duration position;
   final Duration duration;
 
@@ -268,9 +283,12 @@ class _WideMiniPlayer extends StatelessWidget {
             flex: 34,
             child: _TrackIdentity(
               track: track,
+              album: album,
               visual: visual,
               onOpen: onOpen,
               showBadges: true,
+              onOpenAlbum: onOpenAlbum,
+              onOpenArtist: onOpenArtist,
             ),
           ),
           const SizedBox(width: 22),
@@ -339,6 +357,8 @@ class _DockedMiniPlayer extends StatelessWidget {
     required this.userState,
     required this.onOpen,
     required this.onOpenQueue,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     required this.position,
     required this.duration,
   });
@@ -350,6 +370,8 @@ class _DockedMiniPlayer extends StatelessWidget {
   final LibraryUserStateController? userState;
   final VoidCallback onOpen;
   final VoidCallback? onOpenQueue;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
   final Duration position;
   final Duration duration;
 
@@ -374,9 +396,12 @@ class _DockedMiniPlayer extends StatelessWidget {
                       width: identityWidth,
                       child: _TrackIdentity(
                         track: track,
+                    album: album,
                         visual: visual,
                         onOpen: onOpen,
                         showBadges: false,
+                    onOpenAlbum: onOpenAlbum,
+                    onOpenArtist: onOpenArtist,
                       ),
                     ),
                     if (userState case final state?) ...[
@@ -453,6 +478,8 @@ class _CondensedMiniPlayer extends StatelessWidget {
     required this.playback,
     required this.onOpen,
     required this.onOpenQueue,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     required this.position,
     required this.duration,
     required this.compact,
@@ -466,6 +493,8 @@ class _CondensedMiniPlayer extends StatelessWidget {
   final SoundPlaybackController playback;
   final VoidCallback onOpen;
   final VoidCallback? onOpenQueue;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
   final Duration position;
   final Duration duration;
   final bool compact;
@@ -492,9 +521,12 @@ class _CondensedMiniPlayer extends StatelessWidget {
                 Expanded(
                   child: _TrackIdentity(
                     track: track,
+                    album: album,
                     visual: visual,
                     onOpen: onOpen,
                     showBadges: false,
+                    onOpenAlbum: onOpenAlbum,
+                    onOpenArtist: onOpenArtist,
                   ),
                 ),
                 if (showPrevious)
@@ -581,28 +613,35 @@ class _OpenArtwork extends StatelessWidget {
 class _TrackIdentity extends StatelessWidget {
   const _TrackIdentity({
     required this.track,
+    required this.album,
     required this.visual,
     required this.onOpen,
     required this.showBadges,
+    this.onOpenAlbum,
+    this.onOpenArtist,
   });
 
   final Track track;
+  final Album album;
   final PlaybackVisualState visual;
   final VoidCallback onOpen;
   final bool showBadges;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onOpen,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
+    final metaSize = showBadges ? 12.0 : 11.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: onOpen,
+            borderRadius: BorderRadius.circular(6),
+            child: Text(
               track.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -612,30 +651,43 @@ class _TrackIdentity extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              '${track.artist} — ${track.albumTitle}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.soundSecondaryText,
-                fontSize: showBadges ? 12 : 11,
+          ),
+          const SizedBox(height: 2),
+          SoundMetadataLine(
+            artist: track.artist,
+            album: track.albumTitle,
+            separator: ' — ',
+            onOpenArtist: onOpenArtist == null
+                ? null
+                : () => onOpenArtist!(track.artist),
+            onOpenAlbum: onOpenAlbum == null ? null : () => onOpenAlbum!(album),
+            style: TextStyle(
+              color: context.soundSecondaryText,
+              fontSize: metaSize,
+            ),
+            linkStyle: TextStyle(
+              color: context.soundSecondaryText,
+              fontSize: metaSize,
+              fontWeight: FontWeight.w700,
+              decoration: TextDecoration.underline,
+              decorationColor: context.soundSecondaryText.withValues(
+                alpha: 0.28,
               ),
             ),
-            if (showBadges) ...[
-              const SizedBox(height: 5),
-              Row(
-                children: [
-                  PlaybackStatusBadge(
-                    state: visual,
-                    onLightSurface: true,
-                    compact: true,
-                  ),
-                ],
-              ),
-            ],
+          ),
+          if (showBadges) ...[
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                PlaybackStatusBadge(
+                  state: visual,
+                  onLightSurface: true,
+                  compact: true,
+                ),
+              ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

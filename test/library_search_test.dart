@@ -19,6 +19,7 @@ void main() {
       final documents = [
         LibrarySearchDocument(
           trackId: 'neon',
+          albumId: 'album-night',
           title: 'Neon Sky',
           trackArtist: 'Guest Singer',
           albumTitle: 'Night Drive',
@@ -27,6 +28,7 @@ void main() {
         ),
         LibrarySearchDocument(
           trackId: 'alpha',
+          albumId: 'album-morning',
           title: 'Alpha Song',
           trackArtist: 'Another Voice',
           albumTitle: 'Morning Light',
@@ -43,7 +45,7 @@ void main() {
             field: field,
             sort: LibrarySearchSort.relevance,
           ),
-        );
+        ).trackIds;
       }
 
       expect(search('neon', LibrarySearchField.title), ['neon']);
@@ -55,10 +57,41 @@ void main() {
       expect(search('guest', LibrarySearchField.albumArtist), isEmpty);
     });
 
+    test('matches Chinese pinyin and initials', () {
+      final documents = [
+        LibrarySearchDocument(
+          trackId: 'yanzi',
+          albumId: 'album-yanzi',
+          title: '爱情证书',
+          trackArtist: '孙燕姿',
+          albumTitle: '孙燕姿 同名专辑',
+          albumArtist: '孙燕姿',
+          genre: '流行',
+        ),
+      ];
+
+      List<String> search(String query) {
+        return searchLibraryDocuments(
+          LibrarySearchRequest(
+            documents: documents,
+            query: query,
+            field: LibrarySearchField.all,
+            sort: LibrarySearchSort.relevance,
+          ),
+        ).trackIds;
+      }
+
+      expect(search('孙燕姿'), ['yanzi']);
+      expect(search('yanzi'), ['yanzi']);
+      expect(search('syz'), ['yanzi']);
+      expect(search('aiqing'), ['yanzi']);
+    });
+
     test('applies deterministic sorting and result limits', () {
       final documents = [
         LibrarySearchDocument(
           trackId: 'zulu',
+          albumId: 'a1',
           title: 'Zulu',
           trackArtist: 'Beta',
           albumTitle: 'First Album',
@@ -67,6 +100,7 @@ void main() {
         ),
         LibrarySearchDocument(
           trackId: 'alpha',
+          albumId: 'a2',
           title: 'Alpha',
           trackArtist: 'Zulu',
           albumTitle: 'Second Album',
@@ -93,8 +127,10 @@ void main() {
         ),
       );
 
-      expect(byTitle, ['alpha']);
-      expect(byArtist, ['zulu', 'alpha']);
+      expect(byTitle.trackIds, ['alpha']);
+      expect(byTitle.truncated, isTrue);
+      expect(byArtist.trackIds, ['zulu', 'alpha']);
+      expect(byArtist.truncated, isFalse);
     });
 
     test('searches 10,000 documents through the background worker', () async {
@@ -102,6 +138,7 @@ void main() {
         10000,
         (index) => LibrarySearchDocument(
           trackId: 'track-$index',
+          albumId: 'album-${index % 100}',
           title: 'Song $index',
           trackArtist: 'Artist ${index % 50}',
           albumTitle: 'Album ${index % 100}',
@@ -110,7 +147,7 @@ void main() {
         ),
       );
 
-      final ids = await compute(
+      final matchSet = await compute(
         searchLibraryDocuments,
         LibrarySearchRequest(
           documents: documents,
@@ -120,8 +157,9 @@ void main() {
         ),
       );
 
-      expect(ids, hasLength(200));
-      expect(ids.toSet(), hasLength(200));
+      expect(matchSet.trackIds, hasLength(200));
+      expect(matchSet.truncated, isTrue);
+      expect(matchSet.trackIds.toSet(), hasLength(200));
     });
   });
 
@@ -142,7 +180,7 @@ void main() {
 
     test('debounces work and ignores a stale result', () async {
       final requests = <LibrarySearchRequest>[];
-      final pending = <Completer<List<String>>>[];
+      final pending = <Completer<LibrarySearchMatchSet>>[];
       final firstRequestStarted = Completer<void>();
       final secondRequestStarted = Completer<void>();
       final search = LibrarySearchController(
@@ -150,7 +188,7 @@ void main() {
         debounce: Duration.zero,
         runner: (request) {
           requests.add(request);
-          final completer = Completer<List<String>>();
+          final completer = Completer<LibrarySearchMatchSet>();
           pending.add(completer);
           if (requests.length == 1) {
             firstRequestStarted.complete();
@@ -172,12 +210,19 @@ void main() {
       await secondRequestStarted.future;
       expect(requests, hasLength(2));
 
-      pending[0].complete(['track-neon']);
+      pending[0].complete(
+        const LibrarySearchMatchSet(trackIds: ['track-neon'], truncated: false),
+      );
       await Future<void>.delayed(Duration.zero);
       expect(search.status, LibrarySearchStatus.searching);
       expect(search.hits, isEmpty);
 
-      pending[1].complete(['track-alpha']);
+      pending[1].complete(
+        const LibrarySearchMatchSet(
+          trackIds: ['track-alpha'],
+          truncated: false,
+        ),
+      );
       await Future<void>.delayed(Duration.zero);
       expect(search.status, LibrarySearchStatus.ready);
       expect(search.hits.single.track.id, 'track-alpha');
@@ -203,6 +248,7 @@ void main() {
     final engine = SimulatedPlaybackEngine();
     final playback = SoundPlaybackController(engine: engine);
     String? openedAlbumId;
+    String? openedArtist;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -212,6 +258,7 @@ void main() {
             search: search,
             playback: playback,
             onOpenAlbum: (album) => openedAlbumId = album.id,
+            onOpenArtist: (collection) => openedArtist = collection.title,
           ),
         ),
       ),
@@ -225,6 +272,8 @@ void main() {
 
     expect(find.text('Neon Sky'), findsOneWidget);
     expect(find.text('Alpha Song'), findsNothing);
+    expect(find.text('艺人'), findsWidgets);
+    expect(find.text('Main Artist'), findsWidgets);
 
     await tester.tap(find.byKey(const ValueKey('search-field-albumArtist')));
     await tester.pump();
@@ -238,6 +287,16 @@ void main() {
 
     await tester.tap(find.byTooltip('打开专辑 Night Drive'));
     expect(openedAlbumId, 'album-night');
+
+    final artistTile = find.byWidgetPredicate(
+      (widget) =>
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith('search-artist-'),
+    );
+    expect(artistTile, findsWidgets);
+    await tester.tap(artistTile.first);
+    await tester.pump();
+    expect(openedArtist, 'Main Artist');
 
     await playback.clearQueue();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -291,14 +350,15 @@ void main() {
       44,
     );
     expect(find.byKey(const ValueKey('compact-search-sort')), findsOneWidget);
-    expect(find.text('艺人'), findsOneWidget);
+    expect(find.text('艺人'), findsWidgets);
     expect(
       tester
           .getSize(find.byKey(const ValueKey('search-result-track-neon')))
           .height,
       64,
     );
-    expect(find.text('Guest Singer · Night Drive'), findsOneWidget);
+    expect(find.textContaining('Guest Singer'), findsWidgets);
+    expect(find.textContaining('Night Drive'), findsWidgets);
     expect(
       find.byKey(const ValueKey('search-result-menu-track-neon')),
       findsOneWidget,
@@ -311,7 +371,9 @@ void main() {
       find.byKey(const ValueKey('add-search-track-neon-to-playlist')),
       findsNothing,
     );
-    expect(tester.takeException(), isNull);
+    // Underline-free metadata links keep the 64px row within budget.
+    final exception = tester.takeException();
+    expect(exception, isNull, reason: '$exception');
 
     await tester.pumpWidget(const SizedBox.shrink());
     search.dispose();

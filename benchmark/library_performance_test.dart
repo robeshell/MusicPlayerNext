@@ -34,10 +34,10 @@ void main() {
         );
         var measuredSearchResults = 0;
         final searchMicros = await _medianAsyncMicros(() async {
-          final ids = await compute(searchLibraryDocuments, searchRequest);
-          measuredSearchResults = ids.length;
+          final matchSet = await compute(searchLibraryDocuments, searchRequest);
+          measuredSearchResults = matchSet.trackIds.length;
         });
-        final resultIds = searchLibraryDocuments(searchRequest);
+        final resultIds = searchLibraryDocuments(searchRequest).trackIds;
         final metrics = {
           'tracks': trackCount,
           'albums': fixture.albums.length,
@@ -91,6 +91,7 @@ List<LibrarySearchDocument> _searchDocuments(List<Album> albums) {
       for (final track in album.tracks)
         LibrarySearchDocument(
           trackId: track.id,
+          albumId: album.id,
           title: track.title,
           trackArtist: track.artist,
           albumTitle: album.title,

@@ -452,18 +452,27 @@ class SoundTrackListRow extends StatelessWidget {
   const SoundTrackListRow({
     required this.leading,
     required this.title,
-    required this.subtitle,
     required this.onActivate,
+    this.subtitle,
+    this.subtitleWidget,
     this.trailing,
     this.compactTrailing,
     this.desktopHeight = 68,
     this.compactHeight = 64,
     super.key,
-  });
+  }) : assert(
+         subtitle != null || subtitleWidget != null,
+         'Provide subtitle or subtitleWidget',
+       );
 
   final Widget leading;
   final String title;
-  final String subtitle;
+
+  /// Plain subtitle when [subtitleWidget] is null.
+  final String? subtitle;
+
+  /// Preferred when artist/album should be independently tappable.
+  final Widget? subtitleWidget;
   final VoidCallback onActivate;
   final Widget? trailing;
   final Widget? compactTrailing;
@@ -475,6 +484,12 @@ class SoundTrackListRow extends StatelessWidget {
     final compact = context.soundIsCompact;
     final divider = context.soundDivider.withValues(
       alpha: context.soundDivider.a * 0.72,
+    );
+    final mutedStyle = TextStyle(
+      color: context.soundMutedText.withValues(
+        alpha: context.soundMutedText.a * 0.82,
+      ),
+      fontSize: 11.5,
     );
     return SoundTrackActivation(
       onActivate: onActivate,
@@ -509,17 +524,13 @@ class SoundTrackListRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: context.soundMutedText.withValues(
-                            alpha: context.soundMutedText.a * 0.82,
+                      subtitleWidget ??
+                          Text(
+                            subtitle ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: mutedStyle,
                           ),
-                          fontSize: 11.5,
-                        ),
-                      ),
                     ],
                   ),
                 ),

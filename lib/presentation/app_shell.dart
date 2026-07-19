@@ -609,6 +609,8 @@ class _AppShellState extends State<AppShell>
               userState: _libraryUserState,
               style: widget.nowPlayingStyle,
               openLyricsByDefault: widget.openLyricsByDefault,
+              onOpenAlbum: _openAlbumFromPlayer,
+              onOpenArtist: _openArtistFromPlayer,
             ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return SlideTransition(
@@ -707,6 +709,40 @@ class _AppShellState extends State<AppShell>
       _selectedAlbum = null;
       _selectedCollection = collection;
     });
+  }
+
+  void _openArtistByName(String artistName) {
+    final collection = findArtistCollection(
+      _libraryCatalog.albums,
+      artistName,
+    );
+    if (collection == null) return;
+    _openCollection(collection);
+  }
+
+  void _dismissPlayerSurface() {
+    if (context.soundUsesMobileShell) {
+      unawaited(_collapseMobileNowPlaying());
+      return;
+    }
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _openAlbumFromPlayer(Album album) {
+    final track = widget.playback.displayTrack;
+    final resolved = findAlbumById(_libraryCatalog.albums, album.id) ??
+        (track == null
+            ? album
+            : resolveAlbumForTrack(_libraryCatalog.albums, track));
+    _dismissPlayerSurface();
+    _openAlbum(resolved);
+  }
+
+  void _openArtistFromPlayer(String artistName) {
+    _dismissPlayerSurface();
+    _openArtistByName(artistName);
   }
 
   void _openQueue() {
@@ -875,6 +911,7 @@ class _AppShellState extends State<AppShell>
                     userState: _libraryUserState,
                     offline: _offline,
                     onBack: () => setState(() => _selectedAlbum = null),
+                    onOpenArtist: _openArtistByName,
                   )
                 : _selectedCollection != null
                 ? LibraryCollectionScreen(
@@ -921,6 +958,7 @@ class _AppShellState extends State<AppShell>
                       playback: widget.playback,
                       userState: _libraryUserState,
                       onOpenAlbum: _openAlbum,
+                      onOpenArtist: _openCollection,
                       focusNode: _searchFocusNode,
                     ),
                     AppSection.settings => SettingsScreen(
@@ -1106,6 +1144,8 @@ class _AppShellState extends State<AppShell>
                         docked: true,
                         onOpen: _openNowPlaying,
                         onOpenQueue: _openQueue,
+                        onOpenAlbum: _openAlbumFromPlayer,
+                        onOpenArtist: _openArtistFromPlayer,
                       ),
                     )
                   : _CompactPlaybackDock(
@@ -1116,6 +1156,8 @@ class _AppShellState extends State<AppShell>
                           _selectSection(AppSection.values[index]),
                       onOpenNowPlaying: _openNowPlaying,
                       onOpenQueue: _openQueue,
+                      onOpenAlbum: _openAlbumFromPlayer,
+                      onOpenArtist: _openArtistFromPlayer,
                     ),
             );
             if (desktop) return shell;
@@ -1144,6 +1186,8 @@ class _AppShellState extends State<AppShell>
                         style: widget.nowPlayingStyle,
                         openLyricsByDefault: widget.openLyricsByDefault,
                         onClose: () => unawaited(_collapseMobileNowPlaying()),
+                        onOpenAlbum: _openAlbumFromPlayer,
+                        onOpenArtist: _openArtistFromPlayer,
                         onVerticalDragStart: _handleNowPlayingDragStart,
                         onVerticalDragUpdate: _handleNowPlayingDragUpdate,
                         onVerticalDragEnd: _handleNowPlayingDragEnd,
@@ -1193,6 +1237,8 @@ class _MobileNowPlayingOverlay extends StatefulWidget {
     required this.style,
     this.openLyricsByDefault = false,
     required this.onClose,
+    this.onOpenAlbum,
+    this.onOpenArtist,
     required this.onVerticalDragStart,
     required this.onVerticalDragUpdate,
     required this.onVerticalDragEnd,
@@ -1205,6 +1251,8 @@ class _MobileNowPlayingOverlay extends StatefulWidget {
   final NowPlayingStyle style;
   final bool openLyricsByDefault;
   final VoidCallback onClose;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
   final GestureDragStartCallback onVerticalDragStart;
   final GestureDragUpdateCallback onVerticalDragUpdate;
   final GestureDragEndCallback onVerticalDragEnd;
@@ -1268,6 +1316,8 @@ class _MobileNowPlayingOverlayState extends State<_MobileNowPlayingOverlay> {
         openLyricsByDefault: widget.openLyricsByDefault,
         isActive: _contentActive,
         onClose: widget.onClose,
+        onOpenAlbum: widget.onOpenAlbum,
+        onOpenArtist: widget.onOpenArtist,
         onVerticalDragStart: widget.onVerticalDragStart,
         onVerticalDragUpdate: widget.onVerticalDragUpdate,
         onVerticalDragEnd: widget.onVerticalDragEnd,
@@ -1842,6 +1892,8 @@ class _CompactPlaybackDock extends StatelessWidget {
     required this.onDestinationSelected,
     required this.onOpenNowPlaying,
     required this.onOpenQueue,
+    this.onOpenAlbum,
+    this.onOpenArtist,
   });
 
   final SoundPlaybackController playback;
@@ -1850,6 +1902,8 @@ class _CompactPlaybackDock extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
   final VoidCallback onOpenNowPlaying;
   final VoidCallback onOpenQueue;
+  final ValueChanged<Album>? onOpenAlbum;
+  final ValueChanged<String>? onOpenArtist;
 
   static const _destinations = [
     SoundNavigationItem(
@@ -1893,6 +1947,8 @@ class _CompactPlaybackDock extends StatelessWidget {
                   embedded: true,
                   onOpen: onOpenNowPlaying,
                   onOpenQueue: onOpenQueue,
+                  onOpenAlbum: onOpenAlbum,
+                  onOpenArtist: onOpenArtist,
                 ),
               ],
               SoundNavigationBar(

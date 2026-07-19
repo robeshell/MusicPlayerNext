@@ -1274,7 +1274,9 @@ void main() {
     final toggleCenter = tester.getCenter(
       find.byKey(const ValueKey('mini-player-playback-toggle')),
     );
-    expect(progressRect.center.dy, closeTo(rect.top + 8, 0.1));
+    // Top progress track is 3pt tall and flush to the dock edge.
+    expect(progressRect.top, closeTo(rect.top, 0.5));
+    expect(progressRect.height, closeTo(3, 0.5));
     expect((toggleCenter.dy - rect.center.dy).abs(), lessThan(8));
 
     await _unmountAndFlush(tester);

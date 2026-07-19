@@ -263,6 +263,60 @@ String _cleanCollectionName(String value, {required String fallback}) {
 
 String _collectionKey(String value) => value.trim().toLowerCase();
 
+/// Resolves an artist name to a [LibraryCollection] from the current catalog.
+///
+/// Prefers an exact title match (case-insensitive), then a unique contains
+/// match. Returns null when the name is empty or ambiguous/missing.
+LibraryCollection? findArtistCollection(
+  List<Album> albums,
+  String artistName,
+) {
+  final cleaned = artistName.trim();
+  if (cleaned.isEmpty || cleaned == '未知艺人') return null;
+  final key = _collectionKey(cleaned);
+  final collections = buildArtistCollections(albums);
+  final exact = collections
+      .where((collection) => _collectionKey(collection.title) == key)
+      .toList(growable: false);
+  if (exact.length == 1) return exact.single;
+  if (exact.length > 1) return exact.first;
+  final partial = collections
+      .where((collection) => _collectionKey(collection.title).contains(key))
+      .toList(growable: false);
+  if (partial.length == 1) return partial.single;
+  return null;
+}
+
+/// Looks up a catalog album by stable id when present.
+Album? findAlbumById(List<Album> albums, String albumId) {
+  for (final album in albums) {
+    if (album.id == albumId) return album;
+  }
+  return null;
+}
+
+/// Best-effort resolve of a track's album from the catalog (shared artwork and
+/// full track list). Falls back to [albumForTrack] when the scan id is unknown.
+Album resolveAlbumForTrack(List<Album> albums, Track track) {
+  for (final album in albums) {
+    if (album.tracks.any((candidate) => candidate.id == track.id)) {
+      return album;
+    }
+  }
+  final titleKey = _collectionKey(track.albumTitle);
+  final artistKey = _collectionKey(track.artist);
+  for (final album in albums) {
+    if (_collectionKey(album.title) == titleKey &&
+        (_collectionKey(album.artist) == artistKey ||
+            album.tracks.any(
+              (candidate) => _collectionKey(candidate.artist) == artistKey,
+            ))) {
+      return album;
+    }
+  }
+  return albumForTrack(track);
+}
+
 Album albumForTrack(Track track) {
   return Album(
     id: 'playing:${track.id}',

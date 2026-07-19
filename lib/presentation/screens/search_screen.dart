@@ -11,6 +11,7 @@ import '../controllers/library_user_state_controller.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
 import '../widgets/sound_components.dart';
+import '../widgets/sound_metadata_line.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({
@@ -19,6 +20,7 @@ class SearchScreen extends StatefulWidget {
     required this.playback,
     this.userState,
     required this.onOpenAlbum,
+    this.onOpenArtist,
     this.focusNode,
     super.key,
   });
@@ -28,6 +30,7 @@ class SearchScreen extends StatefulWidget {
   final SoundPlaybackController playback;
   final LibraryUserStateController? userState;
   final ValueChanged<Album> onOpenAlbum;
+  final ValueChanged<LibraryCollection>? onOpenArtist;
   final FocusNode? focusNode;
 
   @override
@@ -72,6 +75,14 @@ class _SearchScreenState extends State<SearchScreen> {
   void _clearQuery() {
     _queryController.clear();
     widget.search.clear();
+  }
+
+  void _playSearchResults({int startIndex = 0}) {
+    final hits = widget.search.hits;
+    if (hits.isEmpty) return;
+    final queue = [for (final hit in hits) hit.track];
+    final index = startIndex.clamp(0, queue.length - 1);
+    unawaited(widget.playback.playTrack(queue[index], queue: queue));
   }
 
   @override
@@ -121,12 +132,17 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 )
               else if (widget.search.query.trim().isEmpty)
-                const SliverFillRemaining(
+                SliverFillRemaining(
                   hasScrollBody: false,
-                  child: _SearchMessage(
-                    icon: Icons.search_rounded,
-                    title: '搜索你的音乐',
-                    message: '可搜索歌曲、专辑、歌曲艺人、专辑艺人和流派。',
+                  child: _EmptySearchBody(
+                    recentQueries: widget.search.recentQueries,
+                    onSelectRecent: (query) {
+                      _queryController.text = query;
+                      _queryController.selection = TextSelection.collapsed(
+                        offset: query.length,
+                      );
+                      widget.search.applyRecentQuery(query);
+                    },
                   ),
                 )
               else if (widget.search.status == LibrarySearchStatus.error)
@@ -139,100 +155,194 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 )
               else if (widget.search.hits.isEmpty &&
+                  widget.search.artistHits.isEmpty &&
+                  widget.search.albumHits.isEmpty &&
                   widget.search.status == LibrarySearchStatus.searching)
                 const SliverFillRemaining(
                   hasScrollBody: false,
                   child: _SearchMessage(
                     icon: Icons.search_rounded,
                     title: '正在搜索',
-                    message: '正在从资料库中查找匹配歌曲。',
+                    message: '正在从资料库中查找匹配内容。',
                     loading: true,
                   ),
                 )
-              else if (widget.search.hits.isEmpty)
+              else if (widget.search.hits.isEmpty &&
+                  widget.search.artistHits.isEmpty &&
+                  widget.search.albumHits.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: _SearchMessage(
                     icon: Icons.search_off_rounded,
                     title: '没有找到结果',
-                    message: '没有与“${widget.search.query.trim()}”匹配的歌曲。',
+                    message:
+                        '没有与“${widget.search.query.trim()}”匹配的艺人、专辑或歌曲。'
+                        '可试拼音或首字母（如 yanzi、syz）。',
                   ),
                 )
               else ...[
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    gutter,
-                    compact ? 4 : 10,
-                    gutter,
-                    compact ? 5 : 8,
-                  ),
-                  sliver: SliverToBoxAdapter(
-                    child: Row(
-                      children: [
-                        Text(
-                          '${widget.search.hits.length} 首歌曲',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: context.soundMutedText.withValues(
-                              alpha: context.soundMutedText.a * 0.76,
-                            ),
-                          ),
+                if (widget.search.artistHits.isNotEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      compact ? 4 : 8,
+                      gutter,
+                      4,
+                    ),
+                    sliver: SliverToBoxAdapter(
+                      child: _EntitySection(
+                        title: '艺人',
+                        child: _ArtistHitList(
+                          hits: widget.search.artistHits,
+                          onOpen: (hit) =>
+                              widget.onOpenArtist?.call(hit.collection),
                         ),
-                        const Spacer(),
-                        if (widget.search.status ==
-                            LibrarySearchStatus.searching)
-                          const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    gutter,
-                    0,
-                    gutter,
-                    context.soundContentBottomPadding,
+                if (widget.search.albumHits.isNotEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 4),
+                    sliver: SliverToBoxAdapter(
+                      child: _EntitySection(
+                        title: '专辑',
+                        child: _AlbumHitList(
+                          hits: widget.search.albumHits,
+                          onOpen: (hit) => widget.onOpenAlbum(hit.album),
+                        ),
+                      ),
+                    ),
                   ),
-                  sliver: SliverList.builder(
-                    itemCount: widget.search.hits.length,
-                    itemBuilder: (context, index) => _SearchResultRow(
-                      hit: widget.search.hits[index],
-                      compact: compact,
-                      favorite:
-                          widget.userState?.isFavorite(
-                            widget.search.hits[index].track.id,
-                          ) ??
-                          false,
-                      onPlay: () {
-                        final hit = widget.search.hits[index];
-                        widget.playback.playTrack(
-                          hit.track,
-                          queue: hit.album.tracks,
-                        );
-                      },
-                      onOpenAlbum: () =>
-                          widget.onOpenAlbum(widget.search.hits[index].album),
-                      onToggleFavorite: widget.userState == null
-                          ? null
-                          : () => unawaited(
-                              widget.userState!.toggleFavorite(
-                                widget.search.hits[index].track,
+                if (widget.search.hits.isNotEmpty) ...[
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      compact ? 8 : 12,
+                      gutter,
+                      compact ? 5 : 8,
+                    ),
+                    sliver: SliverToBoxAdapter(
+                      child: Row(
+                        children: [
+                          Text(
+                            widget.search.truncated
+                                ? '歌曲（前 ${widget.search.hits.length} 首）'
+                                : '${widget.search.hits.length} 首歌曲',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: context.soundMutedText.withValues(
+                                alpha: context.soundMutedText.a * 0.76,
                               ),
                             ),
-                      onAddToPlaylist: widget.userState == null
-                          ? null
-                          : () => showAddToPlaylistSheet(
-                              context,
-                              userState: widget.userState!,
-                              track: widget.search.hits[index].track,
+                          ),
+                          const Spacer(),
+                          if (widget.search.status ==
+                              LibrarySearchStatus.searching)
+                            const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            TextButton.icon(
+                              key: const ValueKey('search-play-results'),
+                              onPressed: () => _playSearchResults(),
+                              icon: const Icon(Icons.playlist_play_rounded,
+                                  size: 18),
+                              label: Text(
+                                compact ? '播放结果' : '用结果播放',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                foregroundColor: SoundColors.accent,
+                              ),
                             ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                  if (widget.search.truncated)
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 8),
+                      sliver: SliverToBoxAdapter(
+                        child: Text(
+                          '仅显示前 ${LibrarySearchController.resultLimit} 首，'
+                          '请缩小关键词或改用匹配范围。',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: context.soundMutedText,
+                          ),
+                        ),
+                      ),
+                    ),
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      0,
+                      gutter,
+                      context.soundContentBottomPadding,
+                    ),
+                    sliver: SliverList.builder(
+                      itemCount: widget.search.hits.length,
+                      itemBuilder: (context, index) => _SearchResultRow(
+                        hit: widget.search.hits[index],
+                        compact: compact,
+                        favorite:
+                            widget.userState?.isFavorite(
+                              widget.search.hits[index].track.id,
+                            ) ??
+                            false,
+                        onPlay: () {
+                          final hit = widget.search.hits[index];
+                          widget.playback.playTrack(
+                            hit.track,
+                            queue: hit.album.tracks,
+                          );
+                        },
+                        onPlayResultsQueue: () =>
+                            _playSearchResults(startIndex: index),
+                        onOpenAlbum: () =>
+                            widget.onOpenAlbum(widget.search.hits[index].album),
+                        onOpenArtist: widget.onOpenArtist == null
+                            ? null
+                            : () {
+                                final hit = widget.search.hits[index];
+                                final collection = findArtistCollection(
+                                  widget.catalog.albums,
+                                  hit.track.artist,
+                                );
+                                if (collection != null) {
+                                  widget.onOpenArtist!(collection);
+                                }
+                              },
+                        onToggleFavorite: widget.userState == null
+                            ? null
+                            : () => unawaited(
+                                widget.userState!.toggleFavorite(
+                                  widget.search.hits[index].track,
+                                ),
+                              ),
+                        onAddToPlaylist: widget.userState == null
+                            ? null
+                            : () => showAddToPlaylistSheet(
+                                context,
+                                userState: widget.userState!,
+                                track: widget.search.hits[index].track,
+                              ),
+                      ),
+                    ),
+                  ),
+                ] else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      0,
+                      gutter,
+                      context.soundContentBottomPadding,
+                    ),
+                    sliver: const SliverToBoxAdapter(child: SizedBox.shrink()),
+                  ),
               ],
             ],
           );
@@ -261,7 +371,9 @@ class _SearchScreenState extends State<SearchScreen> {
               textInputAction: TextInputAction.search,
               onChanged: widget.search.setQuery,
               decoration: InputDecoration(
-                hintText: compact ? '搜索歌曲、专辑或艺人' : '歌曲、专辑、艺人或流派',
+                hintText: compact
+                    ? '搜索歌名、艺人、专辑或拼音'
+                    : '歌名、艺人、专辑、流派，支持拼音与首字母',
                 prefixIcon: const Icon(Icons.search_rounded, size: 20),
                 prefixIconConstraints: const BoxConstraints(minWidth: 42),
                 suffixIcon: widget.search.query.isEmpty
@@ -293,6 +405,15 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
         const SizedBox(height: 10),
+        Text(
+          '匹配范围',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: context.soundMutedText.withValues(alpha: 0.72),
+          ),
+        ),
+        const SizedBox(height: 6),
         _SearchControls(
           field: widget.search.field,
           sort: widget.search.sort,
@@ -304,13 +425,209 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
+class _EmptySearchBody extends StatelessWidget {
+  const _EmptySearchBody({
+    required this.recentQueries,
+    required this.onSelectRecent,
+  });
+
+  final List<String> recentQueries;
+  final ValueChanged<String> onSelectRecent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const _SearchMessage(
+            icon: Icons.search_rounded,
+            title: '搜索你的音乐',
+            message: '支持歌名、专辑、艺人与流派；中文可用拼音或首字母。',
+          ),
+          if (recentQueries.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '最近搜索',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: context.soundSecondaryText,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final query in recentQueries)
+                  ActionChip(
+                    key: ValueKey('search-recent-$query'),
+                    label: Text(query),
+                    onPressed: () => onSelectRecent(query),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _EntitySection extends StatelessWidget {
+  const _EntitySection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: context.soundPrimaryText,
+          ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+}
+
+class _ArtistHitList extends StatelessWidget {
+  const _ArtistHitList({required this.hits, required this.onOpen});
+
+  final List<LibrarySearchArtistHit> hits;
+  final ValueChanged<LibrarySearchArtistHit> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (final hit in hits)
+          ListTile(
+            key: ValueKey('search-artist-${hit.collection.id}'),
+            contentPadding: EdgeInsets.zero,
+            leading: CircleAvatar(
+              backgroundColor: context.soundTint(0.08),
+              child: Icon(
+                Icons.person_rounded,
+                color: context.soundSecondaryText,
+              ),
+            ),
+            title: Text(
+              hit.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            subtitle: Text(
+              '${hit.collection.albums.length} 张专辑 · '
+              '${hit.collection.tracks.length} 首',
+              style: TextStyle(fontSize: 12, color: context.soundMutedText),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => onOpen(hit),
+          ),
+      ],
+    );
+  }
+}
+
+class _AlbumHitList extends StatelessWidget {
+  const _AlbumHitList({required this.hits, required this.onOpen});
+
+  final List<LibrarySearchAlbumHit> hits;
+  final ValueChanged<LibrarySearchAlbumHit> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = context.soundIsCompact;
+    return SizedBox(
+      height: compact ? 158 : 168,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: hits.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final hit = hits[index];
+          return _AlbumHitCard(
+            key: ValueKey('search-album-${hit.album.id}'),
+            hit: hit,
+            onOpen: () => onOpen(hit),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AlbumHitCard extends StatelessWidget {
+  const _AlbumHitCard({required this.hit, required this.onOpen, super.key});
+
+  final LibrarySearchAlbumHit hit;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 112,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AlbumArt(album: hit.album, size: 108, borderRadius: 10),
+            const SizedBox(height: 6),
+            Text(
+              hit.album.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              hit.album.artist,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.15,
+                color: context.soundMutedText,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SearchResultRow extends StatelessWidget {
   const _SearchResultRow({
     required this.hit,
     required this.compact,
     required this.favorite,
     required this.onPlay,
+    required this.onPlayResultsQueue,
     required this.onOpenAlbum,
+    required this.onOpenArtist,
     required this.onToggleFavorite,
     required this.onAddToPlaylist,
   });
@@ -319,7 +636,9 @@ class _SearchResultRow extends StatelessWidget {
   final bool compact;
   final bool favorite;
   final VoidCallback onPlay;
+  final VoidCallback onPlayResultsQueue;
   final VoidCallback onOpenAlbum;
+  final VoidCallback? onOpenArtist;
   final VoidCallback? onToggleFavorite;
   final VoidCallback? onAddToPlaylist;
 
@@ -329,7 +648,12 @@ class _SearchResultRow extends StatelessWidget {
       key: ValueKey('search-result-${hit.track.id}'),
       leading: AlbumArt(album: hit.album, borderRadius: compact ? 8 : 6),
       title: hit.track.title,
-      subtitle: '${hit.track.artist} · ${hit.album.title}',
+      subtitleWidget: SoundMetadataLine(
+        artist: hit.track.artist,
+        album: hit.album.title,
+        onOpenArtist: onOpenArtist,
+        onOpenAlbum: onOpenAlbum,
+      ),
       onActivate: onPlay,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -371,6 +695,10 @@ class _SearchResultRow extends StatelessWidget {
           switch (action) {
             case _SearchResultAction.openAlbum:
               onOpenAlbum();
+            case _SearchResultAction.openArtist:
+              onOpenArtist?.call();
+            case _SearchResultAction.playResults:
+              onPlayResultsQueue();
             case _SearchResultAction.favorite:
               onToggleFavorite?.call();
             case _SearchResultAction.addToPlaylist:
@@ -382,6 +710,17 @@ class _SearchResultRow extends StatelessWidget {
             value: _SearchResultAction.openAlbum,
             label: '打开专辑',
             icon: Icons.album_outlined,
+          ),
+          if (onOpenArtist != null)
+            const SoundMenuAction(
+              value: _SearchResultAction.openArtist,
+              label: '打开艺人',
+              icon: Icons.person_outline_rounded,
+            ),
+          const SoundMenuAction(
+            value: _SearchResultAction.playResults,
+            label: '从这里播放搜索结果',
+            icon: Icons.playlist_play_rounded,
           ),
           if (onToggleFavorite != null)
             SoundMenuAction(
@@ -404,7 +743,13 @@ class _SearchResultRow extends StatelessWidget {
   }
 }
 
-enum _SearchResultAction { openAlbum, favorite, addToPlaylist }
+enum _SearchResultAction {
+  openAlbum,
+  openArtist,
+  playResults,
+  favorite,
+  addToPlaylist,
+}
 
 class _SearchControls extends StatelessWidget {
   const _SearchControls({
