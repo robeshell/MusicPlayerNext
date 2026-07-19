@@ -46,12 +46,6 @@ class VinylRecordArtState extends State<VinylRecordArt>
 
   static const _armSwingDuration = Duration(milliseconds: 700);
 
-  /// Angle the tonearm swings through to land the needle on the record, in
-  /// turns (clockwise). Zero is the rest position above the right rim. Tuned
-  /// so the cartridge body sits in the grooved band between the label edge
-  /// (0.66r) and the outer rim (~0.94r).
-  static const _armPlayTurns = 0.066;
-
   /// Diameter of the record relative to the widget side (tonearm needs a
   /// little headroom above the platter).
   static const _discFraction = 0.88;
@@ -66,6 +60,59 @@ class VinylRecordArtState extends State<VinylRecordArt>
 
   /// Tonearm pivot just above the larger platter.
   static const _armPivotFraction = Offset(0.48, 0.055);
+
+  /// Arm paint box size relative to the widget side (must match [build]).
+  static const _armBoxFraction = 0.75;
+
+  /// Clockwise turns from rest so the cartridge sits on the mid-line of the
+  /// black groove ring (halfway between label rim 0.66r and outer surface
+  /// 0.94r → 0.80r). Derived from pivot / disc geometry and [_TonearmPainter]
+  /// rest offsets — do not hand-tune independently of those constants.
+  static final double _armPlayTurns = _armPlayTurnsForGrooveCenter();
+
+  /// Solve the play angle for a unit-side composition.
+  static double _armPlayTurnsForGrooveCenter() {
+    const side = 1.0;
+    final discRadius = side * _discFraction / 2;
+    // Mid-line of the matte black band (label frame → outer surface).
+    final targetRadius =
+        discRadius *
+        (_VinylDiscPainter.labelFrameRadius +
+            _VinylDiscPainter.outerSurfaceRadius) /
+        2;
+    final discCenter = Offset(
+      side * _discCenterFraction.dx,
+      side * _discCenterFraction.dy,
+    );
+    final pivot = Offset(
+      side * _armPivotFraction.dx,
+      side * _armPivotFraction.dy,
+    );
+    final unit = side * _armBoxFraction;
+    // Rest-pose cartridge center in pivot-local space (see [_TonearmPainter]).
+    final cartLocal = _TonearmPainter.cartridgeCenterFromPivot(unit);
+    // Search the first half-turn for the landing on the upper-right groove.
+    var bestTurns = 0.056;
+    var bestError = double.infinity;
+    for (var i = 0; i <= 2000; i++) {
+      final turns = i / 2000 * 0.5;
+      final theta = turns * 2 * math.pi;
+      final cosT = math.cos(theta);
+      final sinT = math.sin(theta);
+      // Flutter positive rotation is clockwise with y-down.
+      final world = pivot +
+          Offset(
+            cartLocal.dx * cosT - cartLocal.dy * sinT,
+            cartLocal.dx * sinT + cartLocal.dy * cosT,
+          );
+      final error = ((world - discCenter).distance - targetRadius).abs();
+      if (error < bestError) {
+        bestError = error;
+        bestTurns = turns;
+      }
+    }
+    return bestTurns;
+  }
 
   late final AnimationController _rotation;
   bool _reduceMotion = false;
@@ -143,7 +190,7 @@ class VinylRecordArtState extends State<VinylRecordArt>
         // The tonearm rotates around the center of its paint box, so the box
         // is centered on the pivot. The arm and headshell stay inside the
         // widget; only transparent corners of the box overflow.
-        final armBox = side * 0.75;
+        final armBox = side * _armBoxFraction;
         return SizedBox.square(
           key: const ValueKey('vinyl-record-art'),
           dimension: side,
@@ -207,6 +254,9 @@ class _VinylDiscPainter extends CustomPainter {
   /// edge sits at the same fraction of the record radius.
   static const labelFrameRadius = 0.66;
 
+  /// Outer matte black surface radius relative to the record radius.
+  static const outerSurfaceRadius = 0.94;
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
@@ -226,7 +276,7 @@ class _VinylDiscPainter extends CustomPainter {
     // Matte black record surface.
     canvas.drawCircle(
       center,
-      radius * 0.94,
+      radius * outerSurfaceRadius,
       Paint()..color = const Color(0xFF0E0E10),
     );
 
@@ -254,7 +304,7 @@ class _VinylDiscPainter extends CustomPainter {
     // subtree, so the sheen travels with the disc.
     canvas.drawCircle(
       center,
-      radius * 0.94,
+      radius * outerSurfaceRadius,
       Paint()
         ..shader = SweepGradient(
           colors: [
@@ -279,17 +329,37 @@ class _TonearmPainter extends CustomPainter {
 
   static const _armColor = Color(0xFFF2F2F4);
 
+  /// Rest-pose offset of the arm/headshell joint from the pivot, in [unit]
+  /// multiples (must match [paint]).
+  static const tipFromPivot = Offset(0.413, 0.18);
+
+  /// Rest-pose elbow from the pivot, in [unit] multiples.
+  static const elbowFromPivot = Offset(0.205, 0.163);
+
+  /// Cartridge center sits this far past the tip joint along the last segment.
+  static const cartridgePastTip = 0.055;
+
+  /// World offset of the cartridge center from the pivot at rest.
+  static Offset cartridgeCenterFromPivot(double unit) {
+    final tip = Offset(tipFromPivot.dx * unit, tipFromPivot.dy * unit);
+    final elbow = Offset(elbowFromPivot.dx * unit, elbowFromPivot.dy * unit);
+    final seg2 = tip - elbow;
+    final dir = seg2 / seg2.distance;
+    return tip + dir * (cartridgePastTip * unit);
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final pivot = size.center(Offset.zero);
     final unit = size.shortestSide;
     // Rest position: the headshell hovers above the record's right rim.
-    final tip = pivot + Offset(unit * 0.413, unit * 0.18);
+    final tip = pivot + Offset(tipFromPivot.dx * unit, tipFromPivot.dy * unit);
 
     // Bent-tube shape: two straight segments meeting at a rounded elbow —
     // long steep section out of the pivot, short near-level section into
     // the cartridge.
-    final elbow = pivot + Offset(unit * 0.205, unit * 0.163);
+    final elbow =
+        pivot + Offset(elbowFromPivot.dx * unit, elbowFromPivot.dy * unit);
     final seg1 = elbow - pivot;
     final seg2 = tip - elbow;
     // Trim both segments at the elbow and bridge the gap with a quadratic
@@ -321,7 +391,7 @@ class _TonearmPainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
-          center: Offset(unit * 0.055, 0),
+          center: Offset(unit * cartridgePastTip, 0),
           width: unit * 0.11,
           height: unit * 0.046,
         ),
