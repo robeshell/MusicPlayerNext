@@ -53,6 +53,12 @@
   .sw { border-radius: 12px; border: 1px solid var(--hairline); height: 64px; display: flex; align-items: flex-end; padding: 8px 10px; min-width: 130px; flex: 1; }
   .sw span { font-size: 11px; font-weight: 700; background: rgba(var(--fg-rgb),.06); padding: 2px 7px; border-radius: 6px; backdrop-filter: blur(4px); }
   .ramp { display: flex; gap: 8px; }
+  .deriv-box {
+    width: 120px; height: 60px; border-radius: 10px; border: 1px solid var(--hairline);
+    background: var(--surface); display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .deriv-bar { width: 26px; height: 4px; border-radius: 2px; background: var(--accent); }
   .gradient-band {
     height: 120px; border-radius: 14px; position: relative; overflow: hidden;
     background: linear-gradient(120deg, #f0a35e, #d95770 35%, #8067bc 70%, #3f9e98);
@@ -258,11 +264,25 @@
 
   <h3>强调色（当前产品轴）</h3>
   <div class="row" id="accentSwatches"></div>
-  <div class="row" style="margin-top:10px">
-    <div class="chip on">chip 选中 accent@9%</div>
-    <div class="chip" style="background:rgba(var(--accent-rgb),.14);color:var(--accent)">指示器 10–14%</div>
-    <div class="chip" style="background:rgba(var(--accent-rgb),.035);color:var(--accent)">列表选中 3.5%</div>
-    <div class="chip" style="box-shadow:inset 0 0 0 2px var(--accent)">focus 环 2px</div>
+
+  <h3>低透明度派生（叠在中性表面上）</h3>
+  <div class="row">
+    <div style="text-align:center">
+      <div class="deriv-box" style="background:rgba(var(--accent-rgb),.09)"><span style="color:var(--accent);font-weight:700">选中项</span></div>
+      <div class="label">chip 选中 · 9%</div>
+    </div>
+    <div style="text-align:center">
+      <div class="deriv-box" style="background:rgba(var(--accent-rgb),.12)"><span class="deriv-bar"></span></div>
+      <div class="label">指示器 · 10–14%</div>
+    </div>
+    <div style="text-align:center">
+      <div class="deriv-box" style="background:rgba(var(--accent-rgb),.035)"><span style="color:var(--fg)">列表行</span></div>
+      <div class="label">列表选中 · 3.5%</div>
+    </div>
+    <div style="text-align:center">
+      <div class="deriv-box" style="outline:2px solid var(--accent);outline-offset:2px"><span style="color:var(--fg)">聚焦控件</span></div>
+      <div class="label">focus 环 · 2px</div>
+    </div>
   </div>
 
   <h3>派生 alpha 常量</h3>
