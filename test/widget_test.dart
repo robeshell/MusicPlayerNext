@@ -1386,7 +1386,16 @@ void main() {
       SoundGlassTheme.light.primaryText,
     );
 
-    await tester.tap(find.byKey(const ValueKey('settings-skin-row')));
+    final settingsScrollable = find.descendant(
+      of: find.byKey(const ValueKey('settings-overview')),
+      matching: find.byType(Scrollable),
+    ).first;
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('skin-preset-selector')),
+      240,
+      scrollable: settingsScrollable,
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('skin-preset-selector')), findsOneWidget);
     expect(find.byKey(const ValueKey('skin-preset-default')), findsOneWidget);
@@ -1399,10 +1408,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('skin-preset-selector')), findsOneWidget);
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('settings-player-style-row')),
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('now-playing-style-selector')),
+      240,
+      scrollable: settingsScrollable,
     );
-    await tester.tap(find.byKey(const ValueKey('settings-player-style-row')));
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('now-playing-style-selector')),
@@ -1435,14 +1445,23 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('settings-accent-row')),
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('settings-open-lyrics-default-row')),
+      240,
+      scrollable: settingsScrollable,
     );
-    await tester.tap(find.byKey(const ValueKey('settings-accent-row')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('custom-accent-swatch')),
+    expect(
+      find.byKey(const ValueKey('settings-open-lyrics-default-row')),
+      findsOneWidget,
     );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('custom-accent-swatch')),
+      -240,
+      scrollable: settingsScrollable,
+    );
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('custom-accent-swatch')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('custom-accent-swatch')));
     await tester.pumpAndSettle();
@@ -1453,18 +1472,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('custom-accent-preview')), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('settings-accent-row')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('settings-player-style-row')),
+    await tester.scrollUntilVisible(
+      find.text('播放模式'),
+      -320,
+      scrollable: settingsScrollable,
     );
-    await tester.tap(find.byKey(const ValueKey('settings-player-style-row')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const ValueKey('settings-skin-row')));
-    await tester.tap(find.byKey(const ValueKey('settings-skin-row')));
-    await tester.pumpAndSettle();
-
-    await tester.ensureVisible(find.text('播放模式'));
     await tester.tap(find.text('播放模式'));
     await tester.pumpAndSettle();
     expect(find.byType(SoundBottomSheet), findsOneWidget);

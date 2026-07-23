@@ -85,16 +85,20 @@ void main() {
       find.byKey(const ValueKey('settings-sleep-timer-row')),
       findsOneWidget,
     );
-    for (final group in const ['playback', 'library', 'operation', 'about']) {
-      expect(find.byKey(ValueKey('settings-group-$group')), findsOneWidget);
-    }
     await tester.tap(find.byKey(const ValueKey('settings-sleep-timer-row')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('sleep-timer-15')));
     await tester.pump();
     expect(find.byKey(const ValueKey('sleep-timer-cancel')), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('settings-group-operation')));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('settings-diagnostics-row')),
+      240,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('settings-overview')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('settings-diagnostics-row')));

@@ -135,21 +135,58 @@ class SoundSettingsPageHeader extends StatelessWidget {
   }
 }
 
-class SoundSettingsInlinePanel extends StatelessWidget {
-  const SoundSettingsInlinePanel({required this.child, super.key});
+/// 分组卡片：设置项收进圆角卡，不漂浮在画布上。
+/// r14 + surfaceContainerLow@72% + hairline 边框；行间自动补 hairline（indent 14）。
+class SoundSettingsGroup extends StatelessWidget {
+  const SoundSettingsGroup({required this.children, super.key});
 
-  final Widget child;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: context.settingsInlineSurface,
-        border: Border.symmetric(
-          horizontal: BorderSide(color: context.settingsHairline),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.settingsHairline),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            children[index],
+            if (index != children.length - 1)
+              Divider(
+                height: 1,
+                indent: 14,
+                endIndent: 14,
+                color: context.settingsHairline,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 分组卡内的子块标签（如「皮肤」「主题色」），12.5 secondary。
+class SoundSettingsBlockLabel extends StatelessWidget {
+  const SoundSettingsBlockLabel(this.label, {super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: context.settingsSecondary,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
         ),
       ),
-      child: child,
     );
   }
 }
