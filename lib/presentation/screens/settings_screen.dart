@@ -1781,7 +1781,7 @@ class _SettingsToggleRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Switch.adaptive(value: value, onChanged: onChanged),
+                SoundSwitch(value: value, onChanged: onChanged),
               ],
             ),
           ),

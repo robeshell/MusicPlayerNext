@@ -78,3 +78,4 @@ python3 design/viewer/build.py   # tokens 改值后重跑即同步
 
 - **0.1.0**（2026-07-24）：初版落地。由开听 / 开卷收敛实现反向提炼；设置页规范采用开卷的分组卡片 + 皮肤预览卡方案（优于开听现状，开听待按 `patterns/settings-page.md` 改造）。
 - **0.1.1**（2026-07-24）：开听设置页按 `patterns/settings-page.md` 完成改造并反向回填：明确「单页滚动无 tabs」「外观区选择器直接展示」「行规格双端统一（13.5/11.5 堆叠）」「主题色板 28px 圆点无 check 图标」「桌面行内展开的选择器直接放进分组卡」。
+- **0.1.2**（2026-07-24）：开关（Switch）组件样式落地：轨道 40×24、拇指 18、accent/border 双态，禁用 `Switch.adaptive`；开听实现 `SoundSwitch` 并用于设置页；分组卡片 Column 修正为 stretch（子块标签与选择器左对齐）。

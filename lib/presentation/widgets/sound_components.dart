@@ -1405,3 +1405,58 @@ class _SoundNavigationButton extends StatelessWidget {
     );
   }
 }
+
+/// 品牌开关（design/components/inputs.md 开关一节）。
+///
+/// 轨道 40×24 胶囊、拇指 18；选中轨道 accent / 拇指 onAccent，
+/// 未选轨道 border / 拇指 secondary；无轨道描边，反馈只有 160ms 颜色与位置过渡。
+class SoundSwitch extends StatelessWidget {
+  const SoundSwitch({required this.value, required this.onChanged, super.key});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  static const Size trackSize = Size(40, 24);
+  static const double thumbSize = 18;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = context.soundColors;
+    return Semantics(
+      toggled: value,
+      button: true,
+      child: InkWell(
+        onTap: () => onChanged(!value),
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          // 把 40×24 的视觉轨道扩到 ≥40 的触控目标。
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            width: trackSize.width,
+            height: trackSize.height,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: value ? SoundColors.accent : scheme.outline,
+              borderRadius: BorderRadius.circular(SoundRadii.pill),
+            ),
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: thumbSize,
+                height: thumbSize,
+                decoration: BoxDecoration(
+                  color: value ? scheme.onPrimary : context.soundSecondaryText,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

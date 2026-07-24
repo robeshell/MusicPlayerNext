@@ -152,6 +152,7 @@ class SoundSettingsGroup extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var index = 0; index < children.length; index++) ...[
             children[index],

@@ -12,6 +12,7 @@
 - [ ] 列表行：minHeight 54、标题 13.5 w600、副题 11.5
 - [ ] 输入框：r10、subtle 填充、聚焦 2px accent
 - [ ] 滑杆：轨道 3、拇指 r6；进度圈 24px/2px 且无硬编码色
+- [ ] 开关：轨道 40×24、拇指 18、选中 accent/onAccent、未选 border/secondary、无描边、无 `Switch.adaptive`
 - [ ] 底栏：56px、图标 21、标签 10.5 选中 w800
 - [ ] 对话框：maxWidth 520、barrier 黑 38%/62%；sheet：maxWidth 760、把手 38×4
 - [ ] 锚定菜单：宽 252；<680px 自动退化为底部弹层

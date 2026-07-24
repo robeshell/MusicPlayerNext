@@ -1,6 +1,6 @@
 # 输入控件（TextField / Slider / Switch / Checkbox / Radio / Dropdown）
 
-- **参考实现**：kaiting `sound_theme.dart`（inputDecoration / slider / switch / checkbox / radio / dropdownMenu 子主题）；kaijuan `lib/core/theme/app_theme.dart`。
+- **参考实现**：kaiting `sound_theme.dart`（inputDecoration / slider / checkbox / radio / dropdownMenu 子主题）+ `SoundSwitch`；kaijuan `lib/core/theme/app_theme.dart`。
 
 ## 文本输入（TextField）
 
@@ -29,7 +29,17 @@
 
 ## 开关（Switch）
 
-选中：轨道 accent、拇指 onAccent；未选：轨道 border、拇指 secondary；无轨道描边。
+| 部位 | 值 |
+|---|---|
+| 轨道 | 40×24 胶囊（pill 999），无描边 |
+| 拇指 | 18 正圆，轨道内边距 3 |
+| 选中 | 轨道 accent、拇指 onAccent |
+| 未选 | 轨道 border、拇指 secondary |
+| 动效 | 160ms easeOutCubic，颜色 + 拇指位置 |
+| 触控 | 视觉轨道外补透明 padding，触控目标 ≥40 |
+
+- 参考实现：开听 `SoundSwitch`（`sound_components.dart`）；
+- **禁止** `Switch.adaptive`（macOS/iOS 得到系统绿 Cupertino 开关，且不吃主题）与 M3 默认大轨道 + state layer 样式。
 
 ## 勾选 / 单选（Checkbox / Radio）
 
