@@ -360,7 +360,7 @@ class _SoundChoiceButton<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = !option.enabled
-        ? context.soundMutedText.withValues(alpha: 0.45)
+        ? context.soundSecondaryText.withValues(alpha: 0.38)
         : selected
         ? SoundColors.accent
         : context.soundSecondaryText.withValues(
@@ -1078,7 +1078,7 @@ class _SoundMenuActionRow<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final error = context.soundColors.error;
     final foreground = !action.enabled
-        ? context.soundMutedText.withValues(alpha: 0.48)
+        ? context.soundSecondaryText.withValues(alpha: 0.38)
         : action.destructive
         ? error
         : action.selected
@@ -1212,7 +1212,7 @@ class SoundListRow extends StatelessWidget {
                           style: TextStyle(
                             color: enabled
                                 ? context.soundPrimaryText
-                                : context.soundMutedText.withValues(alpha: 0.5),
+                                : context.soundSecondaryText.withValues(alpha: 0.38),
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
                           ),

@@ -1428,14 +1428,13 @@ class _AlbumCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AlbumArt(
             key: ValueKey('library-album-art-${album.id}'),
             album: album,
-            borderRadius: 6,
             showShadow: false,
           ),
           const SizedBox(height: 7),
@@ -1470,14 +1469,13 @@ class _CollectionCard extends StatelessWidget {
     return InkWell(
       key: ValueKey('library-collection-${collection.id}'),
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AlbumArt(
             key: ValueKey('library-collection-art-${collection.id}'),
             album: album,
-            borderRadius: 6,
             showShadow: false,
           ),
           const SizedBox(height: 7),

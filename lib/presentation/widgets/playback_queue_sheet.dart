@@ -15,7 +15,6 @@ Future<void> showPlaybackQueueSheet(
 }) {
   return showSoundBottomSheet<void>(
     context,
-    showHandle: false,
     builder: (_) => PlaybackQueueSheet(
       playback: playback,
       onOpenAlbum: onOpenAlbum,
@@ -78,17 +77,6 @@ class PlaybackQueuePanel extends StatelessWidget {
         final activeId = playback.displayTrack?.id;
         return Column(
           children: [
-            if (!embedded) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: context.soundSecondaryText.withValues(alpha: 0.38),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ],
             Padding(
               padding: embedded
                   ? const EdgeInsets.fromLTRB(0, 2, 0, 10)

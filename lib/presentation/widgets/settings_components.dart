@@ -13,8 +13,7 @@ extension SoundSettingsContext on BuildContext {
   Color get settingsPrimary => soundPrimaryText;
   Color get settingsSecondary => soundSecondaryText;
   Color get settingsMuted => soundMutedText;
-  Color get settingsHairline =>
-      soundDivider.withValues(alpha: soundDivider.a * 0.72);
+  Color get settingsHairline => soundDivider;
   Color get settingsInlineSurface =>
       soundColors.surfaceContainerLow.withValues(alpha: 0.72);
 }

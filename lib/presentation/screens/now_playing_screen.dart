@@ -18,7 +18,7 @@ import '../controllers/library_user_state_controller.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/album_art.dart';
 import '../widgets/animated_artwork_background.dart';
-import '../widgets/playback_status_badge.dart';
+import '../widgets/playback_visual_state.dart';
 import '../widgets/playback_queue_sheet.dart';
 import '../widgets/progress_scrubber.dart';
 import '../widgets/sound_components.dart';
@@ -1392,12 +1392,9 @@ class _PlaybackErrorBanner extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
         child: SoundGlassSurface(
           key: const ValueKey('playback-error-banner'),
-          color: context.soundChromeSurface,
+          strong: true,
           padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
-          borderRadius: BorderRadius.circular(14),
-          borderColor: Colors.transparent,
-          blur: false,
-          showShadow: false,
+          borderRadius: BorderRadius.circular(SoundRadii.menu),
           child: Row(
             children: [
               SizedBox(

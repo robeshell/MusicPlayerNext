@@ -10,7 +10,7 @@ import '../controllers/library_user_state_controller.dart';
 import 'album_art.dart';
 import 'animated_artwork_background.dart';
 import 'artwork_image_provider.dart';
-import 'playback_status_badge.dart';
+import 'playback_visual_state.dart';
 import 'progress_scrubber.dart';
 import 'sound_components.dart';
 
@@ -105,21 +105,19 @@ class MiniPlayer extends StatelessWidget {
               // already uses a transparent border for the same reason.
               final retryBorder =
                   visual.primaryVisual == PlaybackPrimaryVisual.retry
-                  ? visual.color.withValues(alpha: 0.68)
+                  ? context.soundColors.error
                   : null;
               return SoundGlassSurface(
                 strong: true,
                 // Docked bar sits over the extended body gradient; keep the
                 // chrome slightly translucent so the canvas reads continuous
                 // instead of a hard slab of solid surface.
-                color: docked
-                    ? context.soundChromeSurface.withValues(alpha: 0.92)
-                    : context.soundChromeSurface,
+                color: context.soundChromeSurface,
                 showShadow: !docked,
                 shadowOffset: const Offset(0, 10),
                 borderRadius: docked
                     ? BorderRadius.zero
-                    : BorderRadius.circular(compact ? 16 : 20),
+                    : BorderRadius.circular(compact ? 14 : 18),
                 borderColor: retryBorder ??
                     (docked ? Colors.transparent : null),
                 child: content,
@@ -275,7 +273,7 @@ class _WideMiniPlayer extends StatelessWidget {
               child: _TrackIdentity(
                 track: track,
                 visual: visual,
-                showBadges: true,
+                prominent: true,
               ),
             ),
             const SizedBox(width: 22),
@@ -386,7 +384,7 @@ class _DockedMiniPlayer extends StatelessWidget {
                         child: _TrackIdentity(
                           track: track,
                           visual: visual,
-                          showBadges: false,
+                          prominent: false,
                         ),
                       ),
                       if (userState case final state?) ...[
@@ -511,7 +509,7 @@ class _CondensedMiniPlayer extends StatelessWidget {
                     child: _TrackIdentity(
                       track: track,
                       visual: visual,
-                      showBadges: false,
+                      prominent: false,
                     ),
                   ),
                   if (showPrevious)
@@ -591,16 +589,16 @@ class _TrackIdentity extends StatelessWidget {
   const _TrackIdentity({
     required this.track,
     required this.visual,
-    required this.showBadges,
+    required this.prominent,
   });
 
   final Track track;
   final PlaybackVisualState visual;
-  final bool showBadges;
+  final bool prominent;
 
   @override
   Widget build(BuildContext context) {
-    final metaSize = showBadges ? 12.0 : 11.0;
+    final metaSize = prominent ? 12.0 : 11.0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
       child: Column(
@@ -613,7 +611,7 @@ class _TrackIdentity extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.soundPrimaryText,
-              fontSize: showBadges ? 15 : 13,
+              fontSize: prominent ? 15 : 13,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -627,18 +625,6 @@ class _TrackIdentity extends StatelessWidget {
               fontSize: metaSize,
             ),
           ),
-          if (showBadges) ...[
-            const SizedBox(height: 5),
-            Row(
-              children: [
-                PlaybackStatusBadge(
-                  state: visual,
-                  onLightSurface: true,
-                  compact: true,
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -778,7 +764,7 @@ class _MiniIconButton extends StatelessWidget {
             alpha: enabled ? 1 : 0.45,
           )
         : color ??
-              context.soundPrimaryText.withValues(alpha: enabled ? 0.84 : 0.32);
+              context.soundPrimaryText.withValues(alpha: enabled ? 0.84 : 0.38);
     return IconButton(
       onPressed: onTap,
       icon: Icon(icon, color: foreground, size: size),
@@ -869,16 +855,18 @@ class _VolumeControlState extends State<_VolumeControl> {
                 key: const ValueKey('mini-player-volume-popup'),
                 margin: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.96),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: context.soundDivider),
+                  color: context.soundGlass.strongSurface,
+                  borderRadius: BorderRadius.circular(SoundRadii.menu),
+                  border: Border.all(color: context.soundGlass.border),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.24),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
+                      color: context.soundGlass.shadow,
+                      blurRadius:
+                          24 * context.soundSkinEffects.shadowScale,
+                      offset: Offset(
+                        0,
+                        10 * context.soundSkinEffects.shadowScale,
+                      ),
                     ),
                   ],
                 ),

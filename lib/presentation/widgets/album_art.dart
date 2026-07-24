@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/sound_theme.dart';
 import '../../domain/library_models.dart';
 import 'artwork_image_provider.dart';
 
@@ -7,7 +8,7 @@ class AlbumArt extends StatelessWidget {
   const AlbumArt({
     required this.album,
     this.size,
-    this.borderRadius = 10,
+    this.borderRadius = 14,
     this.showShadow = true,
     this.cacheExtent,
     this.gaplessPlayback = false,
@@ -43,13 +44,20 @@ class AlbumArt extends StatelessWidget {
         return Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(borderRadius),
-            boxShadow: !showShadow || !hasFiniteExtent || logicalExtent < 96
+            boxShadow:
+                !showShadow ||
+                    !hasFiniteExtent ||
+                    logicalExtent < 96 ||
+                    context.soundSkinEffects.shadowScale <= 0
                 ? const []
                 : [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 28,
-                      offset: const Offset(0, 14),
+                      color: context.soundGlass.shadow,
+                      blurRadius: 10 * context.soundSkinEffects.shadowScale,
+                      offset: Offset(
+                        0,
+                        3 * context.soundSkinEffects.shadowScale,
+                      ),
                     ),
                   ],
           ),

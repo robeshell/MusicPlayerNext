@@ -590,7 +590,7 @@ class _AlbumHitCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AlbumArt(album: hit.album, size: 108, borderRadius: 10),
+            AlbumArt(album: hit.album, size: 108),
             const SizedBox(height: 6),
             Text(
               hit.album.title,

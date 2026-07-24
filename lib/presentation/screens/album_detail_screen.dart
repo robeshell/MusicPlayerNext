@@ -725,7 +725,7 @@ class _ImmersiveAlbumAction extends StatelessWidget {
                   alpha: palette.useLightText ? 0.20 : 0.14,
                 )
               : palette.controlSurface,
-          disabledForegroundColor: palette.primaryText.withValues(alpha: 0.3),
+          disabledForegroundColor: palette.primaryText.withValues(alpha: 0.38),
           disabledBackgroundColor: palette.controlSurface.withValues(
             alpha: 0.45,
           ),

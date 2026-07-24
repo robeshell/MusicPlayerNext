@@ -594,7 +594,7 @@ class _PlaylistTile extends StatelessWidget {
             border: Border(
               bottom: BorderSide(
                 color: context.soundDivider.withValues(
-                  alpha: context.soundDivider.a * 0.72,
+                  alpha: context.soundDivider.a,
                 ),
               ),
             ),
@@ -797,7 +797,7 @@ class _PlaylistTrackRow extends StatelessWidget {
             border: Border(
               bottom: BorderSide(
                 color: context.soundDivider.withValues(
-                  alpha: context.soundDivider.a * 0.72,
+                  alpha: context.soundDivider.a,
                 ),
               ),
             ),

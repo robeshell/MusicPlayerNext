@@ -179,7 +179,7 @@ void main() {
       libraryArtworkDecorations
           .singleWhere((decoration) => decoration.borderRadius != null)
           .borderRadius,
-      BorderRadius.circular(6),
+      BorderRadius.circular(14),
     );
 
     await tester.tap(find.text('Test Album').first);
