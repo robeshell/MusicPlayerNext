@@ -91,7 +91,7 @@ class PlaybackQueuePanel extends StatelessWidget {
                           embedded ? '播放清单' : '播放队列',
                           style: TextStyle(
                             fontSize: embedded ? 16 : 22,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 3),
@@ -203,9 +203,7 @@ class PlaybackQueuePanel extends StatelessWidget {
                                 leading: active
                                     ? Icon(
                                         Icons.graphic_eq_rounded,
-                                        color: SoundColors.accent.withValues(
-                                          alpha: 0.86,
-                                        ),
+                                        color: SoundColors.accent,
                                         size: 18,
                                       )
                                     : Text(
@@ -289,8 +287,7 @@ class PlaybackQueuePanel extends StatelessWidget {
                                     child: Text(
                                       '${index + 1}',
                                       style: TextStyle(
-                                        color: context.soundSecondaryText
-                                            .withValues(alpha: 0.72),
+                                        color: context.soundMutedText,
                                       ),
                                     ),
                                   ),
@@ -327,8 +324,7 @@ class PlaybackQueuePanel extends StatelessWidget {
                                   padding: const EdgeInsets.all(12),
                                   child: Icon(
                                     Icons.drag_handle_rounded,
-                                    color: context.soundSecondaryText
-                                        .withValues(alpha: 0.72),
+                                    color: context.soundMutedText,
                                   ),
                                 ),
                               ),

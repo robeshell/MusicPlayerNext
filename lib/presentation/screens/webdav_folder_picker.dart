@@ -129,7 +129,6 @@ class _WebDavFolderPickerState extends State<WebDavFolderPicker> {
     }
 
     return SoundDialog(
-      maxWidth: 540,
       title: _PickerTitle(selectedCount: _selected.length),
       content: SizedBox(width: 480, height: 440, child: content),
       actions: actions,
@@ -156,7 +155,7 @@ class _WebDavFolderPickerState extends State<WebDavFolderPicker> {
             child: _ErrorBanner(message: _errorMessage!),
           )
         else if (isLoading)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
+          const Expanded(child: Center(child: SoundLoadingIndicator()))
         else if (entries.isEmpty)
           Expanded(
             child: Center(
@@ -214,7 +213,7 @@ class _PickerTitle extends StatelessWidget {
         Text(
           '已选 $selectedCount',
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 13.5,
             color: context.soundSecondaryText,
             fontWeight: FontWeight.w400,
           ),
@@ -254,9 +253,8 @@ class _BreadcrumbBar extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 11.5,
               color: context.soundSecondaryText,
-              fontFamily: 'monospace',
             ),
           ),
         ),

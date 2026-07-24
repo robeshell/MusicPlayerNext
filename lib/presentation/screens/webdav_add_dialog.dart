@@ -103,7 +103,6 @@ class _WebDavAddDialogState extends State<WebDavAddDialog> {
     }
 
     return SoundDialog(
-      maxWidth: 500,
       title: title,
       content: SizedBox(width: 420, child: form),
       actions: actions,
@@ -210,7 +209,7 @@ class _WebDavAddDialogState extends State<WebDavAddDialog> {
                       _errorMessage!,
                       style: TextStyle(
                         color: context.soundColors.error,
-                        fontSize: 13,
+                        fontSize: 13.5,
                       ),
                     ),
                   ),

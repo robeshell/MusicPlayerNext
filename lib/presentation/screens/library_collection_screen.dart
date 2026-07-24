@@ -197,9 +197,7 @@ class _LibraryCollectionScreenState extends State<LibraryCollectionScreen> {
                         for (final track in sortedTracks.reversed) {
                           widget.playback.playNext(track);
                         }
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已添加到接下来播放')),
-                        );
+                        showSoundSnackBar(context, '已添加到接下来播放');
                       },
               ),
             ),
@@ -535,7 +533,7 @@ class _CollectionHero extends StatelessWidget {
                 collection.kind == LibraryCollectionKind.artist ? '艺人' : '流派',
                 style: TextStyle(
                   color: collection.palette.first,
-                  fontSize: 11,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.8,
                 ),
@@ -547,8 +545,8 @@ class _CollectionHero extends StatelessWidget {
               style: TextStyle(
                 fontSize: compact ? 24 : 34,
                 height: 1.05,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -1,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8,
               ),
             ),
             SizedBox(height: compact ? 6 : 10),
@@ -703,8 +701,8 @@ class _CollectionHero extends StatelessWidget {
               color: palette.primaryText,
               fontSize: 28,
               height: 1.06,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.8,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.55,
             ),
           ),
           const SizedBox(height: 9),
@@ -714,7 +712,7 @@ class _CollectionHero extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: palette.mutedText,
-              fontSize: 13,
+              fontSize: 13.5,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -847,8 +845,8 @@ class _CollectionHero extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 38,
                           height: 1.04,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -1.25,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.8,
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -1018,7 +1016,7 @@ class _CollectionAlbumCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: pagePalette?.primaryText,
-              fontSize: 13,
+              fontSize: 13.5,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -1123,7 +1121,7 @@ class _CollectionTrackRow extends StatelessWidget {
                       Text(
                         formatDuration(track.duration),
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 11.5,
                           color: context.soundSecondaryText,
                           fontFeatures: [FontFeature.tabularFigures()],
                         ),

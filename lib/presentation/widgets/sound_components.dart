@@ -563,6 +563,8 @@ class SoundEmptyState extends StatelessWidget {
     required this.title,
     required this.message,
     this.loading = false,
+    this.actionLabel,
+    this.onAction,
     super.key,
   });
 
@@ -570,6 +572,10 @@ class SoundEmptyState extends StatelessWidget {
   final String title;
   final String message;
   final bool loading;
+
+  /// 可选主操作（如「管理音乐来源」「重试」），quiet 按钮语言。
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -623,10 +629,31 @@ class SoundEmptyState extends StatelessWidget {
                   height: 1.45,
                 ),
               ),
+              if (actionLabel != null && onAction != null) ...[
+                const SizedBox(height: 20),
+                FilledButton.tonalIcon(
+                  onPressed: onAction,
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 17),
+                  label: Text(actionLabel!),
+                ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 统一加载指示:24px、strokeWidth 2,颜色由 progressIndicatorTheme 供给。
+class SoundLoadingIndicator extends StatelessWidget {
+  const SoundLoadingIndicator({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox.square(
+      dimension: 24,
+      child: CircularProgressIndicator(strokeWidth: 2),
     );
   }
 }
@@ -1459,4 +1486,40 @@ class SoundSwitch extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 轻提示（design/components/feedback.md SnackBar 一节）。
+///
+/// 桌面/宽窗：居中窄条（宽 220，窗口 <420 时收缩），距底 36；
+/// 窄窗：左右 16、距底 18。1.4s，新提示顶掉旧提示，下滑关闭。
+void showSoundSnackBar(BuildContext context, String message) {
+  final width = MediaQuery.sizeOf(context).width;
+  final centered = width >= 420;
+  final toastWidth = centered ? 220.0 : null;
+  final margin = centered
+      ? EdgeInsets.fromLTRB(
+          (width - toastWidth!) / 2,
+          0,
+          (width - toastWidth) / 2,
+          36,
+        )
+      : const EdgeInsets.fromLTRB(16, 0, 16, 18);
+
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(
+          message,
+          textAlign: centered ? TextAlign.center : TextAlign.start,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        duration: const Duration(milliseconds: 1400),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        margin: margin,
+        dismissDirection: DismissDirection.down,
+      ),
+    );
 }

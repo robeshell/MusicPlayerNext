@@ -613,9 +613,7 @@ class DiagnosticsSettingsView extends StatelessWidget {
                     ClipboardData(text: diagnostics.exportText()),
                   );
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('诊断信息已复制，不包含密码')),
-                    );
+                    showSoundSnackBar(context, '诊断信息已复制，不包含密码');
                   }
                 },
                 icon: const Icon(Icons.copy_all_outlined),
@@ -701,7 +699,7 @@ class _DiagnosticEventCard extends StatelessWidget {
                   event.failure.rawMessage,
                   style: TextStyle(
                     color: _settingsSecondaryText(context),
-                    fontSize: 11,
+                    fontSize: 11.5,
                   ),
                 ),
                 if (event.context case final value?) ...[
@@ -710,7 +708,7 @@ class _DiagnosticEventCard extends StatelessWidget {
                     value,
                     style: TextStyle(
                       color: _settingsSecondaryText(context),
-                      fontSize: 11,
+                      fontSize: 11.5,
                     ),
                   ),
                 ],
@@ -722,7 +720,7 @@ class _DiagnosticEventCard extends StatelessWidget {
             timestamp,
             style: TextStyle(
               color: _settingsSecondaryText(context),
-              fontSize: 10,
+              fontSize: 10.5,
             ),
           ),
         ],
@@ -1048,7 +1046,7 @@ class _OfflineDownloadsEmpty extends StatelessWidget {
                   '还没有离线内容',
                   style: TextStyle(
                     color: _settingsPrimaryText(context),
-                    fontSize: 13,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1113,7 +1111,6 @@ class _OfflineDownloadRow extends StatelessWidget {
               child: CircularProgressIndicator(
                 value: task?.progress,
                 strokeWidth: 2,
-                color: statusColor,
               ),
             )
           : Icon(
@@ -1207,7 +1204,7 @@ class _OfflineDownloadRow extends StatelessWidget {
                     color: failed
                         ? SoundColors.accent
                         : _settingsSecondaryText(context),
-                    fontSize: 11,
+                    fontSize: 11.5,
                   ),
                 ),
               ],
@@ -1283,7 +1280,7 @@ class _OfflineStat extends StatelessWidget {
                   label,
                   style: TextStyle(
                     color: _settingsSecondaryText(context),
-                    fontSize: 11,
+                    fontSize: 11.5,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -1302,7 +1299,7 @@ class _OfflineStat extends StatelessWidget {
             detail,
             style: TextStyle(
               color: _settingsSecondaryText(context),
-              fontSize: 11,
+              fontSize: 11.5,
             ),
           ),
         ],
@@ -1364,9 +1361,7 @@ Future<bool> _confirmClearAll(BuildContext context) async {
 }
 
 void _showStorageMessage(BuildContext context, String message) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
+  showSoundSnackBar(context, message);
 }
 
 String _formatBytes(int bytes) {
@@ -1558,7 +1553,7 @@ class _AboutInfoRow extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: _settingsSecondaryText(context),
-                  fontSize: 13,
+                  fontSize: 13.5,
                 ),
               ),
             ),
@@ -1567,7 +1562,7 @@ class _AboutInfoRow extends StatelessWidget {
                 value,
                 style: TextStyle(
                   color: _settingsPrimaryText(context),
-                  fontSize: 13,
+                  fontSize: 13.5,
                   fontWeight: FontWeight.w500,
                 ),
               ),

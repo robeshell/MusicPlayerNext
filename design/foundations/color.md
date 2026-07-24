@@ -37,6 +37,8 @@
 
 边框、hairline、subtle 填充、状态层、选中、barrier、destructive 的透明度**只能**取自 `tokens/primitives.json → derivedAlphas`。实现中发现缺档 → 提规范变更，不私造数值。
 
+状态色：错误/失败用 `colorScheme.error`；警告（如认证失败）用 `derivedAlphas.status.warning`（light `#B07514` / dark `#E3AC45`）。禁止 `Colors.orangeAccent` 之类硬编码状态色。
+
 ## 强调色规则
 
 - 强调色轴与皮肤正交；产品各自持有（开听珊瑚、开卷暖橙），见 `tokens/accents.json`。

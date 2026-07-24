@@ -154,20 +154,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
             if (widget.catalog.status == LibraryCatalogStatus.loading)
               const SliverFillRemaining(
                 hasScrollBody: false,
-                child: _CatalogMessage.loading(),
+                child: SoundEmptyState(
+                  icon: Icons.library_music_outlined,
+                  title: '正在读取资料库',
+                  message: '正在加载已索引的专辑和歌曲。',
+                  loading: true,
+                ),
               )
             else if (widget.catalog.status == LibraryCatalogStatus.error)
               SliverFillRemaining(
                 hasScrollBody: false,
-                child: _CatalogMessage.error(
+                child: SoundEmptyState(
+                  icon: Icons.error_outline_rounded,
+                  title: '无法读取资料库',
                   message: widget.catalog.errorMessage ?? '无法读取资料库。',
+                  actionLabel: '重试',
                   onAction: widget.catalog.refresh,
                 ),
               )
             else if (allAlbums.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
-                child: _CatalogMessage.empty(onAction: widget.onManageSources),
+                child: SoundEmptyState(
+                  icon: Icons.create_new_folder_outlined,
+                  title: '资料库还是空的',
+                  message: kIsWeb
+                      ? '添加一个 WebDAV 音乐源，扫描完成后歌曲会显示在这里。'
+                      : '添加一个本地音乐文件夹，扫描完成后歌曲会显示在这里。',
+                  actionLabel: '管理音乐来源',
+                  onAction: widget.onManageSources,
+                ),
               )
             else ...[
               SliverPadding(
@@ -198,7 +214,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               if (albums.isEmpty)
                 const SliverFillRemaining(
                   hasScrollBody: false,
-                  child: _CatalogMessage.filtered(),
+                  child: SoundEmptyState(
+                    icon: Icons.filter_alt_off_outlined,
+                    title: '当前筛选没有内容',
+                    message: '这个来源中没有已索引的音乐，可以切换到其他来源继续浏览。',
+                  ),
                 )
               else
                 ...switch (widget.mode) {
@@ -517,7 +537,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return [
         SliverFillRemaining(
           hasScrollBody: false,
-          child: _CatalogMessage._(
+          child: SoundEmptyState(
             icon: Icons.category_outlined,
             title: '暂无内容',
             message: emptyMessage,
@@ -1275,119 +1295,7 @@ class _CompactPlayAllButton extends StatelessWidget {
         minimumSize: const Size(0, 40),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         foregroundColor: SoundColors.accent,
-        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-}
-
-class _CatalogMessage extends StatelessWidget {
-  const _CatalogMessage._({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-    this.loading = false,
-  });
-
-  const _CatalogMessage.loading()
-    : this._(
-        icon: Icons.library_music_outlined,
-        title: '正在读取资料库',
-        message: '正在加载已索引的专辑和歌曲。',
-        loading: true,
-      );
-
-  // ignore: prefer_const_constructors_in_immutables
-  _CatalogMessage.empty({required VoidCallback onAction})
-    : this._(
-        icon: Icons.create_new_folder_outlined,
-        title: '资料库还是空的',
-        message: kIsWeb
-            ? '添加一个 WebDAV 音乐源，扫描完成后歌曲会显示在这里。'
-            : '添加一个本地音乐文件夹，扫描完成后歌曲会显示在这里。',
-        actionLabel: '管理音乐来源',
-        onAction: onAction,
-      );
-
-  const _CatalogMessage.filtered()
-    : this._(
-        icon: Icons.filter_alt_off_outlined,
-        title: '当前筛选没有内容',
-        message: '这个来源中没有已索引的音乐，可以切换到其他来源继续浏览。',
-      );
-
-  const _CatalogMessage.error({
-    required String message,
-    required VoidCallback onAction,
-  }) : this._(
-         icon: Icons.error_outline_rounded,
-         title: '无法读取资料库',
-         message: message,
-         actionLabel: '重试',
-         onAction: onAction,
-       );
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          context.soundPageGutter,
-          40,
-          context.soundPageGutter,
-          context.soundContentBottomPadding,
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (loading)
-                const CircularProgressIndicator()
-              else
-                Icon(
-                  icon,
-                  size: 48,
-                  color: context.soundSecondaryText.withValues(alpha: 0.65),
-                ),
-              const SizedBox(height: 18),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: context.soundSecondaryText,
-                  height: 1.5,
-                ),
-              ),
-              if (actionLabel != null && onAction != null) ...[
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: onAction,
-                  icon: const Icon(Icons.folder_open_rounded),
-                  label: Text(actionLabel!),
-                ),
-              ],
-            ],
-          ),
-        ),
+        textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -1442,7 +1350,7 @@ class _AlbumCard extends StatelessWidget {
             album.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 2),
           Text(
@@ -1483,7 +1391,7 @@ class _CollectionCard extends StatelessWidget {
             collection.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 2),
           Text(

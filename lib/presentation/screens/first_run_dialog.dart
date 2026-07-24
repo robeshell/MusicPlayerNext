@@ -10,7 +10,6 @@ class FirstRunDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoundDialog(
-      maxWidth: 560,
       title: const Text('欢迎使用 开听'),
       content: Column(
         mainAxisSize: MainAxisSize.min,

@@ -1686,9 +1686,7 @@ class _WindowControlButton extends StatelessWidget {
             child: Icon(
               icon,
               size: 16,
-              color: closeButton
-                  ? context.soundSecondaryText
-                  : context.soundSecondaryText.withValues(alpha: 0.72),
+              color: context.soundSecondaryText,
             ),
           ),
         ),
@@ -1839,7 +1837,7 @@ class _SidebarHeading extends StatelessWidget {
         label,
         style: TextStyle(
           color: context.soundMutedText,
-          fontSize: 10,
+          fontSize: 10.5,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.8,
         ),
@@ -1876,7 +1874,7 @@ class _SidebarRow extends StatelessWidget {
         label,
         style: TextStyle(
           color: active ? context.soundPrimaryText : context.soundSecondaryText,
-          fontSize: 13,
+          fontSize: 13.5,
           fontWeight: active ? FontWeight.w700 : FontWeight.w500,
         ),
       ),
@@ -1981,7 +1979,6 @@ class _KeyboardShortcutDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoundDialog(
-      maxWidth: 540,
       title: const Row(
         children: [
           Icon(Icons.keyboard_alt_outlined),

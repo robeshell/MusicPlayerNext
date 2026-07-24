@@ -1,6 +1,6 @@
 # 品牌设计体系（Design DSL）
 
-**specVersion: 0.1.0（draft）** — 样式优化进行中，优化结论会回填本规范；回填完成并应用到各产品后升 1.0。
+**specVersion: 0.1.3（draft）** — 样式优化进行中，优化结论会回填本规范；回填完成并应用到各产品后升 1.0。
 
 本目录是品牌跨产品的**唯一设计事实源**（single source of truth）。各 App（开听 kaiting、开卷 kaijuan…）的主题代码是本规范的下游产物：改设计先改这里，再移植到各 App。
 
@@ -79,3 +79,4 @@ python3 design/viewer/build.py   # tokens 改值后重跑即同步
 - **0.1.0**（2026-07-24）：初版落地。由开听 / 开卷收敛实现反向提炼；设置页规范采用开卷的分组卡片 + 皮肤预览卡方案（优于开听现状，开听待按 `patterns/settings-page.md` 改造）。
 - **0.1.1**（2026-07-24）：开听设置页按 `patterns/settings-page.md` 完成改造并反向回填：明确「单页滚动无 tabs」「外观区选择器直接展示」「行规格双端统一（13.5/11.5 堆叠）」「主题色板 28px 圆点无 check 图标」「桌面行内展开的选择器直接放进分组卡」。
 - **0.1.2**（2026-07-24）：开关（Switch）组件样式落地：轨道 40×24、拇指 18、accent/border 双态，禁用 `Switch.adaptive`；开听实现 `SoundSwitch` 并用于设置页；分组卡片 Column 修正为 stretch（子块标签与选择器左对齐）。
+- **0.1.3**（2026-07-24）：设计审计收尾——搜索页组件归队（搜索框 r10 + 聚焦 2px accent、最近搜索用 ChoiceStrip、分区标题统一 12.5 w600 secondary、艺人命中用 ListRow）；来源设置页入分组卡、状态色语义化（新增 `derivedAlphas.status.warning` token，错误走 `colorScheme.error`）；SnackBar 显式 floating；对话框宽度收敛 520（删除各覆盖值）、简单选项列表弹层登记 560；底栏导航标签定档 10.5；正文字号全部归位 0.5 网格（10.5/11.5/12.5/13.5）；展示文字禁 accent 落实（专辑 hero 艺人名定档 15 w600 secondary）；文字三档之外禁止再乘 alpha（×0.72/×0.68/×0.86 等私造衰减清除）。

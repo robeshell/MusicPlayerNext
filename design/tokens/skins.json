@@ -1,6 +1,6 @@
 {
   "$schema": "../README.md",
-  "specVersion": "0.1.0",
+  "specVersion": "0.1.3",
   "comment": "皮肤预设：每个皮肤自带明暗 + 四档表面坡道 + 玻璃 token + 动效 token。已发布皮肤的 token 值是稳定承诺，不得修改；新外观只能新增皮肤。",
   "systemPseudoSkin": {
     "id": "system",
@@ -34,7 +34,7 @@
         "motionDurationS": 14,
         "paletteTransitionMs": 420,
         "motionStrength": 1,
-        "primaryGlowOpacity": 0.90,
+        "primaryGlowOpacity": 0.9,
         "secondaryGlowOpacity": 0.72,
         "lightVeilOpacity": 0.04,
         "darkVeilOpacity": 0.12,

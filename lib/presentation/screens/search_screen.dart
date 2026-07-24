@@ -389,16 +389,19 @@ class _SearchScreenState extends State<SearchScreen> {
                 filled: true,
                 fillColor: context.soundTint(0.025),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoundRadii.pill),
+                  borderRadius: BorderRadius.circular(SoundRadii.control),
                   borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoundRadii.pill),
+                  borderRadius: BorderRadius.circular(SoundRadii.control),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SoundRadii.pill),
-                  borderSide: BorderSide.none,
+                  borderRadius: BorderRadius.circular(SoundRadii.control),
+                  borderSide: BorderSide(
+                    color: SoundColors.accent,
+                    width: 2,
+                  ),
                 ),
               ),
             ),
@@ -408,9 +411,9 @@ class _SearchScreenState extends State<SearchScreen> {
         Text(
           '匹配范围',
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 11.5,
             fontWeight: FontWeight.w600,
-            color: context.soundMutedText.withValues(alpha: 0.72),
+            color: context.soundSecondaryText,
           ),
         ),
         const SizedBox(height: 6),
@@ -453,23 +456,23 @@ class _EmptySearchBody extends StatelessWidget {
               child: Text(
                 '最近搜索',
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
                   color: context.soundSecondaryText,
                 ),
               ),
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
+            SoundChoiceStrip<String?>(
+              wrap: true,
+              selected: null,
+              onSelected: (query) => onSelectRecent(query!),
+              options: [
                 for (final query in recentQueries)
-                  ActionChip(
+                  SoundChoiceOption(
                     key: ValueKey('search-recent-$query'),
-                    label: Text(query),
-                    onPressed: () => onSelectRecent(query),
-                    visualDensity: VisualDensity.compact,
+                    value: query,
+                    label: query,
                   ),
               ],
             ),
@@ -494,9 +497,9 @@ class _EntitySection extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: context.soundPrimaryText,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: context.soundSecondaryText,
           ),
         ),
         const SizedBox(height: 8),
@@ -517,28 +520,24 @@ class _ArtistHitList extends StatelessWidget {
     return Column(
       children: [
         for (final hit in hits)
-          ListTile(
+          SoundListRow(
             key: ValueKey('search-artist-${hit.collection.id}'),
-            contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(
-              backgroundColor: context.soundTint(0.08),
-              child: Icon(
-                Icons.person_rounded,
-                color: context.soundSecondaryText,
-              ),
+            padding: EdgeInsets.zero,
+            leading: Icon(
+              Icons.person_rounded,
+              size: 20,
+              color: context.soundSecondaryText,
             ),
-            title: Text(
-              hit.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
+            title: Text(hit.name),
             subtitle: Text(
               '${hit.collection.albums.length} 张专辑 · '
               '${hit.collection.tracks.length} 首',
-              style: TextStyle(fontSize: 12, color: context.soundMutedText),
             ),
-            trailing: const Icon(Icons.chevron_right_rounded),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              size: 19,
+              color: context.soundSecondaryText,
+            ),
             onTap: () => onOpen(hit),
           ),
       ],
@@ -584,7 +583,7 @@ class _AlbumHitCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onOpen,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(SoundRadii.card),
       child: SizedBox(
         width: 112,
         child: Column(
@@ -607,7 +606,7 @@ class _AlbumHitCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 11.5,
                 height: 1.15,
                 color: context.soundMutedText,
               ),

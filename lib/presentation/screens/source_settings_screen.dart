@@ -169,9 +169,7 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('无法添加文件夹：$error')));
+      showSoundSnackBar(context, '无法添加文件夹：$error');
     } finally {
       if (mounted) setState(() => _addingSource = false);
     }
@@ -182,9 +180,7 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       await widget.localSources.removeLocalFolder(source);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('无法移除文件夹：$error')));
+      showSoundSnackBar(context, '无法移除文件夹：$error');
     }
   }
 
@@ -208,24 +204,14 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       final changeSummary = changes.isEmpty
           ? '，没有文件变化'
           : '，${changes.join('、')}';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '已索引 ${report.indexedTracks} 首歌曲$changeSummary$skipped'
-            '${_scanWarningSuffix(report)}',
-          ),
-        ),
-      );
+      showSoundSnackBar(context, '已索引 ${report.indexedTracks} 首歌曲$changeSummary$skipped'
+            '${_scanWarningSuffix(report)}',);
     } on ScanCancelledException {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('扫描已取消，原资料库保持不变')));
+      showSoundSnackBar(context, '扫描已取消，原资料库保持不变');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('扫描失败：$error')));
+      showSoundSnackBar(context, '扫描失败：$error');
     } finally {
       _scanningSourceIds.remove(sourceId);
       if (mounted) setState(() {});
@@ -241,7 +227,7 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       final dirCount = result.files.where((f) => f.isCollection).length;
       var msg = 'WebDAV 服务器已连接';
       if (fileCount > 0) msg += '，发现 $fileCount 个文件、$dirCount 个目录';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showSoundSnackBar(context, msg);
     }
   }
 
@@ -290,9 +276,7 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
             .remove(resource.id);
       } catch (error) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('移除失败：$error')));
+        showSoundSnackBar(context, '移除失败：$error');
       }
     }
   }
@@ -307,9 +291,7 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       final message = result.error == null
           ? 'WebDAV 连接已更新'
           : '连接信息已保存：${result.errorMessage ?? '探测失败'}';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      showSoundSnackBar(context, message);
     }
   }
 
@@ -341,19 +323,13 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       final result = await adapter.connections.probe(connection.id);
       if (!mounted) return;
       if (!result.isAvailable) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('连接失败：${result.errorMessage ?? '未知错误'}')),
-        );
+        showSoundSnackBar(context, '连接失败：${result.errorMessage ?? '未知错误'}');
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('连接成功')));
+        showSoundSnackBar(context, '连接成功');
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('探测失败：$error')));
+      showSoundSnackBar(context, '探测失败：$error');
     }
   }
 
@@ -368,9 +344,7 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       browser = await adapter.connections.openBrowser(connection.id);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      showSoundSnackBar(context, error.toString());
       return;
     }
     if (!mounted) return;
@@ -390,19 +364,13 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
     try {
       final result = await adapter.scanDirectories(connection.id, selected);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_scanSummary(result))));
+      showSoundSnackBar(context, _scanSummary(result));
     } on ScanCancelledException {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('WebDAV 扫描已取消，原资料库保持不变')));
+      showSoundSnackBar(context, 'WebDAV 扫描已取消，原资料库保持不变');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('扫描失败：$error')));
+      showSoundSnackBar(context, '扫描失败：$error');
     }
   }
 
@@ -426,9 +394,9 @@ class _SourceSettingsScreenState extends State<SourceSettingsScreen> {
       SourceManagedStatus.idle ||
       SourceManagedStatus.working ||
       SourceManagedStatus.available => readyColor,
-      SourceManagedStatus.authenticationFailed => Colors.orangeAccent,
+      SourceManagedStatus.authenticationFailed => context.soundWarning,
       SourceManagedStatus.unavailable ||
-      SourceManagedStatus.error => Colors.redAccent,
+      SourceManagedStatus.error => context.soundColors.error,
     };
   }
 
@@ -747,9 +715,9 @@ class _SourceSection extends StatelessWidget {
                 child: Text(
                   title,
                   style: TextStyle(
-                    color: _sourcePrimaryText(context),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                    color: _sourceSecondaryText(context),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -796,19 +764,7 @@ class _SourceGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var index = 0; index < children.length; index++) ...[
-          children[index],
-          if (index != children.length - 1)
-            Divider(
-              height: 1,
-              indent: context.soundIsCompact ? 4 : 42,
-              color: _sourceHairline(context),
-            ),
-        ],
-      ],
-    );
+    return SoundSettingsGroup(children: children);
   }
 }
 
@@ -849,9 +805,9 @@ class _SourceRow extends StatelessWidget {
         final narrow = context.soundIsCompact || constraints.maxWidth < 560;
         return Padding(
           padding: EdgeInsets.fromLTRB(
-            4,
+            14,
             compact ? 8 : 10,
-            0,
+            6,
             compact ? 8 : 10,
           ),
           child: Row(
@@ -886,7 +842,7 @@ class _SourceRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: _sourceSecondaryText(context),
-                        fontSize: 11,
+                        fontSize: 11.5,
                       ),
                     ),
                   ],
@@ -904,7 +860,7 @@ class _SourceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: _sourceSecondaryText(context),
-                      fontSize: 11,
+                      fontSize: 11.5,
                     ),
                   ),
                 ),
@@ -1056,7 +1012,7 @@ class _UnassignedDirectories extends StatelessWidget {
               '待确认归属的目录',
               style: TextStyle(
                 color: _sourceSecondaryText(context),
-                fontSize: 11,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w600,
               ),
             ),

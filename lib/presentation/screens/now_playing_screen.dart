@@ -898,8 +898,8 @@ class _PlayerColumn extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 27,
                   height: 1.08,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.55,
                 ),
               ),
             ),
@@ -917,8 +917,8 @@ class _PlayerColumn extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 27,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.55,
                     ),
                   ),
                 ),
@@ -1154,8 +1154,8 @@ class _CompactLyricsPlayer extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.3,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.25,
                           ),
                         ),
                       ),
@@ -1275,8 +1275,8 @@ class _PlaybackTimelineAndControls extends StatelessWidget {
                   ? SizedBox.square(
                       dimension: 24,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: context.soundSecondaryText,
+                        strokeWidth: 2,
+                        color: context.soundColors.onPrimary,
                       ),
                     )
                   : Icon(visual.primaryIcon),
@@ -1418,7 +1418,7 @@ class _PlaybackErrorBanner extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: context.soundPrimaryText,
-                        fontSize: 13,
+                        fontSize: 13.5,
                         height: 1.15,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1466,7 +1466,7 @@ class _PlaybackErrorBanner extends StatelessWidget {
 
 TextStyle _timeStyle(BuildContext context) => TextStyle(
   color: context.soundSecondaryText,
-  fontSize: 11,
+  fontSize: 11.5,
   fontFeatures: const [FontFeature.tabularFigures()],
 );
 
@@ -1690,7 +1690,7 @@ class _LyricsPanelState extends State<_LyricsPanel> {
           child: Icon(
             Icons.more_horiz_rounded,
             size: 20,
-            color: context.soundMutedText.withValues(alpha: 0.72),
+            color: context.soundMutedText,
           ),
         ),
       ),
@@ -1707,8 +1707,8 @@ class _LyricsPanelState extends State<_LyricsPanel> {
             '同步\n歌词',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: context.soundMutedText.withValues(alpha: 0.72),
-              fontSize: 10,
+              color: context.soundMutedText,
+              fontSize: 10.5,
               height: 1.25,
               fontWeight: FontWeight.w700,
             ),
@@ -1743,7 +1743,7 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                   color: context.soundMutedText.withValues(
                     alpha: _offset == Duration.zero ? 0.56 : 0.86,
                   ),
-                  fontSize: 10,
+                  fontSize: 10.5,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
@@ -1834,8 +1834,7 @@ class _LyricsPanelState extends State<_LyricsPanel> {
           ),
           fontSize: isActive ? 22 : 20,
           height: synchronized ? 2.25 : 1.7,
-          fontWeight: isActive ? FontWeight.w900 : FontWeight.w700,
-          letterSpacing: -0.4,
+          fontWeight: isActive ? FontWeight.w800 : FontWeight.w700,
         ),
         child: Text(line.text),
       ),
@@ -1957,9 +1956,9 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                     _offsetLabel,
                     style: TextStyle(
                       color: _offset == Duration.zero
-                          ? context.soundSecondaryText.withValues(alpha: 0.68)
+                          ? context.soundMutedText
                           : context.soundSecondaryText,
-                      fontSize: 11,
+                      fontSize: 11.5,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -2013,7 +2012,7 @@ class _LyricsOffsetButton extends StatelessWidget {
               label,
               style: TextStyle(
                 color: context.soundSecondaryText,
-                fontSize: 11,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w700,
               ),
             ),

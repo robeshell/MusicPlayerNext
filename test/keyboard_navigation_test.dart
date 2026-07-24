@@ -109,7 +109,7 @@ void main() {
     final shortcutDialog = tester.getRect(
       find.byKey(const ValueKey('sound-dialog')),
     );
-    expect(shortcutDialog.width, 540);
+    expect(shortcutDialog.width, 520);
     expect(shortcutDialog.height, lessThan(752));
     expect(shortcutDialog.top, greaterThanOrEqualTo(24));
     expect(

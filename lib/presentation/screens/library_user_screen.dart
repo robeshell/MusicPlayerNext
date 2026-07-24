@@ -130,7 +130,7 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
               if (widget.userState.isLoading)
                 const SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(child: SoundLoadingIndicator()),
                 )
               else if (widget.userState.errorMessage case final message?)
                 SliverFillRemaining(
@@ -182,7 +182,7 @@ class _LibraryUserScreenState extends State<LibraryUserScreen> {
           if (widget.userState.isLoading)
             const SliverFillRemaining(
               hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: SoundLoadingIndicator()),
             )
           else if (widget.userState.errorMessage case final message?)
             SliverFillRemaining(
@@ -720,7 +720,7 @@ class _PlaylistDetailHeader extends StatelessWidget {
           playlist.name,
           style: TextStyle(
             fontSize: context.soundPageTitleSize,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w800,
             letterSpacing: -0.8,
           ),
         ),

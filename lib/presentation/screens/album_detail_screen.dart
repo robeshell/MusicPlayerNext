@@ -387,8 +387,8 @@ class _Hero extends StatelessWidget {
                     color: palette.primaryText,
                     fontSize: 25,
                     height: 1.1,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.75,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.55,
                   ),
                 ),
                 const SizedBox(height: 7),
@@ -416,7 +416,7 @@ class _Hero extends StatelessWidget {
                   metadata,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 13.5,
                     color: palette.mutedText,
                     fontWeight: FontWeight.w600,
                   ),
@@ -585,8 +585,8 @@ class _Hero extends StatelessWidget {
                             style: const TextStyle(
                               fontSize: 38,
                               height: 1.04,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -1.25,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.8,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -601,11 +601,10 @@ class _Hero extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: SoundColors.accent,
-                                fontSize: 28,
-                                height: 1.08,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.45,
+                                color: context.soundSecondaryText,
+                                fontSize: 15,
+                                height: 1.22,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -787,10 +786,10 @@ class _DiscHeader extends StatelessWidget {
           Text(
             '第 $number 碟',
             style: TextStyle(
-              color: SoundColors.accent,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.4,
+              color: pagePalette?.secondaryText ??
+                  context.soundSecondaryText,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 10),
@@ -1031,8 +1030,7 @@ class _TrackOfflineIndicator extends StatelessWidget {
         height: 15,
         child: CircularProgressIndicator(
           value: task?.progress,
-          strokeWidth: 1.8,
-          color: SoundColors.webDav,
+          strokeWidth: 2,
         ),
       );
     }
@@ -1040,7 +1038,7 @@ class _TrackOfflineIndicator extends StatelessWidget {
       return Icon(
         Icons.error_outline_rounded,
         size: 16,
-        color: SoundColors.accent,
+        color: context.soundColors.error,
       );
     }
     if (offline.isPinned(track)) {
@@ -1149,7 +1147,5 @@ Future<bool> _confirmRemoveOfflineAlbum(
 }
 
 void _showAlbumMessage(BuildContext context, String message) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
+  showSoundSnackBar(context, message);
 }

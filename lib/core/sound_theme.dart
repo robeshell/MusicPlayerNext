@@ -33,6 +33,10 @@ extension SoundThemeContext on BuildContext {
 
   Color get soundDivider => soundColors.outlineVariant;
 
+  Color get soundWarning => soundTheme.brightness == Brightness.dark
+      ? SoundColors.warningDark
+      : SoundColors.warningLight;
+
   Color soundTint(double alpha) => soundPrimaryText.withValues(alpha: alpha);
 
   ButtonStyle get soundDestructiveButtonStyle {
@@ -190,6 +194,8 @@ abstract final class SoundColors {
   static const lightOverlay = Color(0xFFF1F2F4);
   static const webDav = Color(0xFF5E8BFF);
   static const local = Color(0xFF55B889);
+  static const warningLight = Color(0xFFB07514);
+  static const warningDark = Color(0xFFE3AC45);
 
   static const List<AccentPreset> accentPresets = [
     defaultAccentPreset,
@@ -796,7 +802,7 @@ abstract final class SoundTheme {
         }),
         labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((states) {
           return TextStyle(
-            fontSize: 11,
+            fontSize: 10.5,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w800
                 : FontWeight.w600,
